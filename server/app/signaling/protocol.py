@@ -38,9 +38,12 @@ __all__ = [
     "MemberStateMessage",
     "MusicClearMessage",
     "MusicCurrent",
+    "MusicEnqueueBatchMessage",
+    "MusicEnqueueItem",
     "MusicEnqueueMessage",
     "MusicEntry",
     "MusicEosMessage",
+    "MusicModeMessage",
     "MusicRemoveMessage",
     "MusicRequester",
     "MusicSkipMessage",
@@ -206,6 +209,8 @@ class MusicState(_CamelModel):
     server_time_ms: int = Field(default=0, alias="serverTimeMs")
     current: MusicCurrent | None = None
     queue: list[MusicEntry] = Field(default_factory=list)
+    #: 播放模式（房间级）：repeat_all / repeat_one / sequential / shuffle
+    mode: str = "repeat_all"
 
 
 class _BaseMessage(_CamelModel):
@@ -266,6 +271,17 @@ class CandidateRelay(_BaseMessage):
 
 
 # ---- 点歌（房间共享队列）----
+class MusicEnqueueItem(_CamelModel):
+    """单条点歌的字段：单条消息与批量消息共用一套口径。"""
+
+    source: str = Field(min_length=1, max_length=32)
+    song_id: str = Field(alias="songId", min_length=1, max_length=128)
+    music_info: dict[str, Any] = Field(alias="musicInfo")
+    title: str = Field(default="", max_length=200)
+    artist: str = Field(default="", max_length=200)
+    duration_ms: int | None = Field(default=None, alias="durationMs", ge=0)
+
+
 class MusicEnqueueMessage(_BaseMessage):
     """点歌入队。``musicInfo`` 是音源原始对象（客户端原样发上来）。"""
 
@@ -276,6 +292,18 @@ class MusicEnqueueMessage(_BaseMessage):
     title: str = Field(default="", max_length=200)
     artist: str = Field(default="", max_length=200)
     duration_ms: int | None = Field(default=None, alias="durationMs", ge=0)
+
+
+class MusicEnqueueBatchMessage(_BaseMessage):
+    """一次点一批（歌单「全部加入」）。
+
+    整批算**一次请求**：服务端只按一次冷却计时，所以一批能立刻排进去；
+    逐条发的话第 2 条起都会被 ``ENQUEUE_COOLDOWN_MS`` 拦下。
+    """
+
+    type: Literal["music_enqueue_batch"] = "music_enqueue_batch"
+    #: 条数上限只保护信令帧；真正能进多少由每人配额 + 队列上限决定
+    entries: list[MusicEnqueueItem] = Field(min_length=1, max_length=200)
 
 
 class MusicRemoveMessage(_BaseMessage):
@@ -300,6 +328,13 @@ class MusicEosMessage(_BaseMessage):
     revision: int = Field(ge=0)
 
 
+class MusicModeMessage(_BaseMessage):
+    """切换播放模式（房间级：所有人一起变）。"""
+
+    type: Literal["music_mode"] = "music_mode"
+    mode: Literal["repeat_all", "repeat_one", "sequential", "shuffle"]
+
+
 ClientMessage = Annotated[
     PingMessage
     | PongRelay
@@ -310,10 +345,12 @@ ClientMessage = Annotated[
     | AnswerRelay
     | CandidateRelay
     | MusicEnqueueMessage
+    | MusicEnqueueBatchMessage
     | MusicRemoveMessage
     | MusicSkipMessage
     | MusicClearMessage
-    | MusicEosMessage,
+    | MusicEosMessage
+    | MusicModeMessage,
     Field(discriminator="type"),
 ]
 
@@ -341,6 +378,8 @@ class ServerHelloMessage(_BaseMessage):
     server_time_ms: int = Field(alias="serverTimeMs")
     #: 房间点歌是否可用（服务端能力位）
     music_enabled: bool = Field(default=True, alias="musicEnabled")
+    #: 是否支持一次点一批（``music_enqueue_batch``）：老服务器没这个能力位，客户端退回逐条发
+    music_batch: bool = Field(default=True, alias="musicBatch")
     server: ServerInfo
     user: UserSummary
 
@@ -371,6 +410,8 @@ class MusicStateMessage(_BaseMessage):
     server_time_ms: int = Field(alias="serverTimeMs")
     current: MusicCurrent | None = None
     queue: list[MusicEntry] = Field(default_factory=list)
+    #: 播放模式（房间级）：与 ``MusicState.mode`` 同一份口径
+    mode: str = "repeat_all"
 
 
 class MemberJoinedMessage(_BaseMessage):

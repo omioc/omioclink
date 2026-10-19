@@ -60,11 +60,11 @@ void main() {
       expect(queue.length, 2);
     });
 
-    test('enqueueAll 跳过重复并在满队列时停下', () {
+    test('enqueueAll 跳过重复并在满队列时停下', () async {
       final queue = RoomMusicQueue(capacity: 3);
       queue.enqueue(_track('1'));
 
-      final added = queue.enqueueAll(<MusicTrack>[
+      final added = await queue.enqueueAll(<MusicTrack>[
         _track('1'),
         _track('2'),
         _track('3'),
@@ -72,12 +72,17 @@ void main() {
       ]);
 
       expect(added, 2);
-      expect(queue.queue.map((item) => item.id).toList(), <String>['1', '2', '3']);
+      expect(
+        queue.queue.map((item) => item.id).toList(),
+        <String>['1', '2', '3'],
+      );
     });
 
-    test('next 依次出队，空了返回 null；remove / clear / reset 各自生效', () {
+    test('next 依次出队，空了返回 null；remove / clear / reset 各自生效', () async {
       final queue = RoomMusicQueue();
-      queue.enqueueAll(<MusicTrack>[_track('1'), _track('2'), _track('3')]);
+      // 默认列表循环会一直续下去；这条用例只看「出队」本身，用顺序播放
+      queue.setMode(PlaybackMode.sequential);
+      await queue.enqueueAll(<MusicTrack>[_track('1'), _track('2'), _track('3')]);
 
       // 按 MusicTrack 移除（队列自己知道 key 是 platform:id）
       queue.remove(_track('2'));
@@ -101,6 +106,55 @@ void main() {
       queue.enqueue(_track('8'));
       queue.reset();
       expect(queue.isEmpty, isTrue);
+    });
+
+    test('本地模式：默认列表循环，播完一轮重新排一遍', () async {
+      final queue = RoomMusicQueue();
+      expect(queue.mode, PlaybackMode.repeatAll);
+      await queue.enqueueAll(<MusicTrack>[_track('1'), _track('2')]);
+
+      expect(queue.next()?.id, '1');
+      expect(queue.next()?.id, '2');
+      // 一轮播完：列表循环把这一轮按原顺序重新排进来
+      expect(queue.next()?.id, '1');
+      expect(queue.next()?.id, '2');
+    });
+
+    test('本地模式：顺序播放播完就停', () async {
+      final queue = RoomMusicQueue();
+      queue.setMode(PlaybackMode.sequential);
+      await queue.enqueueAll(<MusicTrack>[_track('1'), _track('2')]);
+
+      expect(queue.next()?.id, '1');
+      expect(queue.next()?.id, '2');
+      expect(queue.next(), isNull);
+    });
+
+    test('本地模式：随机播放把三首各挑一次', () async {
+      final queue = RoomMusicQueue();
+      queue.setMode(PlaybackMode.shuffle);
+      await queue.enqueueAll(<MusicTrack>[_track('1'), _track('2'), _track('3')]);
+
+      final played = <String>{};
+      for (var index = 0; index < 3; index += 1) {
+        final track = queue.next();
+        expect(track, isNotNull);
+        played.add(track!.id);
+      }
+      expect(played, hasLength(3));
+    });
+
+    test('模式按钮按固定顺序轮换，转完一圈回到列表循环', () {
+      final queue = RoomMusicQueue();
+      final seen = <String>[queue.mode];
+      for (var index = 0; index < PlaybackMode.cycle.length - 1; index += 1) {
+        queue.setMode(queue.nextMode);
+        seen.add(queue.mode);
+      }
+      expect(seen, PlaybackMode.cycle);
+
+      queue.setMode(queue.nextMode);
+      expect(queue.mode, PlaybackMode.repeatAll);
     });
   });
 

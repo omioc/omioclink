@@ -116,6 +116,10 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
   MusicSnapshot? _musicSnapshot;
   MusicSnapshot? get musicSnapshot => _musicSnapshot;
 
+  /// 服务端是否支持一次点一批（`hello.musicBatch`）：老服务器只认单条点歌。
+  bool _musicBatchSupported = false;
+  bool get musicBatchSupported => _musicBatchSupported;
+
   String? _lastError;
   String? get lastError => _lastError;
 
@@ -312,6 +316,8 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
     switch (message) {
       case ServerHello():
         media.updateIceServers(message.iceServers);
+        // 老服务器没有这个能力位：批量点歌会退回逐条发
+        _musicBatchSupported = message.musicBatch;
         if (_joinedRoomId != null && _phase == RoomPhase.active) {
           unawaited(_rejoinAfterReconnect());
         }
@@ -380,6 +386,24 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
   );
 
   @override
+  bool get supportsBatch => _musicBatchSupported;
+
+  @override
+  bool enqueueBatch(List<MusicEntryDraft> drafts) => signaling.send(
+    musicEnqueueBatchMessage([
+      for (final draft in drafts)
+        musicEnqueueEntry(
+          source: draft.source,
+          songId: draft.songId,
+          musicInfo: draft.musicInfo,
+          title: draft.title,
+          artist: draft.artist,
+          durationMs: draft.durationMs,
+        ),
+    ]),
+  );
+
+  @override
   void remove(String entryId) =>
       signaling.send(musicRemoveMessage(entryId: entryId));
 
@@ -393,6 +417,9 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
   @override
   void reportEos({required String entryId, required int revision}) =>
       signaling.send(musicEosMessage(entryId: entryId, revision: revision));
+
+  @override
+  void setMode(String mode) => signaling.send(musicModeMessage(mode: mode));
 
   /// 客户端自己发的 ping 还没收到 pong 的样本：`t` → 发出时刻（本机毫秒）。
   final Map<double, int> _pendingPings = <double, int>{};

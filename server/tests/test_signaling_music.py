@@ -61,6 +61,7 @@ def test_hello_and_room_state_expose_music(client: TestClient) -> None:
     with connect(client, token) as (ws, hello):
         assert isinstance(hello["serverTimeMs"], int)
         assert hello["musicEnabled"] is True
+        assert hello["musicBatch"] is True
 
         state = _join(ws, room["roomId"])
         music = state["music"]
@@ -111,7 +112,59 @@ def test_enqueue_broadcasts_state_with_anchor(client: TestClient) -> None:
             assert state["queue"][0]["requestedBy"]["peerId"] == hello_b["peerId"]
 
 
-def test_enqueue_rate_limit_and_per_user_limit(client: TestClient) -> None:
+def test_enqueue_batch_accepts_whole_batch_at_once(client: TestClient) -> None:
+    alice, _ = register_user(client, "alice")
+    room = create_room(client, alice)
+
+    with connect(client, alice) as (ws, _):
+        _join(ws, room["roomId"])
+        ws.send_json(
+            {
+                "type": "music_enqueue_batch",
+                "entries": [
+                    {
+                        "source": "kugou",
+                        "songId": f"song-{index}",
+                        "musicInfo": {"id": f"song-{index}"},
+                        "title": f"歌{index}",
+                        "artist": "歌手",
+                        "durationMs": 180_000,
+                    }
+                    for index in range(3)
+                ],
+            }
+        )
+
+        # 一批只广播一次：当前曲是第一首，其余进队列
+        state = _recv(ws, "music_state")
+        assert state["revision"] == 1
+        assert state["current"]["songId"] == "song-0"
+        assert [item["songId"] for item in state["queue"]] == ["song-1", "song-2"]
+
+
+def test_music_mode_is_room_wide(client: TestClient) -> None:
+    alice, _ = register_user(client, "alice")
+    bob, _ = register_user(client, "bob")
+    room = create_room(client, alice)
+
+    with connect(client, alice) as (ws_a, _), connect(client, bob) as (ws_b, _):
+        _join(ws_a, room["roomId"])
+        _join(ws_b, room["roomId"])
+        _recv(ws_a, "member_joined")
+
+        # 谁都能改，而且房间级：两个人拿到的快照都变成单曲循环
+        ws_b.send_json({"type": "music_mode", "mode": "repeat_one"})
+        for ws in (ws_a, ws_b):
+            state = _recv(ws, "music_state")
+            assert state["mode"] == "repeat_one"
+
+        # 非法模式由协议层挡掉，不会污染房间状态
+        ws_b.send_json({"type": "music_mode", "mode": "nope"})
+        error = _recv(ws_b, "error")
+        assert error["code"] == "invalid_message"
+
+
+def test_enqueue_rate_limit(client: TestClient) -> None:
     alice, _ = register_user(client, "alice")
     room = create_room(client, alice)
 
@@ -191,6 +244,10 @@ def test_eos_advances_once(client: TestClient) -> None:
 
     with connect(client, alice) as (ws, _):
         _join(ws, room["roomId"])
+        # 默认是列表循环（放完会重新排起来）；这条用例要看「队列空了就停」，
+        # 所以先切成顺序播放，再点歌（模式会推进 revision，EOS 必须用最新那个）
+        ws.send_json({"type": "music_mode", "mode": "sequential"})
+        _recv(ws, "music_state")
         _enqueue(ws, "song-1")
         first = _recv(ws, "music_state")
         _enqueue(ws, "song-2")  # 会被冷却拦下，这里只用第一首

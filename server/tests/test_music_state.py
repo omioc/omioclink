@@ -5,15 +5,23 @@
 
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from app.signaling.music import (
+    DEFAULT_MUSIC_MODE,
     END_GRACE_MS,
     ENQUEUE_COOLDOWN_MS,
     MAX_MUSIC_INFO_BYTES,
     MAX_QUEUE_SIZE,
+    MUSIC_MODE_REPEAT_ALL,
+    MUSIC_MODE_REPEAT_ONE,
+    MUSIC_MODE_SEQUENTIAL,
+    MUSIC_MODE_SHUFFLE,
     PER_USER_QUEUE_LIMIT,
     PREROLL_MS,
+    EnqueueRequest,
     UNKNOWN_DURATION_CAP_MS,
     MusicError,
     RoomMusic,
@@ -146,6 +154,57 @@ def test_duplicate_song_and_oversized_music_info() -> None:
     assert info.value.code == ErrorCode.MUSIC_INVALID_ENTRY
 
 
+def _batch(
+    music: RoomMusic,
+    *,
+    peer_id: str = "p1",
+    count: int,
+    now: int,
+    start: int = 0,
+) -> list[str]:
+    added = music.enqueue_many(
+        peer_id=peer_id,
+        display_name=f"用户{peer_id}",
+        requests=[
+            EnqueueRequest(
+                source="kugou",
+                song_id=str(index),
+                music_info={"id": str(index)},
+                title=f"歌{index}",
+            )
+            for index in range(start, start + count)
+        ],
+        now=now,
+    )
+    return [entry.song_id for entry in added]
+
+
+def test_enqueue_many_is_one_request() -> None:
+    music = RoomMusic()
+
+    assert _batch(music, count=3, now=0) == ["0", "1", "2"]
+    # 一批只算一次请求：revision 只加一次，当前曲就是第一首
+    assert music.revision == 1
+    assert music.current is not None and music.current.song_id == "0"
+
+    # 冷却按批算：2 秒内再来一批直接拒，不会一半进一半被拦
+    with pytest.raises(MusicError) as info:
+        _batch(music, count=3, now=ENQUEUE_COOLDOWN_MS - 1, start=10)
+    assert info.value.code == ErrorCode.MUSIC_RATE_LIMITED
+
+    # 冷却过后整批照收
+    assert _batch(music, count=2, now=ENQUEUE_COOLDOWN_MS, start=20) == ["20", "21"]
+
+
+def test_enqueue_many_stops_at_per_user_quota() -> None:
+    music = RoomMusic()
+
+    added = _batch(music, count=PER_USER_QUEUE_LIMIT + 5, now=0)
+
+    assert len(added) == PER_USER_QUEUE_LIMIT
+    assert music.size == PER_USER_QUEUE_LIMIT
+
+
 def test_tick_advances_when_duration_elapsed() -> None:
     music = RoomMusic()
     _enqueue(music, song_id="1", now=0, duration_ms=10_000)
@@ -163,11 +222,95 @@ def test_tick_advances_when_duration_elapsed() -> None:
 
 def test_tick_with_unknown_duration_uses_cap() -> None:
     music = RoomMusic()
+    # 顺序播放：一首放完就停，才能看清 cap 生效；列表循环会把它重新排起来
+    music.set_mode(MUSIC_MODE_SEQUENTIAL)
     _enqueue(music, song_id="1", now=0, duration_ms=None)
 
     assert music.tick(PREROLL_MS + 60_000) is False
     assert music.tick(PREROLL_MS + UNKNOWN_DURATION_CAP_MS) is True
     assert music.current is None, "队列空了，current 也该清掉"
+
+
+def test_default_mode_is_repeat_all() -> None:
+    music = RoomMusic()
+    assert music.mode == DEFAULT_MUSIC_MODE
+    assert music.mode == MUSIC_MODE_REPEAT_ALL
+    assert music.snapshot(0).mode == MUSIC_MODE_REPEAT_ALL
+
+
+def test_set_mode_bumps_revision_once() -> None:
+    music = RoomMusic()
+    music.set_mode(MUSIC_MODE_SEQUENTIAL)
+    assert music.revision == 1
+    # 同一个模式再点一次：不折腾快照，也不打扰正在播的歌
+    music.set_mode(MUSIC_MODE_SEQUENTIAL)
+    assert music.revision == 1
+    with pytest.raises(MusicError):
+        music.set_mode("nope")
+
+
+def test_repeat_one_restarts_same_song() -> None:
+    music = RoomMusic()
+    _enqueue(music, song_id="1", now=0, duration_ms=10_000)
+    _enqueue(music, peer_id="p2", song_id="2", now=0, duration_ms=10_000)
+    music.set_mode(MUSIC_MODE_REPEAT_ONE)
+
+    current = music.current
+    assert current is not None
+    due = current.anchor_server_ms + 10_000 + END_GRACE_MS
+    assert music.tick(due) is True
+
+    again = music.current
+    assert again is not None and again.song_id == "1", "单曲循环：还是这首"
+    # 换锚点重来：客户端靠 anchorServerMs 变化重新起播
+    assert again.anchor_server_ms == due + PREROLL_MS
+    assert [item.song_id for item in music.queue] == ["2"], "队列不该被消耗"
+
+
+def test_sequential_stops_when_queue_ends() -> None:
+    music = RoomMusic()
+    music.set_mode(MUSIC_MODE_SEQUENTIAL)
+    _enqueue(music, song_id="1", now=0, duration_ms=10_000)
+
+    current = music.current
+    assert current is not None
+    assert music.tick(current.anchor_server_ms + 10_000 + END_GRACE_MS) is True
+    assert music.current is None
+
+
+def test_repeat_all_replays_whole_round() -> None:
+    music = RoomMusic()
+    _enqueue(music, song_id="1", now=0, duration_ms=10_000)
+    _enqueue(music, peer_id="p2", song_id="2", now=0, duration_ms=10_000)
+
+    first = music.current
+    assert first is not None and first.song_id == "1"
+    assert music.tick(first.anchor_server_ms + 10_000 + END_GRACE_MS) is True
+    second = music.current
+    assert second is not None and second.song_id == "2"
+
+    assert music.tick(second.anchor_server_ms + 10_000 + END_GRACE_MS) is True
+    # 一轮播完：按原顺序把这一轮重新排一遍
+    restarted = music.current
+    assert restarted is not None and restarted.song_id == "1"
+    assert [item.song_id for item in music.queue] == ["2"]
+
+
+def test_shuffle_plays_every_entry_once() -> None:
+    music = RoomMusic(_rng=random.Random(7))
+    music.set_mode(MUSIC_MODE_SHUFFLE)
+    for index, peer in enumerate(["p1", "p2", "p3"]):
+        _enqueue(music, peer_id=peer, song_id=str(index), now=0)
+
+    played = [music.current.song_id]
+    for _ in range(2):
+        current = music.current
+        assert current is not None
+        assert music.tick(current.anchor_server_ms + 180_000 + END_GRACE_MS) is True
+        played.append(music.current.song_id)
+
+    # 随机的是顺序，不是重复：「三首各播一次」
+    assert sorted(played) == ["0", "1", "2"]
 
 
 def test_position_ms_respects_anchor_and_duration() -> None:

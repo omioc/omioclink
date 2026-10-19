@@ -17,7 +17,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings
 from app.core.security import verify_password
-from app.signaling.music import MusicError, now_ms
+from app.signaling.music import EnqueueRequest, MusicError, now_ms
 from app.signaling.protocol import (
     PROTOCOL_VERSION,
     AnswerMessage,
@@ -34,8 +34,10 @@ from app.signaling.protocol import (
     MemberStateChangedMessage,
     MemberStateMessage,
     MusicClearMessage,
+    MusicEnqueueBatchMessage,
     MusicEnqueueMessage,
     MusicEosMessage,
+    MusicModeMessage,
     MusicRemoveMessage,
     MusicSkipMessage,
     MusicStateMessage,
@@ -244,6 +246,8 @@ class SignalingHub:
             await self._handle_relay(peer, message)
         elif isinstance(message, MusicEnqueueMessage):
             await self._handle_music_enqueue(peer, message)
+        elif isinstance(message, MusicEnqueueBatchMessage):
+            await self._handle_music_enqueue_batch(peer, message)
         elif isinstance(message, MusicRemoveMessage):
             await self._handle_music_remove(peer, message)
         elif isinstance(message, MusicSkipMessage):
@@ -252,6 +256,8 @@ class SignalingHub:
             await self._handle_music_clear(peer)
         elif isinstance(message, MusicEosMessage):
             await self._handle_music_eos(peer, message)
+        elif isinstance(message, MusicModeMessage):
+            await self._handle_music_mode(peer, message)
         else:  # pragma: no cover - 受 discriminated union 保护
             await self._error(peer, ErrorCode.UNSUPPORTED_MESSAGE, "不支持的消息类型")
 
@@ -396,6 +402,7 @@ class SignalingHub:
                 server_time_ms=state.server_time_ms,
                 current=state.current,
                 queue=state.queue,
+                mode=state.mode,
             ),
         )
 
@@ -428,6 +435,46 @@ class SignalingHub:
             )
         except MusicError as error:
             await self._error(peer, error.code, error.message, ref="music_enqueue")
+            return
+        await self._broadcast_music_state(room)
+
+    async def _handle_music_enqueue_batch(
+        self, peer: Peer, message: MusicEnqueueBatchMessage
+    ) -> None:
+        """一次点一批：整批算一次请求，只广播一次状态。"""
+        room = self._music_room(peer)
+        if room is None:
+            await self._error(
+                peer, ErrorCode.NOT_IN_ROOM, "尚未加入房间", ref="music_enqueue_batch"
+            )
+            return
+        if not self.settings.music_enabled:
+            await self._error(
+                peer,
+                ErrorCode.MUSIC_FORBIDDEN,
+                "服务器没有开启点歌",
+                ref="music_enqueue_batch",
+            )
+            return
+        try:
+            room.music.enqueue_many(
+                peer_id=peer.peer_id,
+                display_name=peer.display_name,
+                requests=[
+                    EnqueueRequest(
+                        source=entry.source,
+                        song_id=entry.song_id,
+                        music_info=entry.music_info,
+                        title=entry.title,
+                        artist=entry.artist,
+                        duration_ms=entry.duration_ms,
+                    )
+                    for entry in message.entries
+                ],
+                now=now_ms(),
+            )
+        except MusicError as error:
+            await self._error(peer, error.code, error.message, ref="music_enqueue_batch")
             return
         await self._broadcast_music_state(room)
 
@@ -487,6 +534,24 @@ class SignalingHub:
         )
         if advanced:
             await self._broadcast_music_state(room)
+
+    async def _handle_music_mode(self, peer: Peer, message: MusicModeMessage) -> None:
+        """切换播放模式：房间级设置，谁都能改（和点歌一样开放）。"""
+        room = self._music_room(peer)
+        if room is None:
+            await self._error(peer, ErrorCode.NOT_IN_ROOM, "尚未加入房间", ref="music_mode")
+            return
+        if not self.settings.music_enabled:
+            await self._error(
+                peer, ErrorCode.MUSIC_FORBIDDEN, "服务器没有开启点歌", ref="music_mode"
+            )
+            return
+        try:
+            room.music.set_mode(message.mode)
+        except MusicError as error:
+            await self._error(peer, error.code, error.message, ref="music_mode")
+            return
+        await self._broadcast_music_state(room)
 
     async def music_tick_loop(self) -> None:
         """每秒推进一次：到点就切下一首（duration 可信时不必等客户端上报 EOS）。"""

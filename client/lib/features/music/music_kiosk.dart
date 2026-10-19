@@ -15,6 +15,7 @@ import '../../signaling/protocol.dart';
 import '../../widgets/common.dart';
 import 'music_widgets.dart';
 import 'now_playing.dart';
+import 'playback_mode.dart';
 
 /// 点歌台（MusicFree 式）：顶部搜索框 + 左导航（排行榜 / 热门歌单）。
 ///
@@ -101,9 +102,25 @@ class _MusicKioskState extends State<MusicKiosk> {
     _notify(queue.contains(track) ? '这首歌已经在播放队列里了' : '播放队列已满');
   }
 
+  /// 批量点歌：新服务端支持一次点一批（整批算一次请求），一批立刻到位；
+  /// 老服务器只认单条，队列会按冷却节奏逐条发，这时先给一句提示免得以为没反应。
   void _enqueueAll(Iterable<MusicTrack> tracks) {
-    final added = queue.enqueueAll(tracks);
-    _notify(added > 0 ? '已加入 $added 首' : '没有可加入的歌曲（重复或队列已满）');
+    final list = tracks.toList(growable: false);
+    if (list.isEmpty) {
+      _notify('没有可加入的歌曲（重复或队列已满）');
+      return;
+    }
+    if (list.length > 1 && !(queue.sink?.supportsBatch ?? false)) {
+      _notify('老服务器只支持逐条点歌：正在按 2 秒间隔排入 ${list.length} 首');
+    }
+    unawaited(
+      queue.enqueueAll(list).then((added) {
+        if (!mounted) {
+          return;
+        }
+        _notify(added > 0 ? '已加入 $added 首' : '没有可加入的歌曲（重复或队列已满）');
+      }),
+    );
   }
 
   void _notify(String message) {
@@ -1865,6 +1882,9 @@ class _KioskNowPlayingBar extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // 播放模式：房间级设置，点一下轮到下一个模式（图标即当前模式）
+        PlaybackModeButton(queue: queue, compact: compact),
+        const SizedBox(width: AppSpacing.xs),
         Tooltip(
           message: playing ? '暂停' : '播放',
           child: Container(

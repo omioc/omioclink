@@ -296,6 +296,7 @@ class MusicSnapshot {
     this.serverTimeMs = 0,
     this.current,
     this.queue = const <MusicEntry>[],
+    this.mode = 'repeat_all',
   });
 
   factory MusicSnapshot.fromJson(Map<String, dynamic> json) => MusicSnapshot(
@@ -308,12 +309,17 @@ class MusicSnapshot {
         .whereType<Map<String, dynamic>>()
         .map(MusicEntry.fromJson)
         .toList(growable: false),
+    // 老服务器没有这个字段：缺省就是列表循环
+    mode: json['mode'] as String? ?? 'repeat_all',
   );
 
   final int revision;
   final int serverTimeMs;
   final MusicCurrent? current;
   final List<MusicEntry> queue;
+
+  /// 播放模式（房间级，服务端权威）：`repeat_all` / `repeat_one` / `sequential` / `shuffle`。
+  final String mode;
 }
 // --------------------------------------------------------------------------- //
 // 服务器 → 客户端
@@ -363,6 +369,7 @@ final class ServerHello extends ServerMessage {
     this.avatar,
     this.serverTimeMs = 0,
     this.musicEnabled = false,
+    this.musicBatch = false,
   });
 
   factory ServerHello.fromJson(Map<String, dynamic> json) {
@@ -382,6 +389,7 @@ final class ServerHello extends ServerMessage {
       serverVersion: server['version'] as String? ?? '',
       serverTimeMs: (json['serverTimeMs'] as num?)?.toInt() ?? 0,
       musicEnabled: json['musicEnabled'] as bool? ?? false,
+      musicBatch: json['musicBatch'] as bool? ?? false,
       displayName: user['displayName'] as String? ?? '',
       username: user['username'] as String? ?? '',
       userId: (user['id'] as num?)?.toInt() ?? 0,
@@ -400,6 +408,8 @@ final class ServerHello extends ServerMessage {
   final int serverTimeMs;
   /// 服务器是否开启房间点歌（关闭时客户端不该显示点歌台）。
   final bool musicEnabled;
+  /// 是否支持一次点一批（`music_enqueue_batch`）：老服务器没有这个能力位。
+  final bool musicBatch;
   final String username;
   final String displayName;
   final int userId;
@@ -664,6 +674,23 @@ Map<String, dynamic> candidateMessage({
 };
 
 // ---- 点歌（房间共享队列）----
+/// 单条点歌的字段（单条消息与批量消息共用同一套线上字段）。
+Map<String, dynamic> musicEnqueueEntry({
+  required String source,
+  required String songId,
+  required Map<String, dynamic> musicInfo,
+  String title = '',
+  String artist = '',
+  int? durationMs,
+}) => {
+  'source': source,
+  'songId': songId,
+  'musicInfo': musicInfo,
+  'title': title,
+  'artist': artist,
+  'durationMs': ?durationMs,
+};
+
 /// 点歌：`musicInfo` 是音源原始对象，服务端原样保留并广播给全房间。
 Map<String, dynamic> musicEnqueueMessage({
   required String source,
@@ -675,13 +702,21 @@ Map<String, dynamic> musicEnqueueMessage({
 }) => {
   'v': kProtocolVersion,
   'type': 'music_enqueue',
-  'source': source,
-  'songId': songId,
-  'musicInfo': musicInfo,
-  'title': title,
-  'artist': artist,
-  'durationMs': ?durationMs,
+  ...musicEnqueueEntry(
+    source: source,
+    songId: songId,
+    musicInfo: musicInfo,
+    title: title,
+    artist: artist,
+    durationMs: durationMs,
+  ),
 };
+
+/// 一次点一批（歌单「全部加入」）：整批算一次请求，服务端只按一次冷却计时，
+/// 所以一批能立刻排进去——逐条发的话第 2 条起都会被冷却拦下。
+Map<String, dynamic> musicEnqueueBatchMessage(
+  List<Map<String, dynamic>> entries,
+) => {'v': kProtocolVersion, 'type': 'music_enqueue_batch', 'entries': entries};
 
 Map<String, dynamic> musicRemoveMessage({required String entryId}) => {
   'v': kProtocolVersion,
@@ -709,4 +744,11 @@ Map<String, dynamic> musicEosMessage({
   'type': 'music_eos',
   'entryId': entryId,
   'revision': revision,
+};
+
+/// 切换播放模式（房间级：所有人一起变）。
+Map<String, dynamic> musicModeMessage({required String mode}) => {
+  'v': kProtocolVersion,
+  'type': 'music_mode',
+  'mode': mode,
 };

@@ -167,6 +167,14 @@ class MusicPlayer extends ChangeNotifier {
     if (track == null || track.key == _current?.key && playing) {
       return;
     }
+    await _playTrack(track);
+  }
+
+  /// 真正起播一首（本地模式）：解析直链 → 打开 → 播。
+  ///
+  /// 单曲循环要原地重来一遍，走的就是这里——`playCurrent` 有「同一首还在放就跳过」
+  /// 的短路，直接调它会被挡掉。
+  Future<void> _playTrack(MusicTrack track) async {
     _current = track;
     _status = MusicPlayerStatus.resolving;
     _error = null;
@@ -263,7 +271,9 @@ class MusicPlayer extends ChangeNotifier {
     }
     // 同一条目：已经在放 / 正在解析才什么都不做。停过（idle）或上次失败（error）
     // 的时候要重来一次——重新进房拿到的往往就是同一条目，跳过的话它会一直不出声。
+    // 锚点变了说明服务端让它重新开始（单曲循环），这时也要重来。
     if (previous?.entryId == current.entryId &&
+        previous?.anchorServerMs == current.anchorServerMs &&
         _status != MusicPlayerStatus.idle &&
         _status != MusicPlayerStatus.error) {
       notifyListeners();
@@ -480,6 +490,14 @@ class MusicPlayer extends ChangeNotifier {
 
   Future<void> _advance() async {
     if (_disposed) {
+      return;
+    }
+    final current = _current;
+    if (current != null &&
+        queue.mode == PlaybackMode.repeatOne &&
+        !_failedKeys.contains(current.key)) {
+      // 单曲循环：同一首原地重来（不碰队列，也不会被「同一首跳过」的短路挡掉）
+      await _playTrack(current);
       return;
     }
     if (queue.isEmpty) {

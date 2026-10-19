@@ -16,11 +16,26 @@ class _FakeSink implements MusicCommandSink {
   final List<String?> skipped = <String?>[];
   final List<({String entryId, int revision})> eos =
       <({String entryId, int revision})>[];
+  final List<String> modes = <String>[];
   int cleared = 0;
+
+  /// 服务端是否支持一次点一批（测试里可以关掉，模拟老服务器）。
+  @override
+  bool supportsBatch = true;
+
+  /// 每次 `enqueueBatch` 收到的整批：一批只算一条信令。
+  final List<List<MusicEntryDraft>> batches = <List<MusicEntryDraft>>[];
 
   @override
   bool enqueue(MusicEntryDraft draft) {
     enqueued.add(draft);
+    return true;
+  }
+
+  @override
+  bool enqueueBatch(List<MusicEntryDraft> drafts) {
+    batches.add(drafts);
+    enqueued.addAll(drafts);
     return true;
   }
 
@@ -36,6 +51,9 @@ class _FakeSink implements MusicCommandSink {
   @override
   void reportEos({required String entryId, required int revision}) =>
       eos.add((entryId: entryId, revision: revision));
+
+  @override
+  void setMode(String mode) => modes.add(mode);
 }
 
 MusicEntry _entry(
@@ -301,19 +319,102 @@ void main() {
       expect(sink.eos, isEmpty);
     });
 
-    test('批量点歌在服务端模式最多发 2 条（每人 2 首）', () {
+    test('批量点歌最多发 88 条，而且一批只发一条信令', () async {
       final sink = _FakeSink();
       final queue = RoomMusicQueue()..bind(sink);
       queue.applySnapshot(const MusicSnapshot(revision: 1));
 
-      final added = queue.enqueueAll(<MusicTrack>[
+      // 服务端每人最多 88 首：多出来的不再发，省得换来一串被拒的提示
+      final added = await queue.enqueueAll(
+        List<MusicTrack>.generate(90, (index) => _track('$index')),
+      );
+
+      expect(added, 88);
+      // 「全部加入」必须一次到位：整批算一次请求，不会触发 2 秒冷却
+      expect(sink.batches, hasLength(1));
+      expect(sink.batches.single, hasLength(88));
+    });
+
+    test('批量点歌会扣掉自己已经占的名额', () async {
+      final sink = _FakeSink();
+      final queue = RoomMusicQueue()..bind(sink);
+      queue.setViewer(peerId: 'peer-me');
+      queue.applySnapshot(
+        MusicSnapshot(
+          revision: 1,
+          queue: <MusicEntry>[_entry('e1', by: 'peer-me', songId: '9')],
+        ),
+      );
+
+      final added = await queue.enqueueAll(
+        List<MusicTrack>.generate(90, (index) => _track('$index')),
+      );
+
+      expect(queue.mineCount, 1);
+      expect(added, 87); // 88 减掉自己已占的 1 首
+    });
+
+    test('老服务器不支持批量时退回逐条发，按冷却节奏排', () async {
+      final sink = _FakeSink()..supportsBatch = false;
+      final queue = RoomMusicQueue(
+        enqueueInterval: const Duration(milliseconds: 20),
+      )..bind(sink);
+      queue.applySnapshot(const MusicSnapshot(revision: 1));
+
+      final watch = Stopwatch()..start();
+      final added = await queue.enqueueAll(<MusicTrack>[
         _track('1'),
         _track('2'),
         _track('3'),
       ]);
+      watch.stop();
 
-      expect(added, 2);
-      expect(sink.enqueued, hasLength(2));
+      expect(added, 3);
+      expect(sink.batches, isEmpty);
+      expect(
+        sink.enqueued.map((draft) => draft.songId).toList(),
+        <String>['1', '2', '3'],
+      );
+      // 第 2、3 条各等满一个间隔：3 条至少两段
+      expect(
+        watch.elapsed,
+        greaterThanOrEqualTo(const Duration(milliseconds: 40)),
+      );
+    });
+
+    test('解绑会打断正在逐条发的批量点歌', () async {
+      final sink = _FakeSink()..supportsBatch = false;
+      final queue = RoomMusicQueue(
+        enqueueInterval: const Duration(milliseconds: 20),
+      )..bind(sink);
+      queue.applySnapshot(const MusicSnapshot(revision: 1));
+
+      final batch = queue.enqueueAll(
+        List<MusicTrack>.generate(10, (index) => _track('$index')),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      queue.unbind(sink);
+
+      final added = await batch;
+      expect(added, lessThan(10));
+      expect(sink.enqueued, hasLength(added));
+    });
+
+    test('播放模式跟着服务端快照走，切换只发意图', () {
+      final sink = _FakeSink();
+      final queue = RoomMusicQueue()..bind(sink);
+      queue.applySnapshot(const MusicSnapshot(revision: 1, mode: 'repeat_one'));
+
+      expect(queue.mode, 'repeat_one');
+      expect(queue.nextMode, 'sequential');
+
+      // 服务端模式：本地先不变，等服务端广播回来才算数
+      queue.setMode(queue.nextMode);
+      expect(sink.modes, <String>['sequential']);
+      expect(queue.mode, 'repeat_one');
+
+      queue.applySnapshot(const MusicSnapshot(revision: 2, mode: 'sequential'));
+      expect(queue.mode, 'sequential');
     });
 
     test('服务端拒绝的原因能取走一次', () {
@@ -530,7 +631,16 @@ void main() {
 /// 信令发不出去（已断线）的出口：`enqueue` 返回 false。
 class _DroppingSink implements MusicCommandSink {
   @override
+  bool get supportsBatch => true;
+
+  @override
   bool enqueue(MusicEntryDraft draft) => false;
+
+  @override
+  bool enqueueBatch(List<MusicEntryDraft> drafts) => false;
+
+  @override
+  void setMode(String mode) {}
 
   @override
   void remove(String entryId) {}

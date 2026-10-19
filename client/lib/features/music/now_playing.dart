@@ -8,6 +8,7 @@ import '../../music/music_player.dart';
 import '../../room/room_music.dart';
 import '../../widgets/common.dart';
 import 'music_widgets.dart';
+import 'playback_mode.dart';
 
 /// 「正在播放」的展示状态：没有播放引擎时退化成「即将播放」（队列第一首）。
 class NowPlayingView {
@@ -198,6 +199,9 @@ class _TransportControls extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // 播放模式：房间级设置，点一下轮到下一个模式（图标即当前模式）
+        PlaybackModeButton(queue: player.queue),
+        const SizedBox(width: AppSpacing.xs),
         Tooltip(
           message: playing ? '暂停' : '播放',
           child: Container(
