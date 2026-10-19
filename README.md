@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/omioc/omioclink/releases/download/latest/omioclink-client-win-x64-1.0.2.zip">Windows 免安装版下载</a>
+  <a href="https://github.com/omioc/omioclink/releases/download/v1.0.2/omioclink-client-win-x64-1.0.2.zip">Windows 免安装版下载</a>
   &nbsp;|&nbsp;
-  <a href="https://github.com/omioc/omioclink/releases/download/latest/omioclink-client-android-1.0.2.apk">Android APK 下载</a>
+  <a href="https://github.com/omioc/omioclink/releases/download/v1.0.2/omioclink-client-android-1.0.2.apk">Android APK 下载</a>
   &nbsp;|&nbsp;
-  <a href="https://github.com/omioc/omioclink/releases/download/latest/omioclink-server.tar">服务端镜像离线包</a>
+  <a href="https://github.com/omioc/omioclink/releases/download/v1.0.2/omioclink-server.tar">服务端镜像离线包</a>
 </p>
 
 ---
