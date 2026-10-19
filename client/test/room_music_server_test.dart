@@ -19,9 +19,9 @@ class _FakeSink implements MusicCommandSink {
   final List<String> modes = <String>[];
   int cleared = 0;
 
-  /// 服务端是否支持一次点一批（测试里可以关掉，模拟老服务器）。
+  /// 服务端是否支持一次点一批：`true` 支持、`false` 老服务器、`null` 还没协商。
   @override
-  bool supportsBatch = true;
+  bool? supportsBatch = true;
 
   /// 每次 `enqueueBatch` 收到的整批：一批只算一条信令。
   final List<List<MusicEntryDraft>> batches = <List<MusicEntryDraft>>[];
@@ -382,6 +382,28 @@ void main() {
       );
     });
 
+    test('能力未知（hello 还没到）时按批量发，不退回逐条', () async {
+      final sink = _FakeSink()..supportsBatch = null;
+      final queue = RoomMusicQueue(
+        enqueueInterval: const Duration(milliseconds: 20),
+      )..bind(sink);
+      queue.applySnapshot(const MusicSnapshot(revision: 1));
+
+      final added = await queue.enqueueAll(<MusicTrack>[
+        _track('1'),
+        _track('2'),
+        _track('3'),
+      ]);
+
+      // 未知不等于「老服务器」：一次发完，不进逐条节奏（逐条发时 batches 会是空的）
+      expect(added, 3);
+      expect(sink.batches, hasLength(1));
+      expect(
+        sink.batches.single.map((draft) => draft.songId).toList(),
+        <String>['1', '2', '3'],
+      );
+    });
+
     test('解绑会打断正在逐条发的批量点歌', () async {
       final sink = _FakeSink()..supportsBatch = false;
       final queue = RoomMusicQueue(
@@ -631,7 +653,7 @@ void main() {
 /// 信令发不出去（已断线）的出口：`enqueue` 返回 false。
 class _DroppingSink implements MusicCommandSink {
   @override
-  bool get supportsBatch => true;
+  bool? get supportsBatch => true;
 
   @override
   bool enqueue(MusicEntryDraft draft) => false;

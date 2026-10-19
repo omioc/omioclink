@@ -32,8 +32,11 @@ class PlaybackMode {
 ///
 /// 队列本身不认识 WebSocket：它只管「视图 + 意图」，这样单测里塞个假实现就能测。
 abstract interface class MusicCommandSink {
-  /// 服务端是否支持「一次点一批」：老服务器只认单条，批量点歌会退回逐条发。
-  bool get supportsBatch;
+  /// 服务端是否支持「一次点一批」。
+  ///
+  /// `null` = 还没协商完（没收到 hello）：这时按批量发，别把「未知」当「老服务器」。
+  /// 真老的服务器会忽略这条消息，随后的 hello 把它钉成 `false`，后续点歌自动退回逐条。
+  bool? get supportsBatch;
 
   bool enqueue(MusicEntryDraft draft);
 
@@ -345,7 +348,9 @@ class RoomMusicQueue extends ChangeNotifier {
       return _local.length - before;
     }
     final drafts = picked.map(MusicEntryDraft.fromTrack).toList(growable: false);
-    if (!sink.supportsBatch) {
+    // 只有「确定不支持」才逐条发；未知（hello 还没到）直接按批量发，
+    // 免得进房那一瞬间点歌被误判成老服务器，白等 2 秒 × N
+    if (sink.supportsBatch == false) {
       return _sendPaced(drafts);
     }
     if (!sink.enqueueBatch(drafts)) {

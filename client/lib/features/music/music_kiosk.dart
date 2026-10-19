@@ -139,15 +139,18 @@ class _MusicKioskState extends State<MusicKiosk> {
   }
 
   /// 批量点歌：新服务端支持一次点一批（整批算一次请求），一批立刻到位；
-  /// 老服务器只认单条，队列会按冷却节奏逐条发，这时先给一句提示免得以为没反应。
+  /// 确定不支持批量的服务器只能按冷却节奏逐条发，这时先给一句提示免得以为没反应。
+  ///
+  /// 提示只在「服务器明确不支持」时出现：能力未知（hello 还没到）与没进房
+  /// （走本地队列）都不该被说成老服务器。
   void _enqueueAll(Iterable<MusicTrack> tracks) {
     final list = tracks.toList(growable: false);
     if (list.isEmpty) {
       _notify('没有可加入的歌曲（重复或队列已满）');
       return;
     }
-    if (list.length > 1 && !(queue.sink?.supportsBatch ?? false)) {
-      _notify('老服务器只支持逐条点歌：正在按 2 秒间隔排入 ${list.length} 首');
+    if (list.length > 1 && queue.sink?.supportsBatch == false) {
+      _notify('服务器不支持批量点歌：正在按 2 秒间隔排入 ${list.length} 首');
     }
     unawaited(
       queue.enqueueAll(list).then((added) {

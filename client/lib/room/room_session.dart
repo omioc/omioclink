@@ -116,9 +116,13 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
   MusicSnapshot? _musicSnapshot;
   MusicSnapshot? get musicSnapshot => _musicSnapshot;
 
-  /// 服务端是否支持一次点一批（`hello.musicBatch`）：老服务器只认单条点歌。
-  bool _musicBatchSupported = false;
-  bool get musicBatchSupported => _musicBatchSupported;
+  /// 服务端是否支持一次点一批（`hello.musicBatch`）。
+  ///
+  /// 三态：`null` = 还没收到 hello（能力未知）、`false` = 老服务器没有这个能力位、
+  /// `true` = 支持。以前用布尔且默认 false，于是「还没协商完」被当成「老服务器」，
+  /// 进房瞬间批量点歌会被拆成逐条发，还顺带弹一句误导性的提示。
+  bool? _musicBatchSupported;
+  bool? get musicBatchSupported => _musicBatchSupported;
 
   String? _lastError;
   String? get lastError => _lastError;
@@ -386,7 +390,7 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
   );
 
   @override
-  bool get supportsBatch => _musicBatchSupported;
+  bool? get supportsBatch => _musicBatchSupported;
 
   @override
   bool enqueueBatch(List<MusicEntryDraft> drafts) => signaling.send(
