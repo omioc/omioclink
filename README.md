@@ -346,6 +346,10 @@ flutter test
 
 本项目以 [MIT](LICENSE) 许可证开源：可自由使用、修改、分发与商用，保留版权与许可声明即可。
 
+## 9. 社区
+
+感谢 [LINUX DO](https://linux.do) 社区。学 AI，上 L 站。
+
 ---
 
 <p align="center">
