@@ -37,6 +37,19 @@ jobs:
       - name: 版本号一致性（pubspec → app_version.dart / Runner.rc）
         run: dart run tool/sync_version.dart --check
       - run: flutter analyze lib test
+      # 点歌台相关的测试要真跑 JS：quickjs_engine 只是个 FFI 桥，pub 包不带预编译产物。
+      # 本机是手动放了一份 dll 到 client/native/build/（已被 gitignore），CI 上现编一个 .so，
+      # 再用 LIBQUICKJSC_TEST_PATH 指给测试进程 —— 这是这个包自带的测试期加载方式。
+      - name: 现编 QuickJS 原生桥（flutter test 需要）
+        run: |
+          set -euo pipefail
+          PKG=$(find "$HOME/.pub-cache" -maxdepth 5 -type d -name "quickjs_engine-*" | head -n1)
+          test -n "$PKG" || { echo "::error::pub 缓存里没找到 quickjs_engine"; exit 1; }
+          echo "quickjs_engine: $PKG"
+          sh "$PKG/tool/build_native.sh"
+          LIB="$PKG/native/build/libquickjs_c_bridge_plugin.so"
+          test -f "$LIB" || { echo "::error::没编出 $LIB"; exit 1; }
+          echo "LIBQUICKJSC_TEST_PATH=$LIB" >> "$GITHUB_ENV"
       - run: flutter test
 
   server:

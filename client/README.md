@@ -132,6 +132,11 @@ flutter test
 
 两条都必须干净 / 全绿；不要跑仓库级 `dart format`（本仓库并非 format-clean）
 
+点歌台相关测试要真跑 JS，`quickjs_engine` 只是 FFI 桥、pub 包不自带预编译产物：本机要在
+`client/native/build/` 放一份 `quickjs_c_bridge_plugin.dll`（目录已被 gitignore），否则那些用例整片失败；
+没有就从 pub 缓存里的包跑一次 `tool/build_native.ps1` 重新编。CI 上由 workflow 现编 `.so` 并用
+`LIBQUICKJSC_TEST_PATH` 指给测试进程
+
 ---
 
 ## 六、代码位置速查
