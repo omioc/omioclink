@@ -1,0 +1,345 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:crypto/crypto.dart' as crypto;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:omioclink_client/musicfree/musicfree_host.dart';
+import 'package:omioclink_client/musicfree/musicfree_plugins.dart';
+import 'package:omioclink_client/musicfree/plugin_paths.dart';
+
+String pluginCode(
+  String platform,
+  String version, {
+  String srcUrl = '',
+  String titleSuffix = '',
+}) {
+  return '''
+module.exports = {
+  platform: "$platform",
+  version: "$version",
+  author: "probe",
+  srcUrl: "$srcUrl",
+  async search(query, page, type) {
+    return { isEnd: true, data: [{ id: "1", title: query + "$titleSuffix", artist: "歌手" }] };
+  },
+  async getMediaSource(item, quality) {
+    return { url: "https://example.invalid/" + item.id + "?q=" + quality };
+  }
+};
+''';
+}
+
+void main() {
+  late HttpServer server;
+  late String base;
+  late Directory tempRoot;
+  late MusicFreeHost host;
+  late MusicFreePlugins plugins;
+  late String bundle;
+  var upgraded = false;
+  /// 模拟「第一次下载失败、之后能成功」的插件：验证失败会被记住并在下次补装。
+  var flakyDown = true;
+  var fetchCount = 0;
+  final requestedUris = <String>[];
+
+  setUpAll(() async {
+    bundle = File('assets/musicfree/runtime.bundle.js').readAsStringSync();
+  });
+
+  setUp(() async {
+    upgraded = false;
+    flakyDown = true;
+    fetchCount = 0;
+    requestedUris.clear();
+    tempRoot = await Directory.systemTemp.createTemp('omioc-mf-plugins-');
+    server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    base = 'http://127.0.0.1:${server.port}';
+    server.listen((HttpRequest request) async {
+      fetchCount += 1;
+      requestedUris.add(request.uri.toString());
+      final path = request.uri.path;
+      Future<void> text(String body, {String type = 'js'}) async {
+        request.response.headers.contentType = type == 'json'
+            ? ContentType('application', 'json', charset: 'utf-8')
+            : ContentType('text', 'javascript', charset: 'utf-8');
+        request.response.write(body);
+        await request.response.close();
+      }
+
+      switch (path) {
+        case '/a.js':
+          await text(
+            upgraded
+                ? pluginCode('插件A', '2.0.0', srcUrl: '$base/a.js')
+                : pluginCode('插件A', '1.0.0', srcUrl: '$base/a.js'),
+          );
+          return;
+        case '/b.js':
+          await text(pluginCode('插件B', '1.0.0', srcUrl: '$base/b.js'));
+          return;
+        case '/single.js':
+          await text(pluginCode('单插件', '1.0.0', srcUrl: '$base/single.js'));
+          return;
+        case '/older.js':
+          await text(pluginCode('插件A', '0.9.0'));
+          return;
+        case '/sub.json':
+          await text(
+            jsonEncode(<String, dynamic>{
+              'plugins': [
+                <String, dynamic>{'url': '$base/a.js'},
+                <String, dynamic>{'url': '$base/b.js'},
+              ],
+            }),
+            type: 'json',
+          );
+          return;
+        case '/other-sub.json':
+          await text(
+            jsonEncode(<String, dynamic>{
+              'plugins': [
+                <String, dynamic>{'url': '$base/single.js'},
+              ],
+            }),
+            type: 'json',
+          );
+          return;
+        case '/flaky.js':
+          if (flakyDown) {
+            request.response.statusCode = 500;
+            await request.response.close();
+            return;
+          }
+          await text(pluginCode('插件慢', '1.0.0', srcUrl: '$base/flaky.js'));
+          return;
+        case '/sub2.json':
+          await text(
+            jsonEncode(<String, dynamic>{
+              'plugins': [
+                <String, dynamic>{'url': '$base/a.js'},
+                <String, dynamic>{'url': '$base/flaky.js'},
+              ],
+            }),
+            type: 'json',
+          );
+          return;
+        default:
+          request.response.statusCode = 404;
+          await request.response.close();
+      }
+    });
+
+    host = MusicFreeHost(
+      paths: PluginPaths(root: tempRoot.path),
+      bundleSource: bundle,
+    );
+    plugins = MusicFreePlugins(
+      host: host,
+      paths: PluginPaths(root: tempRoot.path),
+    );
+  });
+
+  tearDown(() async {
+    host.dispose();
+    await server.close(force: true);
+    if (tempRoot.existsSync()) {
+      for (var attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          tempRoot.deleteSync(recursive: true);
+          break;
+        } on FileSystemException {
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+        }
+      }
+    }
+  });
+
+  test('.js 订阅：安装后 hash = sha256(源码)，源码落盘，请求带随机 hash', () async {
+    // HTTP 请求不会带 fragment，所以用 MockClient 观察「派发出去的 URL」，
+    // 对应 MusicFree 的 addRandomHash（无 # 时追加时间戳）。
+    final recorded = <String>[];
+    final mocked = MusicFreePlugins(
+      host: host,
+      paths: PluginPaths(root: tempRoot.path),
+      httpClient: MockClient((request) async {
+        recorded.add(request.url.toString());
+        return http.Response.bytes(
+          utf8.encode(pluginCode('单插件', '1.0.0', srcUrl: '$base/single.js')),
+          200,
+        );
+      }),
+    );
+    await mocked.syncSubscription(urls: <String>['$base/single.js']);
+    final installed = mocked.plugins;
+    expect(installed, hasLength(1));
+    expect(installed.first.platform, '单插件');
+    final expectedHash = crypto.sha256.convert(utf8.encode(
+      pluginCode('单插件', '1.0.0', srcUrl: '$base/single.js'),
+    )).toString();
+    expect(installed.first.hash, expectedHash);
+    expect(File('${tempRoot.path}/musicfree-plugins/$expectedHash.js').existsSync(), isTrue);
+    expect(recorded.single.contains('#'), isTrue, reason: '请求应带随机 hash 绕开缓存');
+  });
+  test('.json 订阅：清单里的插件全部安装', () async {
+    await plugins.syncSubscription(urls: <String>['$base/sub.json']);
+    expect(plugins.plugins.map((plugin) => plugin.platform).toSet(), <String>{'插件A', '插件B'});
+  });
+
+  test('一个插件下载失败不会停在半成品：下次同步只补失败的那个', () async {
+    // 第一次：flaky 返回 500。同一份订阅里的插件A要照常装上。
+    final first = await plugins.syncSubscription(
+      urls: <String>['$base/sub2.json'],
+      signature: 'sig-flaky',
+    );
+    expect(first.failures, isNotEmpty, reason: '失败的插件要如实报出来');
+    expect(
+      plugins.plugins.map((plugin) => plugin.platform),
+      contains('插件A'),
+      reason: '一个坏插件不能拖累同一份订阅里的其它插件',
+    );
+    expect(plugins.plugins.map((plugin) => plugin.platform), isNot(contains('插件慢')));
+
+    // 签名没变（等价于用户下次打开应用）：上次失败的地址必须再试一次，
+    // 而不是因为「已经有插件了」就永远跳过。
+    flakyDown = false;
+    final second = await plugins.syncSubscription(
+      urls: <String>['$base/sub2.json'],
+      signature: 'sig-flaky',
+    );
+    expect(second.failures, isEmpty);
+    expect(plugins.plugins.map((plugin) => plugin.platform), contains('插件慢'));
+
+    // 装齐之后再同步：不该再发任何下载请求
+    fetchCount = 0;
+    await plugins.syncSubscription(
+      urls: <String>['$base/sub2.json'],
+      signature: 'sig-flaky',
+    );
+    expect(fetchCount, 0, reason: '装齐之后不再重复下载');
+  });
+
+  test('同 hash 重复安装静默跳过', () async {
+    await plugins.syncSubscription(urls: <String>['$base/single.js']);
+    final before = plugins.plugins.length;
+    expect(plugins.plugins.length, before);
+  });
+
+  test('同名新版本替换旧版本并删掉旧文件', () async {
+    await plugins.syncSubscription(urls: <String>['$base/sub.json']);
+    final oldA = plugins.plugins.firstWhere((plugin) => plugin.platform == '插件A');
+    expect(oldA.version, '1.0.0');
+    final oldFile = File('${tempRoot.path}/musicfree-plugins/${oldA.hash}.js');
+    expect(oldFile.existsSync(), isTrue);
+
+    upgraded = true;
+    await plugins.installFromRemote('$base/a.js');
+
+    final pluginsNow = plugins.plugins.where((plugin) => plugin.platform == '插件A').toList();
+    expect(pluginsNow, hasLength(1));
+    expect(pluginsNow.first.version, '2.0.0');
+    expect(oldFile.existsSync(), isFalse, reason: '旧版本源码应被删除');
+  });
+
+  test('用旧版本覆盖新版本会被拒绝', () async {
+    await plugins.installFromRemote('$base/a.js'); // 1.0.0
+    await expectLater(
+      plugins.installFromRemote('$base/older.js'), // 0.9.0
+      throwsA(isA<MusicFreeException>().having(
+        (error) => error.message,
+        'message',
+        contains('已安装更新版本的插件'),
+      )),
+    );
+    expect(plugins.plugins.firstWhere((plugin) => plugin.platform == '插件A').version, '1.0.0');
+  });
+
+  test('卸载会删除源码文件', () async {
+    await plugins.syncSubscription(urls: <String>['$base/single.js']);
+    final plugin = plugins.plugins.first;
+    final file = File('${tempRoot.path}/musicfree-plugins/${plugin.hash}.js');
+    expect(file.existsSync(), isTrue);
+    await plugins.uninstall(plugin.hash);
+    expect(plugins.plugins, isEmpty);
+    expect(file.existsSync(), isFalse);
+  });
+
+  test('更新全部按插件 srcUrl 重装到新版本', () async {
+    await plugins.syncSubscription(urls: <String>['$base/a.js']);
+    expect(plugins.plugins.first.version, '1.0.0');
+    upgraded = true;
+    final failures = await plugins.updateAll();
+    expect(failures, isEmpty);
+    expect(plugins.plugins.first.version, '2.0.0');
+  });
+
+  test('订阅签名不变时不重装', () async {
+    await plugins.syncSubscription(urls: <String>['$base/sub.json']);
+    final hashesBefore = plugins.plugins.map((plugin) => plugin.hash).toList();
+    final countBefore = fetchCount;
+
+    final result = await plugins.syncSubscription(urls: <String>['$base/sub.json']);
+    expect(result.reinstalled, isFalse);
+    expect(fetchCount, countBefore, reason: '签名相同不应再发请求');
+    expect(plugins.plugins.map((plugin) => plugin.hash).toList(), hashesBefore);
+  });
+
+  test('订阅 URL 变化时清空本地插件并全量重装', () async {
+    await plugins.syncSubscription(urls: <String>['$base/sub.json']);
+    expect(plugins.plugins, hasLength(2));
+
+    final result = await plugins.syncSubscription(urls: <String>['$base/other-sub.json']);
+    expect(result.reinstalled, isTrue);
+    expect(result.urls, <String>['$base/other-sub.json']);
+    expect(plugins.plugins.map((plugin) => plugin.platform).toSet(), <String>{'单插件'});
+    // 旧插件源码文件也清掉了
+    final leftover = Directory('${tempRoot.path}/musicfree-plugins')
+        .listSync()
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.js'))
+        .length;
+    expect(leftover, 1);
+  });
+
+  test('服务器下发空列表时清空本地插件', () async {
+    await plugins.syncSubscription(urls: <String>['$base/sub.json']);
+    expect(plugins.plugins, isNotEmpty);
+    final result = await plugins.syncSubscription(urls: const <String>[]);
+    expect(result.reinstalled, isTrue);
+    expect(plugins.plugins, isEmpty);
+  });
+
+  test('启停与排序写进本地偏好', () async {
+    await plugins.syncSubscription(urls: <String>['$base/sub.json']);
+    final first = plugins.plugins.first;
+    await plugins.setEnabled(first.hash, false);
+    expect(plugins.plugins.firstWhere((plugin) => plugin.hash == first.hash).enabled, isFalse);
+    expect(plugins.enabledPlugins.any((plugin) => plugin.hash == first.hash), isFalse);
+
+    final second = plugins.plugins.last;
+    await plugins.move(second.hash, -1);
+    expect(plugins.plugins.first.hash, second.hash);
+
+    // 重新读偏好（模拟重启）
+    final restarted = MusicFreePlugins(
+      host: host,
+      paths: PluginPaths(root: tempRoot.path),
+    );
+    await restarted.loadInstalled();
+    expect(restarted.plugins.first.hash, second.hash);
+    expect(restarted.plugins.firstWhere((plugin) => plugin.hash == first.hash).enabled, isFalse);
+  });
+
+  test('loadInstalled 能从磁盘恢复插件', () async {
+    await plugins.syncSubscription(urls: <String>['$base/sub.json']);
+    final second = MusicFreeHost(
+      paths: PluginPaths(root: tempRoot.path),
+      bundleSource: bundle,
+    );
+    addTearDown(second.dispose);
+    final restored = MusicFreePlugins(host: second, paths: PluginPaths(root: tempRoot.path));
+    await restored.loadInstalled();
+    expect(restored.plugins.map((plugin) => plugin.platform).toSet(), <String>{'插件A', '插件B'});
+  });
+}

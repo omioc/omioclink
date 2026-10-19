@@ -1,0 +1,310 @@
+"""Web 管理页与 ``/api/v1/admin/*`` 接口。
+
+**只有配置了 ``OMIOCLINK_ADMIN_TOKEN`` 时这些路由才会被注册**（见 ``app.main``）：
+未配置时 ``/admin`` 与 ``/api/v1/admin/*`` 对外是 404，连路由都不存在，
+不会留下任何可探测的攻击面。
+
+鉴权用独立的 ``X-Admin-Token`` 头（与用户 JWT 的 ``Authorization`` 分开，避免混淆），
+比较时用 ``hmac.compare_digest`` 做定长比较，避免时序侧信道。
+"""
+
+from __future__ import annotations
+
+import hmac
+from pathlib import Path
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Header, Query, Response, status
+from fastapi.responses import HTMLResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import HubDep, PluginSubscriptionStoreDep, SessionDep, SettingsDep
+from app.api.serializers import room_response
+from app.core.config import Settings
+from app.core.errors import ConflictError, NotFoundError, UnauthorizedError, ValidationError
+from app.db.models import User
+from app.schemas import (
+    AdminActionResult,
+    AdminKickRequest,
+    AdminOverview,
+    AdminPluginSubscription,
+    AdminPluginSubscriptionUpdate,
+    AdminRegistrationToggle,
+    AdminUserListResponse,
+    AdminUserResponse,
+    AdminUserUpdate,
+    MemberListResponse,
+    RegisterRequest,
+    RoomListResponse,
+)
+from app.services import accounts
+from app.services import rooms as room_service
+from app.signaling.hub import SignalingHub
+
+router = APIRouter(prefix="/admin", tags=["管理"])
+
+#: 管理页静态文件（随 app 一起打进镜像）
+ADMIN_PAGE_PATH = Path(__file__).resolve().parent.parent / "web" / "admin.html"
+
+#: 管理页的品牌图标（页面左上角 + 浏览器页签），由仓库根的 OmiocLink.png 生成
+ADMIN_LOGO_PATH = Path(__file__).resolve().parent.parent / "web" / "logo.png"
+
+
+async def require_admin_token(
+    settings: SettingsDep,
+    x_admin_token: Annotated[str | None, Header()] = None,
+) -> None:
+    expected = (settings.admin_token or "").strip()
+    if not expected:
+        # 正常不会走到这里：未配置令牌时整个 router 都不会注册
+        raise NotFoundError("管理接口未启用", code="admin_disabled")
+    if x_admin_token is None or not hmac.compare_digest(x_admin_token, expected):
+        raise UnauthorizedError("管理令牌不正确", code="bad_admin_token")
+
+
+AdminDep = Annotated[None, Depends(require_admin_token)]
+
+
+async def _build_overview(
+    session: SessionDep, hub: SignalingHub, settings: Settings
+) -> AdminOverview:
+    return AdminOverview(
+        server_name=settings.server_name,
+        version=settings.version,
+        user_count=await accounts.count_users(session),
+        room_count=await room_service.count_rooms(session),
+        public_room_count=await room_service.count_rooms(session, public_only=True),
+        live_peer_count=hub.state.live_peer_count,
+        live_room_count=hub.state.live_room_count,
+        allow_registration=settings.allow_registration,
+        docs_enabled=settings.docs_enabled,
+    )
+
+
+@router.get("/overview", response_model=AdminOverview, summary="服务器概览")
+async def overview(
+    session: SessionDep, hub: HubDep, settings: SettingsDep, _: AdminDep
+) -> AdminOverview:
+    return await _build_overview(session, hub, settings)
+
+
+@router.post(
+    "/registration",
+    response_model=AdminOverview,
+    summary="临时开/关用户自注册（重启后回到 .env 配置）",
+)
+async def toggle_registration(
+    payload: AdminRegistrationToggle,
+    session: SessionDep,
+    hub: HubDep,
+    settings: SettingsDep,
+    _: AdminDep,
+) -> AdminOverview:
+    # Settings 非 frozen，运行时改对 get_settings_dep（读 app.state.settings）立即生效
+    settings.allow_registration = payload.allow
+    return await _build_overview(session, hub, settings)
+
+
+@router.get("/rooms", response_model=RoomListResponse, summary="全部房间（含私有）")
+async def list_rooms(
+    session: SessionDep,
+    hub: HubDep,
+    _: AdminDep,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> RoomListResponse:
+    rooms = await room_service.list_all_rooms(session, limit=limit, offset=offset)
+    names = await room_service.owner_names(session, rooms)
+    items = [
+        room_response(room, hub=hub, owner_name=names.get(room.owner_id), joined=False)
+        for room in rooms
+    ]
+    # 有人的排前面（稳定排序，保留 SQL 的更新时间次序）
+    items.sort(key=lambda item: item.member_count, reverse=True)
+    return RoomListResponse(items=items, total=await room_service.count_rooms(session))
+
+
+@router.get(
+    "/rooms/{room_id}/members",
+    response_model=MemberListResponse,
+    summary="房间在线成员（实时）",
+)
+async def room_members(room_id: str, hub: HubDep, _: AdminDep) -> MemberListResponse:
+    live = hub.state.get_room(room_id)
+    items = live.member_infos() if live is not None else []
+    return MemberListResponse(items=items, total=len(items))
+
+
+@router.post(
+    "/rooms/{room_id}/kick",
+    response_model=AdminActionResult,
+    summary="把某条会话踢出房间",
+)
+async def kick_member(
+    room_id: str, payload: AdminKickRequest, hub: HubDep, _: AdminDep
+) -> AdminActionResult:
+    peer = hub.state.get_peer(payload.peer_id)
+    if peer is None:
+        raise NotFoundError("该会话已离线", code="peer_not_found")
+    if peer.room_id != room_id:
+        raise ValidationError("该会话不在指定房间内")
+    await hub.kick_peer(payload.peer_id, reason="kicked_by_admin")
+    return AdminActionResult(detail=f"已移出 {payload.peer_id}")
+
+
+@router.delete(
+    "/rooms/{room_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="解散房间（不限房主）",
+)
+async def delete_room(
+    room_id: str, session: SessionDep, hub: HubDep, _: AdminDep
+) -> Response:
+    room = await room_service.get_room(session, room_id)
+    if room is None:
+        raise NotFoundError("房间不存在", code="room_not_found")
+    await hub.close_room(room_id, reason="closed_by_admin")
+    await room_service.delete_room(session, room)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/users", response_model=AdminUserListResponse, summary="账号列表")
+async def list_users(
+    session: SessionDep,
+    hub: HubDep,
+    _: AdminDep,
+    query: str | None = Query(default=None, max_length=64),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> AdminUserListResponse:
+    users = await accounts.list_users(session, query=query, limit=limit, offset=offset)
+    items = [_user_response(user, hub) for user in users]
+    return AdminUserListResponse(
+        items=items, total=await accounts.count_users(session, query=query)
+    )
+
+
+def _user_response(user: User, hub: SignalingHub) -> AdminUserResponse:
+    return AdminUserResponse(
+        id=user.id,
+        username=user.username,
+        display_name=user.display_name,
+        created_at=user.created_at,
+        online=hub.state.is_user_online(user.id),
+        disabled=user.disabled,
+    )
+
+
+@router.get(
+    "/music/plugin-subscription",
+    response_model=AdminPluginSubscription,
+    summary="音乐插件订阅地址",
+)
+async def get_plugin_subscription(
+    store: PluginSubscriptionStoreDep, _: AdminDep
+) -> AdminPluginSubscription:
+    return AdminPluginSubscription(urls=await store.read())
+
+
+@router.put(
+    "/music/plugin-subscription",
+    response_model=AdminPluginSubscription,
+    summary="保存音乐插件订阅地址",
+)
+async def update_plugin_subscription(
+    payload: AdminPluginSubscriptionUpdate,
+    store: PluginSubscriptionStoreDep,
+    _: AdminDep,
+) -> AdminPluginSubscription:
+    # 校验（http(s):// + .js/.json + 最多 20 条）与保序去重都在 store 里做：
+    # 不合法会抛 ValidationError，前端拿到 4xx + code=plugin_subscription_invalid
+    return AdminPluginSubscription(urls=await store.write(payload.urls))
+
+
+async def _get_user_or_404(session: AsyncSession, user_id: int) -> User:
+    user = await accounts.get_user(session, user_id)
+    if user is None:
+        raise NotFoundError("账号不存在", code="user_not_found")
+    return user
+
+
+@router.patch(
+    "/users/{user_id}",
+    response_model=AdminUserResponse,
+    summary="禁用 / 启用账号",
+)
+async def update_user(
+    user_id: int,
+    payload: AdminUserUpdate,
+    session: SessionDep,
+    hub: HubDep,
+    _: AdminDep,
+) -> AdminUserResponse:
+    user = await _get_user_or_404(session, user_id)
+    await accounts.set_user_disabled(session, user, disabled=payload.disabled)
+    if payload.disabled:
+        # 禁用要立刻生效：已签发的令牌会在校验侧被拒，在线会话在这里踢掉
+        await hub.kick_user(user.id, reason="account_disabled")
+    return _user_response(user, hub)
+
+
+@router.delete(
+    "/users/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="删除账号（连带其房间与好友关系）",
+)
+async def delete_user(
+    user_id: int, session: SessionDep, hub: HubDep, _: AdminDep
+) -> Response:
+    user = await _get_user_or_404(session, user_id)
+
+    # 先解散他名下的活跃房间：房间里的人会被通知到；否则库里的房间没了，
+    # 内存里的房间还挂着人，成员会一直以为自己在通话中
+    for room in list(hub.state.live_rooms()):
+        if room.owner_id == user.id:
+            await hub.close_room(room.room_id, reason="owner_deleted")
+
+    await hub.kick_user(user.id, reason="account_deleted")
+    # 房间 / 进房历史 / 好友关系靠外键 ON DELETE CASCADE 一并清理
+    await accounts.delete_user(session, user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/users",
+    response_model=AdminUserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="创建账号（不受注册开关限制）",
+)
+async def create_user(
+    payload: RegisterRequest, session: SessionDep, hub: HubDep, _: AdminDep
+) -> AdminUserResponse:
+    if await accounts.get_user_by_username(session, payload.username) is not None:
+        raise ConflictError("用户名已被占用", code="username_taken")
+    user = await accounts.create_user(
+        session,
+        username=payload.username,
+        password=payload.password,
+        display_name=payload.display_name,
+        avatar=payload.avatar,
+    )
+    return _user_response(user, hub)
+
+
+async def serve_admin_page() -> HTMLResponse:
+    """管理页本体（静态 HTML，不含任何密钥；密钥由页面交互时填）。"""
+    if not ADMIN_PAGE_PATH.exists():  # pragma: no cover - 镜像里必然存在
+        raise NotFoundError("管理页文件缺失", code="admin_page_missing")
+    return HTMLResponse(ADMIN_PAGE_PATH.read_text(encoding="utf-8"))
+
+
+async def serve_admin_logo() -> Response:
+    """管理页的品牌图标（无需鉴权：它只是一张图片）。"""
+    if not ADMIN_LOGO_PATH.exists():  # pragma: no cover - 镜像里必然存在
+        raise NotFoundError("品牌图标缺失", code="admin_logo_missing")
+    return Response(
+        content=ADMIN_LOGO_PATH.read_bytes(),
+        media_type="image/png",
+        # 图标不会变，让浏览器缓存一天，省得每次开管理页都重拉
+        headers={"Cache-Control": "public, max-age=86400"},
+    )

@@ -1,0 +1,201 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../core/app_log.dart';
+import '../core/app_palette.dart';
+import '../core/app_paths.dart';
+import '../core/theme_packs.dart';
+import 'avatar_picker.dart';
+
+/// 主题与壁纸的本机设置（纯本地：服务器不知道，也不影响房间里的其他人）。
+///
+/// 两件事各存一处：
+/// * 主题只记一个 id（`omioclink.theme.pack`），配色本身在 [AppThemePacks] 里；
+/// * 壁纸要落盘（选区里那张图随时可能被删/被移动），只把绝对路径记进
+///   `omioclink.theme.wallpaper`，启动时按路径读；路径失效就顺手把记录清掉，
+///   免得每次启动都去找一个不存在的文件。
+class ThemeStore extends ChangeNotifier {
+  /// [directoryBase] 只在测试里传：不传就落到和日志同一个根目录。
+  ThemeStore({this.directoryBase});
+
+  static const _packKey = 'omioclink.theme.pack';
+  static const _wallpaperKey = 'omioclink.theme.wallpaper';
+
+  /// 壁纸文件名固定：换图就是覆盖同一张，脏文件不会越攒越多。
+  static const String wallpaperFileName = 'wallpaper.png';
+
+  /// 壁纸长度上限（重编码后 2400px 的 PNG 通常 3~8MB，给到 32MB 足够宽裕）。
+  static const int wallpaperMaxBytes = 32 * 1024 * 1024;
+
+  /// 壁纸长边上限：1320×860 的窗口在 200% 缩放下也就 2640px 宽，
+  /// 再大只是白占内存（一张 4000px 的图解码后要 60MB 以上）。
+  static const int wallpaperMaxSide = 2400;
+
+  /// 测试注入的壁纸目录；正常运行为空，按平台规则算（见 [directory]）。
+  final String? directoryBase;
+
+  AppThemePack _pack = AppThemePacks.defaultPack;
+  String? _wallpaperPath;
+  int _wallpaperRevision = 0;
+
+  AppThemePack get pack => _pack;
+
+  /// 壁纸的换图计数。
+  ///
+  /// 换图走的是**同一个文件路径**（固定 wallpaper.png），而 `DecorationImage`
+  /// 是按值比较的：新旧 `BoxDecoration` 相等时 `RenderDecoratedBox` 会直接早退，
+  /// 已经解析好的图片流继续画旧字节，表现就是「点了换一张，背景没变」。
+  /// 界面把这个计数挂成 key，换图后强制重建一次才能真的重读文件。
+  int get wallpaperRevision => _wallpaperRevision;
+
+  /// 壁纸文件的绝对路径；没贴壁纸时为 null。
+  String? get wallpaperPath => _wallpaperPath;
+
+  bool get hasWallpaper => _wallpaperPath != null;
+
+  /// 当前生效的色板：贴了壁纸就让表面半透明（见 [AppPalette.withWallpaper]）。
+  AppPalette get palette =>
+      hasWallpaper ? _pack.palette.withWallpaper() : _pack.palette;
+
+  /// 壁纸目录：桌面是 `%LOCALAPPDATA%\OmiocLink\theme`（便携运行落在可执行文件
+  /// 旁的 `theme`），手机是应用私有目录下的 `theme`——规则见 [AppPaths]。
+  String get directory {
+    final override = directoryBase;
+    return override ?? AppPaths.themeDir;
+  }
+
+  /// 读回上次的选择。坏数据一律回落默认主题，绝不抛给界面。
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? packId;
+    try {
+      packId = prefs.getString(_packKey);
+    } on Object {
+      // 存成了别的类型（手改/旧版本残留）：当没选过
+      packId = null;
+    }
+    _pack = AppThemePacks.byId(packId);
+
+    String? path;
+    try {
+      path = prefs.getString(_wallpaperKey);
+    } on Object {
+      path = null;
+    }
+    if (path == null || path.isEmpty) {
+      _wallpaperPath = null;
+    } else if (File(path).existsSync()) {
+      _wallpaperPath = path;
+    } else {
+      // 图没了（被删/被移动/换了机器）：记录一起清掉
+      _wallpaperPath = null;
+      await prefs.remove(_wallpaperKey);
+    }
+    notifyListeners();
+  }
+
+  /// 切换主题。同 id 不重复通知（否则点同一张卡片也会重刷一遍界面）。
+  Future<void> select(String id) async {
+    final pack = AppThemePacks.byId(id);
+    if (pack.id == _pack.id) {
+      return;
+    }
+    _pack = pack;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_packKey, pack.id);
+  }
+
+  /// 把本机的一个图片文件设成壁纸；返回错误文案，成功返回 null。
+  ///
+  /// 读文件 → 按长边压到 [wallpaperMaxSide] 的 PNG → 落盘。压缩放在这里而不是
+  /// 直接把原图当背景：4K 的 JPG 解码成位图要几十 MB 内存，而背景只是铺满窗口。
+  Future<String?> applyWallpaperFile(String path) async {
+    final file = File(path);
+    if (!file.existsSync()) {
+      return '这个文件已经不在了';
+    }
+    if (file.lengthSync() > wallpaperMaxBytes * 2) {
+      return '图片太大了，换一张小一点的';
+    }
+    final raw = await _readBytes(file);
+    if (raw == null) {
+      return '读不了这个文件';
+    }
+    final png = await AvatarPicker(
+      maxSide: wallpaperMaxSide,
+    ).compress(raw);
+    if (png == null) {
+      return '这个文件不是能识别的图片';
+    }
+    return applyWallpaper(png);
+  }
+
+  Future<Uint8List?> _readBytes(File file) async {
+    try {
+      return await file.readAsBytes();
+    } on Object catch (error) {
+      AppLog.warn('壁纸读取失败', error: error);
+      return null;
+    }
+  }
+
+  /// 把已经解码好的 PNG 字节落盘并启用；返回错误文案，成功返回 null。
+  ///
+  /// 单独抽出来是为了能在测试里直接喂字节，不走文件选择框。
+  Future<String?> applyWallpaper(Uint8List bytes) async {
+    if (bytes.isEmpty) {
+      return '这张图是空的';
+    }
+    if (bytes.length > wallpaperMaxBytes) {
+      return '图片太大了，换一张小一点的';
+    }
+    final path = '$directory${Platform.pathSeparator}$wallpaperFileName';
+    try {
+      final file = File(path);
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes(bytes, flush: true);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_wallpaperKey, path);
+      _wallpaperPath = path;
+      _wallpaperRevision++;
+      // 换图时 path 可能没变（同名覆盖），仍然要通知：界面上的 Image 需要重读文件
+      notifyListeners();
+      try {
+        // 同名文件的旧图还在图片缓存里，不踢掉会一直显示上一张
+        await FileImage(File(path)).evict();
+      } on Object {
+        // 缓存没踢成只是可能看到上一张，不影响壁纸本身可用
+      }
+      return null;
+    } on Object catch (error) {
+      AppLog.warn('壁纸保存失败', error: error);
+      return '壁纸保存失败：$error';
+    }
+  }
+
+  /// 去掉壁纸（连同磁盘上的文件）。
+  Future<void> clearWallpaper() async {
+    if (_wallpaperPath == null) {
+      return;
+    }
+    final path = _wallpaperPath!;
+    _wallpaperPath = null;
+    _wallpaperRevision++;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_wallpaperKey);
+    try {
+      final file = File(path);
+      if (file.existsSync()) {
+        file.deleteSync();
+      }
+    } on Object catch (error) {
+      // 删不掉也不算失败：设置已经清了，界面上不会再用到它
+      AppLog.warn('壁纸文件删除失败', error: error);
+    }
+  }
+}

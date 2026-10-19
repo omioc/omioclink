@@ -1,0 +1,45 @@
+# 根级忽略规则（子目录的 .gitignore 各自负责自己的构建产物）
+#
+# client/.gitignore        Flutter：.dart_tool、build、.flutter-plugins-dependencies…
+# client/windows/.gitignore Windows：flutter/ephemeral、x64、*.suo…
+# server/.gitignore        Python：.venv、__pycache__、.pytest_cache、.mypy_cache、*.db、data/
+
+# ---------------------------------------------------------------- 本机配置 / 密钥
+# 里面有数据库口令、JWT 密钥，只提交 .env.example
+/.env
+/.env.local
+
+# ---------------------------------------------------------------- 打包与部署产物
+# 构建产物统一收拢到 releases/<组件>-v<版本>/（规则见 AGENTS.md），体积大且每次发版重生成，不进版本库
+/releases/
+
+# ---------------------------------------------------------------- 第三方参考代码
+# MusicFreeDesktop 是 MusicFree 的上游仓库（自带 .git），只做阅读参考
+/MusicFreeDesktop/
+
+# ---------------------------------------------------------------- 工具会话记录
+# PI-Desktop 的任务笔记（.pi/goal/*.md），不是项目代码
+/.pi/
+
+# ---------------------------------------------------------------- 音乐插件运行时的 npm 依赖
+# 由 package-lock.json 还原（npm ci）；产物 runtime.bundle.js 在 assets 里已提交
+/client/tool/musicfree-runtime/node_modules/
+
+# 手动拷进去的插件二进制（仓库里没有它的源码，Release 用的是 pub 包自带的那个）
+/client/native/build/
+# pytest 的临时目录（曾被别的账户创建过，读不了，一直在报警告）
+/server/.pytest-tmp/
+
+# ---------------------------------------------------------------- 编辑器 / 系统
+**/.vs/
+Thumbs.db
+desktop.ini
+# 手写的一坨 flutter test 控制台输出（10-15 的临时文件）
+/client/test_out.txt
+
+# ---------------------------------------------------------------- 设计阶段资料
+# 根 tool/ 只用来生成 logo 与各尺寸图标；docs/ 是调研与设计文档；design/ 是 UI 参考图。
+# 按项目约定这些不进版本库（文件仍留在本地，换机器时单独拷贝）。
+/tool/
+/docs/
+/design/

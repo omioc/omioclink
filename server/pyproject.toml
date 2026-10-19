@@ -1,0 +1,84 @@
+[project]
+name = "omioclink-server"
+version = "0.1.0"
+description = "OmiocLink 信令服务器：账号/好友/房间/成员状态 + WebRTC 信令转发（架构上不含任何媒体中继）"
+requires-python = ">=3.12"
+dependencies = [
+    # 刻意钉在 0.22.1 以下：0.22.1 新增了 Connection.stop()，SQLAlchemy 2.1 检测到
+    # 之后会走「强制关闭」路径去结束 aiosqlite 的工作线程；一旦那次强制关闭发生在
+    # 优雅关闭还在等待 future 的时候，工作线程提前退出，优雅关闭的 future 永远
+    # 没人 resolve —— 表现为 database.dispose() 永久挂起（停机时卡死、事件循环空转）。
+    # 升级前请先跑几遍 pytest 确认不再复现。
+    "aiosqlite<0.22.1",
+    "anyio>=4.15.1",
+    "bcrypt>=5.0.0",
+    "fastapi>=0.143.0",
+    # 点歌台聚合要主动请求各平台接口（httpx 的继任者，API 兼容）
+    "httpx2>=2.13.1",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.15.0",
+    "pyjwt>=2.15.1",
+    "python-multipart>=0.0.32",
+    "sqlalchemy[asyncio]>=2.1.4",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-timeout>=2.4.0",
+    "ruff>=0.17.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "ASYNC"]
+ignore = [
+    "B008", # FastAPI 依赖注入依赖函数默认值调用
+    "RUF001", # 允许中文全角标点
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app", "tests"]
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_decorators = false
+show_error_codes = true
+# pydantic 官方插件：让 mypy 理解 populate_by_name / alias / 字段校验等行为
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["bcrypt.*", "jwt.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# 测试里大量使用「JSON 字典 + 断言」，不做 Any 泛型与返回值收严
+module = ["tests.*"]
+disallow_any_generics = false
+warn_return_any = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# 单个用例 20s 上限：卡死会以「失败 + 全线程堆栈」的形式暴露，而不是把整轮测试吊死
+addopts = "-q --timeout=20 --timeout-method=thread"
+filterwarnings = ["error"]

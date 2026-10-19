@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 由 client/tool/make_android_icons.py 生成：自适应图标的背景色 -->
+<resources>
+    <color name="ic_launcher_background">#031131</color>
+</resources>

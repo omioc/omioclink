@@ -1,0 +1,25 @@
+# 构建上下文只保留 Dockerfile 需要的：pyproject.toml / uv.lock / app/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 开发与测试产物
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+tests/
+coverage.xml
+.coverage
+
+# 本地数据与配置
+*.db
+*.db-journal
+*.sqlite3
+.env
+
+# 编辑器与版本控制
+.git/
+.gitignore
+.idea/
+.vscode/

@@ -1,0 +1,171 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:omioclink_client/data/music_models.dart';
+import 'package:omioclink_client/music/music_free_library.dart';
+import 'package:omioclink_client/musicfree/musicfree_host.dart';
+import 'package:omioclink_client/musicfree/musicfree_plugins.dart';
+import 'package:omioclink_client/musicfree/musicfree_service.dart';
+import 'package:omioclink_client/musicfree/plugin_paths.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// 只提供排行榜的假服务层：不碰 JS 运行时，用来数「重拉了几次」。
+class _FakeService extends MusicFreeService {
+  _FakeService(super.plugins);
+
+  int chartCalls = 0;
+  int tagCalls = 0;
+
+  @override
+  Future<List<MusicFreeTopListGroup>> topLists({bool refresh = false}) async {
+    chartCalls++;
+    return <MusicFreeTopListGroup>[
+      MusicFreeTopListGroup(
+        platform: 'kg',
+        title: '热门榜单',
+        items: <MusicFreeSheet>[
+          MusicFreeSheet(
+            platform: 'kg',
+            id: 'k1',
+            title: '酷狗TOP500',
+            raw: <String, dynamic>{'id': 'k1'},
+          ),
+        ],
+      ),
+    ];
+  }
+
+  @override
+  Future<MusicFreeTags> recommendTags({bool refresh = false}) async {
+    tagCalls++;
+    return const MusicFreeTags();
+  }
+
+  @override
+  Future<List<MusicFreeSheet>> sheetsByTag(MusicFreeTag tag, {int page = 1}) async =>
+      const <MusicFreeSheet>[];
+}
+
+/// 可控「两轮搜索谁先回来」的假服务：验证并发两轮里旧结果不会覆盖新结果。
+class _RacingService extends MusicFreeService {
+  _RacingService(super.plugins);
+
+  final List<Completer<MusicFreeSearchResult>> pending =
+      <Completer<MusicFreeSearchResult>>[];
+
+  @override
+  Future<MusicFreeSearchResult> search(
+    String keyword, {
+    int page = 1,
+    String type = 'music',
+    String? platform,
+    bool refresh = false,
+    void Function(MusicFreeSearchResult partial)? onUpdate,
+  }) {
+    final completer = Completer<MusicFreeSearchResult>();
+    pending.add(completer);
+    return completer.future;
+  }
+}
+
+MusicTrack _track(String name) => MusicTrack(
+  platform: 'kg',
+  id: name,
+  name: name,
+  artists: const <MusicArtist>[],
+);
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory tempDir;
+  late MusicFreeLibrary library;
+  late _FakeService service;
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    tempDir = Directory.systemTemp.createTempSync('mf-library-test');
+    final paths = PluginPaths(root: tempDir.path);
+    final plugins = MusicFreePlugins(
+      host: MusicFreeHost(bundleSource: '', paths: paths),
+      paths: paths,
+    );
+    service = _FakeService(plugins);
+    library = MusicFreeLibrary(plugins: plugins, service: service);
+  });
+
+  tearDown(() {
+    library.dispose();
+    try {
+      tempDir.deleteSync(recursive: true);
+    } on Object {
+      // 临时目录清不掉不影响断言
+    }
+  });
+
+  test('排行榜已加载时，订阅同步（插件集合没变）不清空内容', () async {
+    await library.loadCharts();
+    expect(library.chartGroups, isNotEmpty);
+    expect(service.chartCalls, 1);
+
+    // 「点第一首歌」→ 播放前 ensureReady → AppState 拉订阅 → 这里再同步一次
+    await library.syncSubscription(urls: const <String>[], hash: null);
+
+    expect(
+      library.chartGroups,
+      isNotEmpty,
+      reason: '插件没变就清空，界面会突然变成「插件没有提供排行榜」',
+    );
+    expect(library.chartsError, isNull);
+    expect(service.chartCalls, 1, reason: '内容还在，不需要白拉一次');
+  });
+
+  test('退出登录 reset()：清空内容且不会在后台偷偷重拉', () async {
+    await library.loadCharts();
+    final calls = service.chartCalls;
+    expect(calls, 1);
+
+    library.reset();
+    expect(library.chartGroups, isEmpty);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      service.chartCalls,
+      calls,
+      reason: 'reset 之后不该自动重拉（否则退出登录还在后台跑）',
+    );
+  });
+
+  test('同一个关键词并发两轮：只认最新那轮的结果（旧轮迟到也不覆盖）', () async {
+    final paths = PluginPaths(root: tempDir.path);
+    final plugins = MusicFreePlugins(
+      host: MusicFreeHost(bundleSource: '', paths: paths),
+      paths: paths,
+    );
+    final racing = _RacingService(plugins);
+    final racingLibrary = MusicFreeLibrary(plugins: plugins, service: racing);
+    addTearDown(racingLibrary.dispose);
+
+    // 用户快速切了一次音源 tab：同一关键词并发两轮
+    final firstRound = racingLibrary.search('周杰伦');
+    final secondRound = racingLibrary.search('周杰伦');
+    expect(racing.pending, hasLength(2));
+
+    // 新那轮先回来
+    racing.pending[1].complete(
+      MusicFreeSearchResult(tracks: <MusicTrack>[_track('新的')], done: 1, total: 1),
+    );
+    await secondRound;
+    expect(racingLibrary.tracks.single.name, '新的');
+    expect(racingLibrary.searching, isFalse);
+
+    // 旧那轮迟到：不许覆盖，也不许把「搜索中」重新点亮
+    racing.pending[0].complete(
+      MusicFreeSearchResult(tracks: <MusicTrack>[_track('旧的')], done: 1, total: 1),
+    );
+    await firstRound;
+    expect(racingLibrary.tracks.single.name, '新的');
+    expect(racingLibrary.searching, isFalse);
+  });
+}

@@ -1,0 +1,74 @@
+# OmiocLink 服务端一键部署。
+#
+#   cp .env.example .env   # 然后填入 OMIOCLINK_JWT_SECRET
+#   docker compose up -d --build
+#
+# 默认只起信令服务器；自建 STUN 是可选组件（仅地址发现，不是中继）：
+#   docker compose --profile stun up -d --build
+#
+# 首次使用时注册是关闭的（默认策略）。要开账号：
+#   1) 在 .env 里设 OMIOCLINK_ALLOW_REGISTRATION=true 后 `docker compose up -d`
+#   2) 用客户端「注册」建号
+#   3) 再改回 false 并 `docker compose up -d`
+name: omioclink
+
+# 两个服务共用同一个镜像（同一份代码，只是启动命令不同）
+x-server-build: &server-build
+  context: ./server
+  args:
+    # 构建期的依赖下载源（默认清华 PyPI 镜像）；改 .env 里的 OMIOCLINK_PIP_INDEX_URL 即可
+    PIP_INDEX_URL: ${OMIOCLINK_PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+
+services:
+  server:
+    build: *server-build
+    image: omioclink-server:latest
+    restart: unless-stopped
+    environment:
+      # 必填：至少 32 字节（HS256 的最低密钥长度），用 openssl rand -hex 32 生成
+      OMIOCLINK_JWT_SECRET: ${OMIOCLINK_JWT_SECRET:?请在 .env 里设置 OMIOCLINK_JWT_SECRET（openssl rand -hex 32）}
+      # SQLite 落在挂载卷里；注意 sqlite URL 的绝对路径是四个斜杠
+      OMIOCLINK_DATABASE_URL: sqlite+aiosqlite:////app/data/omioclink.db
+      # 数据目录：头像文件放这里（<data_dir>/avatars/），和 SQLite 同一个卷
+      OMIOCLINK_DATA_DIR: /app/data
+      # 是否允许用户自行注册（默认关闭，也可在管理页临时切换）
+      OMIOCLINK_ALLOW_REGISTRATION: ${OMIOCLINK_ALLOW_REGISTRATION:-false}
+      # 是否暴露 /docs（Swagger UI）与 /openapi.json（默认关闭）
+      OMIOCLINK_DOCS_ENABLED: ${OMIOCLINK_DOCS_ENABLED:-false}
+      # Web 管理页令牌。留空即完全关闭（/admin 与 /api/v1/admin/* 连路由都不存在）
+      OMIOCLINK_ADMIN_TOKEN: ${OMIOCLINK_ADMIN_TOKEN:-}
+      # 下发给客户端的 STUN 列表（只放 stun:，本项目不使用 TURN）。
+      # 默认只用 Cloudflare：stun.l.google.com 在国内基本不可达，配了反而拖慢候选收集。
+      # 最稳的是自建（--profile stun），然后把这里换成 stun:你的公网IP:3478
+      OMIOCLINK_ICE_SERVERS: ${OMIOCLINK_ICE_SERVERS:-stun:stun.cloudflare.com:3478}
+      # 客户端是桌面应用、不经浏览器跨域，按需收紧
+      OMIOCLINK_CORS_ORIGINS: ${OMIOCLINK_CORS_ORIGINS:-*}
+      # 点歌台开关与平台顺序（wy=网易云 / tx=QQ音乐 / kw=酷我，逗号分隔）
+      OMIOCLINK_MUSIC_ENABLED: ${OMIOCLINK_MUSIC_ENABLED:-true}
+      OMIOCLINK_MUSIC_PLATFORMS: ${OMIOCLINK_MUSIC_PLATFORMS:-tx,wy,kw}
+    ports:
+      # 默认对外端口 21077（刻意避开 8080 等常见端口，减少冲突）。
+      # 建议前面挂一层 TLS 反代（Caddy/Nginx）对外只暴露 443，
+      # 需要直连时把 OMIOCLINK_BIND_ADDR 设成 127.0.0.1 之类做限制
+      - "${OMIOCLINK_BIND_ADDR:-0.0.0.0}:21077:21077"
+    volumes:
+      - server-data:/app/data
+
+  # 可选：自建 STUN（UDP 3478）。
+  # 公共 STUN（stun.l.google.com 等）在国内可达性不稳定，自建之后把
+  # OMIOCLINK_ICE_SERVERS 指向它即可。它只回答「你的公网映射地址是什么」，
+  # 不转发任何媒体——和信令同属「连接发现」，不是中继。
+  stun:
+    profiles: ["stun"]
+    build: *server-build
+    image: omioclink-server:latest
+    restart: unless-stopped
+    # STUN 必须看到客户端的真实来源地址，所以必须用 host 网络：
+    # 走默认 bridge + 端口映射时，容器观测到的来源会被 SNAT 成 docker 网关地址，
+    # 回显给客户端的映射地址就是错的，打洞必然失败。
+    # host 网络只在 Linux 上可用——本项目的部署目标就是公网 Linux VPS。
+    network_mode: host
+    command: ["python", "-m", "app.stun", "--host", "0.0.0.0", "--port", "3478"]
+
+volumes:
+  server-data:

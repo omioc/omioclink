@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/admin/logo.png">
+<title>OmiocLink 管理</title>
+<style>
+  :root {
+    --bg: #0d131c; --sidebar: #141c26; --panel: #19222e; --elevated: #1f2a38;
+    --divider: #26323f; --accent: #4c6fff; --success: #34d399; --danger: #f87171;
+    --warning: #f59e0b; --text: #e6edf3; --muted: #93a1b2; --faint: #5f6d7e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); font-size: 14px;
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  a { color: var(--accent); }
+  header {
+    display: flex; align-items: center; gap: 16px; padding: 14px 22px;
+    background: var(--sidebar); border-bottom: 1px solid var(--divider);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .logo {
+    width: 24px; height: 24px; border-radius: 6px; object-fit: cover; display: block;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 700; }
+  .spacer { flex: 1; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .dot.on { background: var(--success); box-shadow: 0 0 6px var(--success); }
+  .dot.off { background: var(--danger); }
+  main { padding: 22px; max-width: 1180px; margin: 0 auto; }
+  section { margin-bottom: 22px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--divider); border-radius: 12px;
+    padding: 16px;
+  }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .grow { flex: 1; }
+  h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0 0 12px; letter-spacing: .3px; }
+  input[type=text], input[type=password], input[type=search] {
+    background: var(--elevated); border: 1px solid transparent; color: var(--text);
+    border-radius: 8px; padding: 9px 12px; font-size: 13px; outline: none; min-width: 0;
+  }
+  input:focus { border-color: var(--accent); }
+  button {
+    background: var(--elevated); color: var(--text); border: 1px solid var(--divider);
+    border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer;
+  }
+  button:hover { background: #26313f; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #3f5eeb; }
+  button.danger { color: var(--danger); border-color: #4a2b2f; }
+  button.danger:hover { background: #3a2327; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat { background: var(--panel); border: 1px solid var(--divider); border-radius: 12px; padding: 14px 16px; }
+  .stat .k { color: var(--faint); font-size: 12px; }
+  .stat .v { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--divider); font-size: 13px; }
+  th { color: var(--faint); font-weight: 600; font-size: 12px; }
+  tr:last-child td { border-bottom: none; }
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    background: var(--elevated); color: var(--muted);
+  }
+  .tag.on { background: rgba(52,211,153,.15); color: var(--success); }
+  .tag.off { background: rgba(248,113,113,.15); color: var(--danger); }
+  .tag.lock { background: rgba(245,158,11,.15); color: var(--warning); }
+  .mono { font-family: ui-monospace, Consolas, monospace; letter-spacing: 1px; }
+  .empty { color: var(--faint); padding: 18px 8px; font-size: 13px; }
+  .hint { color: var(--faint); font-size: 12px; line-height: 1.7; }
+  #banner {
+    display: none; margin: 0 0 18px; padding: 11px 14px; border-radius: 10px; font-size: 13px;
+    background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.35); color: #fca5a5;
+  }
+  #banner.ok {
+    background: rgba(52,211,153,.12); border-color: rgba(52,211,153,.35); color: #6ee7b7;
+  }
+  dialog {
+    background: var(--panel); color: var(--text); border: 1px solid var(--divider);
+    border-radius: 14px; padding: 20px; width: min(620px, 92vw);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog h3 { margin: 0 0 14px; font-size: 15px; }
+  .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+  .switch input { display: none; }
+  .track { width: 42px; height: 24px; border-radius: 999px; background: var(--elevated); position: relative; transition: .15s; }
+  .track::after {
+    content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+    border-radius: 50%; background: var(--muted); transition: .15s;
+  }
+  .switch input:checked + .track { background: rgba(52,211,153,.25); }
+  .switch input:checked + .track::after { left: 21px; background: var(--success); }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <img class="logo" src="/admin/logo.png" alt="OmiocLink">
+  <h1>OmiocLink 管理</h1>
+  <span class="dot" id="statusDot"></span>
+  <span class="hint" id="statusText">未验证</span>
+  <div class="spacer"></div>
+  <input type="password" id="token" placeholder="管理令牌 (X-Admin-Token)" style="width: 260px">
+  <button class="primary" id="connectBtn">连接</button>
+</header>
+
+<main>
+  <div id="banner"></div>
+
+  <section>
+    <div class="stats" id="stats"></div>
+  </section>
+
+  <section class="card">
+    <h2>用户自注册</h2>
+    <div class="row">
+      <label class="switch">
+        <input type="checkbox" id="registrationToggle">
+        <span class="track"></span>
+      </label>
+      <span id="registrationLabel" class="hint">—</span>
+    </div>
+    <p class="hint" style="margin: 12px 0 0">
+      这里切换是<strong>临时</strong>的：重启容器后会回到 .env 里的 <span class="mono">OMIOCLINK_ALLOW_REGISTRATION</span>。
+      想永久生效请改 .env。账号也可以直接用下面的「新建账号」创建，不需要开注册。
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>房间</h2>
+    <div id="rooms"></div>
+  </section>
+
+  <section class="card">
+    <h2>账号</h2>
+    <div class="row" style="margin-bottom: 14px">
+      <input type="search" id="userQuery" placeholder="按用户名或昵称搜索" style="width: 260px">
+      <button id="searchBtn">搜索</button>
+      <div class="spacer"></div>
+      <button class="primary" id="newUserBtn">新建账号</button>
+    </div>
+    <div id="users"></div>
+  </section>
+
+  <section class="card">
+    <h2>音乐插件订阅</h2>
+    <p class="hint" style="margin: 0 0 14px">
+      服务器只保存订阅地址，客户端登录后会自动下载并安装插件；<strong>不再支持洛雪音源脚本</strong>——
+      服务器不下载、不解析、不代理任何音乐数据，播放地址由客户端直连音源。
+      每条地址必须是 <span class="mono">http://</span> 或 <span class="mono">https://</span> 开头的绝对地址，
+      且以 <span class="mono">.js</span> / <span class="mono">.json</span> 结尾（可带 ?查询串），最多 20 条。
+    </p>
+    <div id="subscriptions" style="display: grid; gap: 10px; margin-bottom: 14px"></div>
+    <div class="row">
+      <button id="addSubscriptionBtn">添加一条</button>
+      <div class="spacer"></div>
+      <button class="primary" id="saveSubscriptionsBtn">保存订阅</button>
+    </div>
+  </section>
+
+</main>
+
+<dialog id="membersDialog">
+  <div class="row" style="margin-bottom: 12px">
+    <h3 id="membersTitle" style="margin: 0">房间成员</h3>
+    <div class="spacer"></div>
+    <button id="closeMembers">关闭</button>
+  </div>
+  <div id="membersBody"></div>
+</dialog>
+
+<dialog id="newUserDialog">
+  <h3>新建账号</h3>
+  <div style="display: grid; gap: 12px">
+    <div class="field">
+      <label>用户名（3~32 位字母、数字、_ 或 -）</label>
+      <input type="text" id="newUsername" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>昵称（可选）</label>
+      <input type="text" id="newDisplayName" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>密码（至少 8 位）</label>
+      <input type="text" id="newPassword" autocomplete="off">
+    </div>
+  </div>
+  <div class="row" style="margin-top: 18px; justify-content: flex-end">
+    <button id="cancelNewUser">取消</button>
+    <button class="primary" id="confirmNewUser">创建</button>
+  </div>
+</dialog>
+
+<script>
+const API = '/api/v1/admin';
+let token = localStorage.getItem('omioclink.adminToken') || '';
+let currentRoomId = null;
+let timer = null;
+
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
+function banner(msg, ok = false) {
+  const el = $('banner');
+  if (!msg) { el.style.display = 'none'; return; }
+  el.textContent = msg;
+  el.className = ok ? 'ok' : '';
+  el.style.display = 'block';
+}
+
+function setStatus(ok, text) {
+  $('statusDot').className = 'dot ' + (ok ? 'on' : 'off');
+  $('statusText').textContent = text;
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(API + path, {
+    ...options,
+    headers: {
+      'X-Admin-Token': token,
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  if (res.status === 401) { setStatus(false, '令牌不正确'); banner('管理令牌不正确'); throw new Error('unauthorized'); }
+  if (res.status === 204) return null;
+  const body = await res.json().catch(() => null);
+  if (!res.ok) { banner(body && body.message ? body.message : ('HTTP ' + res.status)); throw new Error('api'); }
+  return body;
+}
+
+async function loadAll() {
+  try {
+    const [overview, rooms, users, subscription] = await Promise.all([
+      api('/overview'),
+      api('/rooms'),
+      api('/users?query=' + encodeURIComponent($('userQuery').value.trim())),
+      api('/music/plugin-subscription'),
+    ]);
+    setStatus(true, '已连接');
+    renderOverview(overview);
+    renderRooms(rooms.items);
+    renderUsers(users.items, users.total);
+    fillSubscriptions(subscription.urls);
+    if (currentRoomId) await loadMembers(currentRoomId);
+  } catch (e) {
+    /* 错误已在上面的 api() 里提示 */
+  }
+}
+
+// 订阅地址是**可编辑的**输入框，所以定时刷新（loadAll 每 10 秒一次）不能无条件重建
+// DOM，否则会把正在输入的人清空。这里记住上一次从服务器拿到的列表：
+// 只有服务端内容变了、且当前没有焦点在输入框里时才重建。
+let subscriptionSnapshot = null;
+
+function subscriptionInputs() {
+  return Array.from($('subscriptions').querySelectorAll('[data-subscription-input]'));
+}
+
+function isEditingSubscription() {
+  const active = document.activeElement;
+  return !!active && active.tagName === 'INPUT' && $('subscriptions').contains(active);
+}
+
+function addSubscriptionRow(url = '') {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.dataset.subscriptionRow = '';
+  row.innerHTML = `<input type="text" class="grow" data-subscription-input spellcheck="false"
+      placeholder="https://example.com/plugin.json">
+    <button class="danger" data-remove-subscription>删除</button>`;
+  row.querySelector('[data-subscription-input]').value = url;
+  $('subscriptions').append(row);
+  return row;
+}
+
+function renderSubscriptions(urls) {
+  $('subscriptions').innerHTML = '';
+  // 空配置时留一个空白行，管理员可以直接开始填
+  (urls.length ? urls : ['']).forEach((url) => addSubscriptionRow(url));
+}
+
+function fillSubscriptions(urls) {
+  const snapshot = JSON.stringify(urls);
+  if (snapshot === subscriptionSnapshot) return;
+  subscriptionSnapshot = snapshot;
+  if (isEditingSubscription()) return; // 正在输入：等下一次刷新再同步
+  renderSubscriptions(urls);
+}
+
+function collectSubscriptions() {
+  return subscriptionInputs().map((input) => input.value.trim()).filter((url) => url);
+}
+
+async function saveSubscriptions() {
+  const urls = collectSubscriptions();
+  try {
+    const saved = await api('/music/plugin-subscription', {
+      method: 'PUT', body: JSON.stringify({ urls }),
+    });
+    subscriptionSnapshot = JSON.stringify(saved.urls);
+    renderSubscriptions(saved.urls);
+    banner(saved.urls.length ? `已保存 ${saved.urls.length} 条订阅地址` : '已清空订阅地址', true);
+  } catch (e) { /* api() 已提示 */ }
+}
+
+function renderOverview(o) {
+  $('stats').innerHTML = [
+    ['账号', o.userCount], ['房间', o.roomCount],
+    ['在线人数', o.livePeerCount], ['通话中房间', o.liveRoomCount],
+  ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+  $('registrationToggle').checked = !!o.allowRegistration;
+  $('registrationLabel').textContent = o.allowRegistration ? '当前：允许注册' : '当前：不允许注册';
+}
+
+function renderRooms(items) {
+  if (!items.length) { $('rooms').innerHTML = '<div class="empty">还没有房间</div>'; return; }
+  $('rooms').innerHTML = `<table><thead><tr>
+      <th>房间</th><th>房间号</th><th>成员</th><th>房主</th><th>属性</th><th></th>
+    </tr></thead><tbody>${items.map((r) => `
+    <tr>
+      <td>${esc(r.name)}</td>
+      <td class="mono">${esc(r.roomId)}</td>
+      <td>${r.memberCount}/${r.capacity}${r.online ? ' <span class="tag on">通话中</span>' : ''}</td>
+      <td>${esc(r.ownerName || '—')}</td>
+      <td>${r.isPublic ? '<span class="tag">公开</span>' : '<span class="tag lock">私有</span>'}${r.hasPassword ? ' <span class="tag lock">有密码</span>' : ''}</td>
+      <td style="text-align:right; white-space:nowrap">
+        <button data-members="${esc(r.roomId)}">成员</button>
+        <button class="danger" data-close="${esc(r.roomId)}">解散</button>
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+
+  $('rooms').querySelectorAll('[data-members]').forEach((btn) =>
+    btn.addEventListener('click', () => openMembers(btn.dataset.members)));
+  $('rooms').querySelectorAll('[data-close]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.close;
+      if (!confirm('确定解散房间 ' + id + '？房间内所有成员都会被断开。')) return;
+      await api('/rooms/' + encodeURIComponent(id), { method: 'DELETE' });
+      banner('已解散房间 ' + id, true);
+      await loadAll();
+    }));
+}
+
+async function openMembers(roomId) {
+  currentRoomId = roomId;
+  $('membersDialog').showModal();
+  await loadMembers(roomId);
+}
+
+async function loadMembers(roomId) {
+  $('membersTitle').textContent = '房间成员 · ' + roomId;
+  const data = await api('/rooms/' + encodeURIComponent(roomId) + '/members');
+  if (!data.items.length) { $('membersBody').innerHTML = '<div class="empty">当前没有人在这个房间里</div>'; return; }
+  $('membersBody').innerHTML = `<table><thead><tr>
+      <th>昵称</th><th>账号</th><th>会话 ID</th><th>状态</th><th></th>
+    </tr></thead><tbody>${data.items.map((m) => `
+    <tr>
+      <td>${esc(m.displayName)}</td>
+      <td>${esc(m.username)}</td>
+      <td class="mono">${esc(m.peerId)}</td>
+      <td>${m.sharing ? '<span class="tag on">共享屏幕</span> ' : ''}${m.muted ? '<span class="tag">已静音</span>' : '<span class="tag on">麦克风开</span>'}</td>
+      <td style="text-align:right"><button class="danger" data-kick="${esc(m.peerId)}">移出</button></td>
+    </tr>`).join('')}</tbody></table>`;
+
+  $('membersBody').querySelectorAll('[data-kick]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const peerId = btn.dataset.kick;
+      if (!confirm('把 ' + peerId + ' 移出房间？')) return;
+      await api('/rooms/' + encodeURIComponent(roomId) + '/kick', {
+        method: 'POST', body: JSON.stringify({ peerId }),
+      });
+      banner('已移出 ' + peerId, true);
+      await loadAll();
+    }));
+}
+
+function renderUsers(items, total) {
+  if (!items.length) { $('users').innerHTML = '<div class="empty">没有匹配的账号</div>'; return; }
+  $('users').innerHTML = `<table><thead><tr>
+      <th>ID</th><th>用户名</th><th>昵称</th><th>状态</th><th>创建时间</th><th></th>
+    </tr></thead><tbody>${items.map((u) => `
+    <tr>
+      <td>${u.id}</td>
+      <td>${esc(u.username)}</td>
+      <td>${esc(u.displayName)}</td>
+      <td>${u.disabled
+        ? '<span class="tag off">已禁用</span>'
+        : (u.online ? '<span class="tag on">在线</span>' : '<span class="tag">离线</span>')}</td>
+      <td class="hint">${u.createdAt ? esc(new Date(u.createdAt).toLocaleString()) : '—'}</td>
+      <td style="text-align:right; white-space:nowrap">
+        <button data-toggle="${u.id}" data-disabled="${u.disabled}">${u.disabled ? '启用' : '禁用'}</button>
+        <button class="danger" data-delete="${u.id}">删除</button>
+      </td>
+    </tr>`).join('')}</tbody></table>
+    <p class="hint" style="margin: 12px 0 0">共 ${total} 个账号</p>`;
+
+  $('users').querySelectorAll('[data-toggle]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const id = Number(btn.dataset.toggle);
+      const wasDisabled = btn.dataset.disabled === 'true';
+      const action = wasDisabled ? '启用' : '禁用';
+      const extra = wasDisabled ? '' : '\n该账号会被立即踢下线，已登录的客户端随之失效。';
+      if (!confirm(`确定${action}账号 #${id}？${extra}`)) return;
+      await api('/users/' + id, {
+        method: 'PATCH',
+        body: JSON.stringify({ disabled: !wasDisabled }),
+      });
+      banner(`已${action}账号 #${id}`, true);
+      await loadAll();
+    }));
+
+  $('users').querySelectorAll('[data-delete]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const id = Number(btn.dataset.delete);
+      const warn = `确定删除账号 #${id}？\n\n`
+        + '他名下的房间会被解散（房间内的人会收到通知），'
+        + '好友关系、进房记录会一并删除。此操作不可恢复。';
+      if (!confirm(warn)) return;
+      await api('/users/' + id, { method: 'DELETE' });
+      banner(`已删除账号 #${id}`, true);
+      await loadAll();
+    }));
+}
+
+$('connectBtn').addEventListener('click', async () => {
+  token = $('token').value.trim();
+  localStorage.setItem('omioclink.adminToken', token);
+  banner('');
+  await loadAll();
+  clearInterval(timer);
+  timer = setInterval(loadAll, 10000);
+});
+
+$('registrationToggle').addEventListener('change', async (e) => {
+  const allow = e.target.checked;
+  try {
+    const o = await api('/registration', { method: 'POST', body: JSON.stringify({ allow }) });
+    renderOverview(o);
+    banner(allow ? '已开放注册（重启后回到 .env 配置）' : '已关闭注册', true);
+  } catch (err) {
+    e.target.checked = !allow;
+  }
+});
+
+$('searchBtn').addEventListener('click', loadAll);
+$('userQuery').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadAll(); });
+$('closeMembers').addEventListener('click', () => { currentRoomId = null; $('membersDialog').close(); });
+
+$('newUserBtn').addEventListener('click', () => {
+  $('newUsername').value = ''; $('newDisplayName').value = ''; $('newPassword').value = '';
+  $('newUserDialog').showModal();
+});
+$('cancelNewUser').addEventListener('click', () => $('newUserDialog').close());
+$('confirmNewUser').addEventListener('click', async () => {
+  const username = $('newUsername').value.trim();
+  const password = $('newPassword').value;
+  const displayName = $('newDisplayName').value.trim();
+  if (!username || !password) { banner('用户名和密码都要填'); return; }
+  try {
+    await api('/users', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, displayName: displayName || undefined }),
+    });
+    $('newUserDialog').close();
+    banner('已创建账号 ' + username, true);
+    await loadAll();
+  } catch (e) { /* api() 已提示 */ }
+});
+
+$('subscriptions').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-remove-subscription]');
+  if (!btn) return;
+  btn.closest('[data-subscription-row]').remove();
+  if (!subscriptionInputs().length) addSubscriptionRow();
+});
+$('addSubscriptionBtn').addEventListener('click', () => {
+  addSubscriptionRow().querySelector('[data-subscription-input]').focus();
+});
+$('saveSubscriptionsBtn').addEventListener('click', saveSubscriptions);
+// 首屏先给一个空白行（把快照记成空列表），管理员连上之前也能开始填
+subscriptionSnapshot = JSON.stringify([]);
+renderSubscriptions([]);
+
+if (token) {
+  $('token').value = token;
+  loadAll().then(() => { timer = setInterval(loadAll, 10000); });
+}
+</script>
+</body>
+</html>

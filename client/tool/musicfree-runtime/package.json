@@ -1,0 +1,22 @@
+{
+  "name": "omioclink-musicfree-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "description": "构建随客户端分发的 MusicFree 插件运行时 bundle（assets/musicfree/runtime.bundle.js）",
+  "type": "module",
+  "scripts": {
+    "build": "node ../build_musicfree_runtime.mjs"
+  },
+  "dependencies": {
+    "axios": "1.7.4",
+    "big-integer": "1.6.52",
+    "cheerio": "1.0.0-rc.12",
+    "crypto-js": "4.2.0",
+    "dayjs": "1.11.11",
+    "he": "1.2.0",
+    "qs": "6.12.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.21.5"
+  }
+}
