@@ -1,28 +1,25 @@
-# OmiocLink 服务端一键部署。
+# 部署用：只拉 Docker Hub 上的镜像，不构建，也不需要本机装 Python 依赖。
 #
-#   cp .env.example .env   # 然后填入 OMIOCLINK_JWT_SECRET
-#   docker compose up -d --build
+#   cd deploy
+#   cp .env.example .env                  # 至少填 OMIOCLINK_JWT_SECRET（openssl rand -hex 32）
+#   docker compose up -d                  # 本地没有镜像时会自动 pull
+#   docker compose --profile stun up -d   # 连自建 STUN 一起起（Linux 专用，host 网络）
+#   docker compose pull && docker compose up -d   # 升级到最新的 latest
 #
-# 默认只起信令服务器；自建 STUN 是可选组件（仅地址发现，不是中继）：
-#   docker compose --profile stun up -d --build
+# 镜像来自 Docker Hub 的 omioc/omioclink:latest（由 server/ 那份的代码构建后推送）；
+# 改了代码要立刻验证，用 server/docker-compose.yml（构建本地镜像），别在这里改。
 #
-# 首次使用时注册是关闭的（默认策略）。要开账号：
-#   1) 在 .env 里设 OMIOCLINK_ALLOW_REGISTRATION=true 后 `docker compose up -d`
-#   2) 用客户端「注册」建号
-#   3) 再改回 false 并 `docker compose up -d`
+# 数据在命名卷 omioclink_server-data（SQLite + 头像）：docker compose down 不会删，
+# 备份把卷拿走即可；down -v 会连数据一起清掉。
+#
+# 注册默认关闭。要开账号：.env 里设 OMIOCLINK_ALLOW_REGISTRATION=true → up -d →
+# 用客户端注册 → 再改回 false 并 up -d（也可以在 Web 管理台临时切换）。
 name: omioclink
-
-# 两个服务共用同一个镜像（同一份代码，只是启动命令不同）
-x-server-build: &server-build
-  context: ./server
-  args:
-    # 构建期的依赖下载源（默认清华 PyPI 镜像）；改 .env 里的 OMIOCLINK_PIP_INDEX_URL 即可
-    PIP_INDEX_URL: ${OMIOCLINK_PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
 
 services:
   server:
-    build: *server-build
-    image: omioclink-server:latest
+    # 想固定版本就把 OMIOCLINK_IMAGE 写进 .env，例如 omioc/omioclink:v1.0.1
+    image: ${OMIOCLINK_IMAGE:-omioc/omioclink:latest}
     restart: unless-stopped
     environment:
       # 必填：至少 32 字节（HS256 的最低密钥长度），用 openssl rand -hex 32 生成
@@ -45,7 +42,6 @@ services:
       OMIOCLINK_CORS_ORIGINS: ${OMIOCLINK_CORS_ORIGINS:-*}
       # 点歌台开关与平台顺序（wy=网易云 / tx=QQ音乐 / kw=酷我，逗号分隔）
       OMIOCLINK_MUSIC_ENABLED: ${OMIOCLINK_MUSIC_ENABLED:-true}
-      OMIOCLINK_MUSIC_PLATFORMS: ${OMIOCLINK_MUSIC_PLATFORMS:-tx,wy,kw}
     ports:
       # 默认对外端口 21077（刻意避开 8080 等常见端口，减少冲突）。
       # 建议前面挂一层 TLS 反代（Caddy/Nginx）对外只暴露 443，
@@ -60,11 +56,10 @@ services:
   # 不转发任何媒体——和信令同属「连接发现」，不是中继。
   stun:
     profiles: ["stun"]
-    build: *server-build
-    image: omioclink-server:latest
+    image: ${OMIOCLINK_IMAGE:-omioc/omioclink:latest}
     restart: unless-stopped
     # STUN 必须看到客户端的真实来源地址，所以必须用 host 网络：
-    # 走默认 bridge + 端口映射时，容器观测到的来源会被 SNAT 成 docker 网关地址，
+    # 走默认 bridge + 端口映射时容器观测到的来源会被 SNAT 成 docker 网关地址，
     # 回显给客户端的映射地址就是错的，打洞必然失败。
     # host 网络只在 Linux 上可用——本项目的部署目标就是公网 Linux VPS。
     network_mode: host

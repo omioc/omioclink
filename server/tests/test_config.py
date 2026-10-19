@@ -25,7 +25,7 @@ _ENV_OVERRIDES: dict[str, str] = {
 
 
 def _compose_environment() -> dict[str, str]:
-    """docker-compose 会注入的全部变量（与 docker-compose.yml 保持一致）。"""
+    """docker-compose 会注入的全部变量（deploy/ 与 server/ 两份 compose 保持一致）。"""
     return {
         "OMIOCLINK_JWT_SECRET": "compose-provided-secret-32-bytes-min!!",
         "OMIOCLINK_DATABASE_URL": "sqlite+aiosqlite:////app/data/omioclink.db",

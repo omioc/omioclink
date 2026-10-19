@@ -15,8 +15,10 @@
 # 没有 TURN、没有 relay、没有任何媒体转发代码。
 FROM python:3.13-slim-bookworm
 
-# 依赖下载源：默认清华 PyPI 镜像。需要官方源时覆盖即可：
-#   docker compose build --build-arg PIP_INDEX_URL=https://pypi.org/simple
+# 依赖下载源：默认清华 PyPI 镜像。需要官方源时覆盖即可（在 server/ 下执行 compose）：
+#   $env:OMIOCLINK_PIP_INDEX_URL='https://pypi.org/simple'; docker compose up -d --build
+# 直接用 docker build 也行：
+#   docker build --build-arg PIP_INDEX_URL=https://pypi.org/simple -t omioc/omioclink:latest .
 # 其他可选镜像：
 #   https://mirrors.cloud.tencent.com/pypi/simple
 #   https://mirrors.aliyun.com/pypi/simple/

@@ -1,0 +1,77 @@
+# 离线部署用：把源码拷到目标机器上，从 ./Dockerfile 本地构建镜像再起服务。
+# 目标机连不上 Docker Hub（或不想依赖 CI 推送）时走这条路；能拉镜像就用 deploy/docker-compose.yml，
+# 那边不需要装构建环境、也不需要在机器上放源码。
+#
+#   cd server
+#   cp .env.example .env               # 至少填 OMIOCLINK_JWT_SECRET（openssl rand -hex 32）
+#   docker compose up -d --build       # 构建 omioc/omioclink:latest 并启动
+#   docker compose logs -f server
+#   docker compose --profile stun up -d --build   # 连自建 STUN 一起（Linux 专用）
+#
+# 项目名与 deploy/ 那份一致（都叫 omioclink），所以数据卷也是同一个 omioclink_server-data：
+# 两种部署方式可以互相切换，SQLite 与头像不用搬。反过来说，同一台机器上别同时起两份（都占 21077）。
+#
+# 构建出来的镜像直接叫 omioc/omioclink:latest，和 deploy/ 那份拉的名字一致：
+# build 完 docker push omioc/omioclink:latest 就能发布，不需要再 tag 一次；
+# 同一台机器上想切到 deploy/ 那份也不用重新拉，本地已有同名镜像。
+#
+# 环境变量全部从 server/.env 插值读取（compose 自动读同目录的 .env），
+# 变量含义与 deploy/.env.example 里的注释一致，这里不重复。
+name: omioclink
+
+# 两个服务共用同一份源码与镜像（同一份代码，只是启动命令不同），构建只做一次
+x-server-build: &server-build
+  context: .
+  args:
+    # 构建期的依赖下载源。来源优先级：环境变量 OMIOCLINK_PIP_INDEX_URL > 下面这个默认值
+    PIP_INDEX_URL: ${OMIOCLINK_PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+
+services:
+  server:
+    build: *server-build
+    image: omioc/omioclink:latest
+    restart: unless-stopped
+    environment:
+      # 必填：至少 32 字节（HS256 的最低密钥长度），用 openssl rand -hex 32 生成
+      OMIOCLINK_JWT_SECRET: ${OMIOCLINK_JWT_SECRET:?请在 server/.env 里设置 OMIOCLINK_JWT_SECRET（openssl rand -hex 32）}
+      # SQLite 落在挂载卷里；注意 sqlite URL 的绝对路径是四个斜杠
+      OMIOCLINK_DATABASE_URL: sqlite+aiosqlite:////app/data/omioclink.db
+      # 数据目录：头像文件放这里（<data_dir>/avatars/），和 SQLite 同一个卷
+      OMIOCLINK_DATA_DIR: /app/data
+      # 是否允许用户自行注册（默认关闭，也可在管理页临时切换）
+      OMIOCLINK_ALLOW_REGISTRATION: ${OMIOCLINK_ALLOW_REGISTRATION:-false}
+      # 是否暴露 /docs（Swagger UI）与 /openapi.json（默认关闭）
+      OMIOCLINK_DOCS_ENABLED: ${OMIOCLINK_DOCS_ENABLED:-false}
+      # Web 管理页令牌。留空即完全关闭（/admin 与 /api/v1/admin/* 连路由都不存在）
+      OMIOCLINK_ADMIN_TOKEN: ${OMIOCLINK_ADMIN_TOKEN:-}
+      # 下发给客户端的 STUN 列表（只放 stun:，本项目不使用 TURN）
+      OMIOCLINK_ICE_SERVERS: ${OMIOCLINK_ICE_SERVERS:-stun:stun.cloudflare.com:3478}
+      # 客户端是桌面应用、不经浏览器跨域，按需收紧
+      OMIOCLINK_CORS_ORIGINS: ${OMIOCLINK_CORS_ORIGINS:-*}
+      # 点歌台开关与平台顺序（wy=网易云 / tx=QQ音乐 / kw=酷我，逗号分隔）
+      OMIOCLINK_MUSIC_ENABLED: ${OMIOCLINK_MUSIC_ENABLED:-true}
+    ports:
+      # 默认对外端口 21077（刻意避开 8080 等常见端口，减少冲突）。
+      # 建议前面挂一层 TLS 反代（Caddy/Nginx）对外只暴露 443，
+      # 需要直连时把 OMIOCLINK_BIND_ADDR 设成 127.0.0.1 之类做限制
+      - "${OMIOCLINK_BIND_ADDR:-0.0.0.0}:21077:21077"
+    volumes:
+      - server-data:/app/data
+
+  # 可选：自建 STUN（UDP 3478）。离线部署时更该自建——公共 STUN 在国内可达性不稳定，
+  # 自建之后把 OMIOCLINK_ICE_SERVERS 指向它即可。它只回答「你的公网映射地址是什么」，
+  # 不转发任何媒体，和信令同属「连接发现」，不是中继。
+  stun:
+    profiles: ["stun"]
+    build: *server-build
+    image: omioc/omioclink:latest
+    restart: unless-stopped
+    # STUN 必须看到客户端的真实来源地址，所以必须用 host 网络：
+    # 走默认 bridge + 端口映射时容器观测到的来源会被 SNAT 成 docker 网关地址，
+    # 回显给客户端的映射地址就是错的，打洞必然失败。
+    # host 网络只在 Linux 上可用——本项目的部署目标就是公网 Linux VPS。
+    network_mode: host
+    command: ["python", "-m", "app.stun", "--host", "0.0.0.0", "--port", "3478"]
+
+volumes:
+  server-data:

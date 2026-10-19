@@ -6,6 +6,7 @@
 
 - `client/` — Flutter 桌面客户端（Windows，无边框窗口）。**美化/交互类需求默认只改这里。**
 - `server/` — FastAPI 信令服务器（含 Web 管理控制台）。除明确要求，不要动。
+- `deploy/` — 部署用 compose：只拉 Docker Hub 上的 `omioc/omioclink:latest`，不构建；离线部署（把源码拷到目标机、本地构建）用 `server/docker-compose.yml`。
 
 ## 构建产物落位：一律进 `releases/`
 

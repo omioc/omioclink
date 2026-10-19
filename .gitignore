@@ -5,9 +5,10 @@
 # server/.gitignore        Python：.venv、__pycache__、.pytest_cache、.mypy_cache、*.db、data/
 
 # ---------------------------------------------------------------- 本机配置 / 密钥
-# 里面有数据库口令、JWT 密钥，只提交 .env.example
-/.env
-/.env.local
+# 里面有数据库口令、JWT 密钥，只提交 .env.example。
+# compose 现在跟着各自目录走（deploy/.env、server/.env），用 ** 把所有层级一起兜住
+**/.env
+**/.env.local
 
 # ---------------------------------------------------------------- 打包与部署产物
 # 构建产物统一收拢到 releases/<组件>-v<版本>/（规则见 AGENTS.md），体积大且每次发版重生成，不进版本库
@@ -43,10 +44,6 @@ desktop.ini
 /tool/
 /docs/
 /design/
-# ---------------------------------------------------------------- 本机发布脚本
-# build_and_push_image.ps1 只在本机跑（构建镜像并推到 Docker Hub，依赖本机已 docker login），
-# 换机器时单独拷贝，不进版本库
-/build_and_push_image.ps1
 
 # ---------------------------------------------------------------- 日志与本地数据库
 # 客户端 / 服务端 / 测试跑起来时会到处落 *.log，SQLite 也会在 server/data 之外留下 *.db

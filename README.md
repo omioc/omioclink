@@ -14,12 +14,15 @@
 
 OmiocLink 是一个**给自己和固定好友使用**的桌面通讯工具，你在一台公网 Linux 小机器上跑一个信令服务，几位朋友装上客户端，就能语音开黑、看同一块屏幕、一起听歌
 
+![ 海报](assets/readme/poster.webp)
+
 两部分组成：
 
 | 目录 | 内容 |
 | --- | --- |
 | `client/` | Flutter 客户端：Windows 桌面 + Android，iOS 在路上迫切希望得到助力 |
-| `server/` | FastAPI 信令服务器 + 自研 STUN + Web 管理台，一条 `docker compose --profile stun up -d` 启动 |
+| `server/` | FastAPI 信令服务器 + 自研 STUN + Web 管理台；`server/docker-compose.yml` 在本机构建并启动 |
+| `deploy/` | 服务端在线部署所用 compose：只拉 `omioc/omioclink:latest` 镜像，`docker compose up -d` 即起（可选 STUN profile） |
 
 有一条设计约束贯穿整个 OmiocLink 项目，所有功能都建立在它之上：
 
@@ -45,7 +48,7 @@ OmiocLink 是一个**给自己和固定好友使用**的桌面通讯工具，你
 - **同局域网自动走内网**：host 候选让同一个 WiFi 下的成员直连，延迟 < 5ms、零外网流量
 - **跨网靠 STUN 打洞**，业界经验成功率约 80%~90%（家用路由器绝大多数是锥型 NAT），对称型 NAT（运营商 CGNAT 常见）、封 UDP 的校园网/企业网会失败
 - **失败也要说清楚**：入房前会探测连通性，连不上的成员在界面里被标出来；设置页「当前连接」实时显示 **已直连 x/y 位成员**、上行/下行码率，并在有成员打洞失败时给出可操作建议（换手机热点 / 换家庭宽带 / 查防火墙是否拦 UDP）
-- **STUN 可以自建**：`docker compose --profile stun up -d` 起一个只回答「你的公网映射地址是什么」的 STUN，同样不转发任何媒体
+- **STUN 可以自建**：`cd deploy && docker compose --profile stun up -d` 起一个只回答「你的公网映射地址是什么」的 STUN，同样不转发任何媒体
 
 ### 2.2 共享语音
 
@@ -119,24 +122,25 @@ OmiocLink 是一个**给自己和固定好友使用**的桌面通讯工具，你
 
 ## 3. 部署与构建
 
-### 3.1 服务端：构建镜像并部署
+### 3.1 服务端
 
-前提：一台有公网 IPv4 的 Linux 机器（VPS），装好 Docker 与 compose 插件
+服务端有两份 compose：
 
-```bash
-cp .env.example .env                          # 至少填 OMIOCLINK_JWT_SECRET
-openssl rand -hex 32                          # 生成一个 32 字节的密钥填进去
-docker compose --profile stun up -d --build   # 首次会自动构建镜像
-docker ps                                     # 看到两个服务 healthy 即可
-```
+| 位置 | 用途 | 起法 |
+| --- | --- | --- |
+| `deploy/docker-compose.yml` | 在线部署：只拉 Docker Hub 上的 `omioc/omioclink:latest`，由作者构建发布 | `cd deploy && docker compose --profile stun up -d` |
+| `server/docker-compose.yml` | 离线部署：把源码拷到目标机，从 `server/Dockerfile` 构建 `omioc/omioclink:latest` 再启动，不需要 Docker Hub，但需要环境具备基础镜像 | `cd server && docker compose --profile stun up -d --build` |
+
+两份 compose 的项目名都是 `omioclink`，数据卷同为 `omioclink_server-data`：两种部署方式可以互相切换、数据不用搬
+
+端口和数据卷：
 
 | 项 | 值 |
 | --- | --- |
 | 监听端口 | `21077` 服务端主服务通讯接口，`3478` 服务端 stun 服务接口 |
-| 数据卷 | `server-data` → `/app/data`（SQLite + 头像 + 插件订阅，备份时把卷拿走即可） |
-| 发行包 | `releases/server-<tag>/` 下有一份导出好的镜像 tar（`docker load -i xxx.tar` 即可） |
+| 数据卷 | `omioclink_server-data` → `/app/data`（SQLite + 头像 + 插件订阅，备份时把卷拿走即可；两份 compose 项目名相同，共用这一个卷） |
 
-**关键环境变量**（写进 `.env`，`docker compose` 会自动读取）：
+关键环境变量：
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
@@ -146,28 +150,43 @@ docker ps                                     # 看到两个服务 healthy 即�
 | `OMIOCLINK_ICE_SERVERS` | `stun:stun.cloudflare.com:3478` | 下发给客户端的 STUN 列表，注意使用你 linux 主机对应的域名，**只填 `stun:`，本项目不支持 TURN** |
 | `OMIOCLINK_BIND_ADDR` | `0.0.0.0` | 挂 TLS 反代时建议收紧成 `127.0.0.1` |
 | `OMIOCLINK_MUSIC_ENABLED` | `true` | 点歌台总开关 |
-| `OMIOCLINK_PIP_INDEX_URL` | 清华镜像 | 构建镜像时的依赖源 |
+| `OMIOCLINK_PIP_INDEX_URL` | 清华镜像 | 只对 `server/docker-compose.yml` 的 `--build` 有效：构建时装依赖的源 |
 
-**自建 STUN（可选，推荐）**：公共 STUN 在国内可达性不稳定
+#### 部署前提
+
+一台有公网 IPv4 的 Linux 机器（VPS），装好 Docker 与 compose 插件
+
+#### 在线部署
 
 ```bash
-docker compose --profile stun up -d
-# 然后把 OMIOCLINK_ICE_SERVERS 改成 stun:<你的公网IP/域名>:3478
+cd deploy
+cp .env.example .env
+# 记得用下面的命令生成并填写 OMIOCLINK_JWT_SECRET 和 OMIOCLINK_ADMIN_TOKEN
+openssl rand -hex 32                          # 生成一个 32 字节的密钥填进去
+# 把 OMIOCLINK_ICE_SERVERS 改成 stun:<你的公网IP/域名>:3478
+docker compose --profile stun up -d           # 本地没镜像会自动 pull；不要 STUN 就去掉 --profile stun
+docker ps                                     # 看到服务 healthy 即可
 ```
 
 STUN 容器必须用 `network_mode: host`（Linux 专用）：走 bridge + 端口映射时容器看到的来源地址会被 SNAT 成 docker 网关，回显出去的映射地址是错的，打洞必然失败；它只回答「你的公网映射地址是什么」，和信令同属"连接发现"，**不是中继**
 
 **TLS**：建议前面挂一层 Caddy / Nginx，对外只开 443，内部反代到 `127.0.0.1:21077`，然后客户端填域名即可（`wss://`）
 
-**离线部署（导出/导入镜像）**：
+#### 离线部署
 
 ```bash
-docker compose build
-docker save omioclink-server:latest -o omioclink-server.tar
-docker load -i omioclink-server.tar
+# 从项目 release 下载镜像搬到服务器导入并运行
+docker load -i omioclink-latest.tar
+cd deploy
+cp .env.example .env
+# 记得用下面的命令生成并填写 OMIOCLINK_JWT_SECRET 和 OMIOCLINK_ADMIN_TOKEN
+openssl rand -hex 32                          # 生成一个 32 字节的密钥填进去
+# 把 OMIOCLINK_ICE_SERVERS 改成 stun:<你的公网IP/域名>:3478
+docker compose --profile stun up -d           # 本地已有镜像，不会再 pull
+docker ps                                     # 看到服务 healthy 即可
 ```
 
-**本地开发**：
+#### 本地开发
 
 ```bash
 cd server
@@ -180,71 +199,20 @@ uv run mypy            # 类型检查（严格模式）
 
 ### 3.2 Web 管理台
 
-在 `.env` 里设好 `OMIOCLINK_ADMIN_TOKEN` 并重启，浏览器打开 `http://<服务器>:21077/admin`，页面顶部输入令牌（请求头 `X-Admin-Token`）即可
+在 `deploy/.env` 里设好 `OMIOCLINK_ADMIN_TOKEN` 并启动，浏览器打开 `http://<服务器>:21077/admin`，页面顶部输入令牌（请求头 `X-Admin-Token`）即可
 
 四个区块：
 
-- **用户自注册**：临时开关（重启后回到 `.env` 的值）
+- **用户自注册**：临时开关（重启后回到 `deploy/.env` 的值）
 - **房间**：在线房间列表、人数上限、当前成员、把某个成员移出、解散房间
 - **账号**：按用户名/昵称搜索、新建账号、禁用/启用、删除
 - **音乐插件订阅**：维护给客户端下发的插件订阅地址（`.json` 清单或 `.js` 直链），客户端连上服务器后自动同步、按 `sha256` 判断是否需要重装
 
-> 注册默认是关的，要开账号：`.env` 里改 `OMIOCLINK_ALLOW_REGISTRATION=true` → `docker compose --profile stun up -d` → 客户端注册
+> 注册默认是关的，要开账号：`deploy/.env` 里改 `OMIOCLINK_ALLOW_REGISTRATION=true` → `cd deploy && docker compose up -d` → 客户端注册
 
 ### 3.3 客户端：编译与打包
 
-环境要求：
-
-| 用途 | 需要 |
-| --- | --- |
-| 公共 | Flutter **3.47.7 stable** / Dart 3.13.5 |
-| Windows | Visual Studio 2022/2026，勾选「使用 C++ 的桌面开发」+ Windows 10/11 SDK |
-| Android | **JDK 21**、Android SDK（platform 36 / build-tools 36.0.0）、NDK（版本由 Flutter 指定） |
-
-细节（模拟器档位、Gradle 镜像）见 [client/README.md](client/README.md)
-
-**Windows**：
-
-```powershell
-cd client
-flutter run -d windows            # 本地调试
-flutter build windows --release   # 出包
-```
-
-> 发出去的包记得带上 VC++ 运行库：Flutter 模板的 CMake 不会把 `msvcp140.dll` / `vcruntime140.dll` 拷进 `Release\`，没装运行库的机器上会报「找不到 vcruntime140.dll」，把 `<VS>\VC\Redist\MSVC\<版本>\x64\Microsoft.VC14x.CRT\*.dll` 拷进 `build\windows\x64\runner\Release\` 再收拢
-
-**Android**：
-
-```powershell
-cd client
-flutter build apk --release        # 或加 --split-per-abi 出小包
-flutter build appbundle --release  # 上架用 aab
-adb install -r ..\releases\client-<tag>\omioclink-client-android-<tag>.apk
-```
-
-**收拢产物**（统一进仓库根的 `releases/<组件>-v<版本>/`，文件名带版本）：
-
-```powershell
-cd client
-powershell -ExecutionPolicy Bypass -File tool\stage_release.ps1
-# 只收一端：-Target windows / -Target android
-```
-
-| 产物 | 来源 | 体积 |
-| --- | --- | --- |
-| `omioclink-client-win-x64-<tag>.zip` | `build\windows\x64\runner\Release\` 整个目录 | ~29 MB |
-| `omioclink-client-android-<tag>.apk` | `build\app\outputs\flutter-apk\app-release.apk`（4 个 ABI） | ~112 MB |
-| `omioclink-client-android-<tag>.aab` | `build\app\outputs\bundle\release\app-release.aab` | ~83 MB |
-
-Windows 包解压到任意目录双击 exe 就能跑（免安装），目前 Android 的 release 用的是模板自带的 **debug 签名**：能装能跑，暂未上架
-
-**提交前自检**（两条都必须干净）：
-
-```powershell
-cd client
-flutter analyze lib test
-flutter test
-```
+详见 client 包下的 [README](client/README.md)
 
 ---
 
@@ -254,11 +222,11 @@ flutter test
 
 **目前困境：iOS 打包编译和上架**
 
-代码层已经把「桌面 / 手机」两套布局拆开（短边 < 600dp 自动切单栏），安卓端跑同一套代码是没有问题的，iOS 移植的工作量并不大；目前由于没有 **Apple Developer Program：99 美元/年** 的账号，没有签名、没有 TestFlight、无法上架 App Store
+代码层已经把「桌面 / 手机」两套布局拆开（短边 < 600dp 自动切单栏），安卓端跑同一套代码是没有问题的，iOS 移植的工作量并不大；目前由于没有 **Apple Developer Program** 的账号，没有签名、没有 TestFlight、无法上架 App Store
 
 所以：
 
-> **若有大佬能赞助 99 美元/年的苹果开发者账号，感激不尽，助力 iOS 版早日上线**
+> **若有大佬赞助 99 美元/年的苹果开发者账号，感激不尽，助力 iOS 版早日上线**
 > 一笔赞助换来的不是一个 App，而是这个项目从"自己用的 Windows 工具"变成"三端都在的自部署产品"，将会在赞助列表表示感谢（收款码与联系方式见第 7 节）
 
 其他已知问题：
@@ -301,7 +269,7 @@ flutter test
 2. 说清楚**版本**（`releases` 里的文件名带版本号，或客户端关于页）、**系统**（Windows 10/11、Android 版本）、**网络环境**（家里宽带 / 校园网 / 公司网 / 手机热点，有没有开代理或 VPN）
 3. **尽量附上日志和崩溃堆栈**，这是唯一能让远程排查变得更加容易的方式
 
-### 日志在哪、怎么给
+#### 日志在哪、怎么给
 
 - 目录：**`%LOCALAPPDATA%\OmiocLink\logs`**（便携运行时落在 exe 旁边的 `logs\`；手机上在应用私有目录，设置页会显示完整路径）
 - 打开方式：客户端 **设置 → 运行日志 → 「打开日志文件夹」**，页面里也直接显示本次运行的日志文件路径
@@ -333,7 +301,7 @@ flutter test
 
 如果 OmiocLink 帮你省下了一个会员、一次云盘、或者只是让你和朋友多笑了几晚，欢迎请作者喝杯咖啡
 
-所有赞助的第一用途都是 **Apple Developer Program（99 美元/年）**，其次是域名与服务器
+所有赞助的第一用途都是 **Apple Developer Program**，其次是域名与服务器
 
 | 支付宝 | 微信 |
 | :---: | :---: |
