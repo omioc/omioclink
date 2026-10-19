@@ -1,0 +1,201 @@
+name: Release
+
+# 打 tag 即发版：
+#
+#   git tag v1.0.3 && git push origin v1.0.3
+#
+# 依次做：版本号校验 → 客户端 Windows / Android 构建 → 服务端镜像构建推送 → 建 GitHub Release。
+#
+# 仓库 Secrets 需要：
+#   DOCKERHUB_USERNAME   Docker Hub 账号
+#   DOCKERHUB_TOKEN      Docker Hub Access Token（不是登录密码）
+#
+# 发行说明：把 `.github/release-notes/<tag>.md`（例如 v1.0.3.md）写好，Release 正文就用它；
+# 没有这个文件时退回「自上一个 tag 以来的提交列表」。
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.47.7"
+  IMAGE: omioc/omioclink
+
+jobs:
+  version:
+    name: 版本号校验
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          PUBSPEC=$(sed -n 's/^version: *\([0-9][^+ ]*\).*/\1/p' client/pubspec.yaml | head -n1)
+          PYPROJECT=$(sed -n 's/^version *= *"\(.*\)"/\1/p' server/pyproject.toml | head -n1)
+          echo "tag=$TAG version=$VERSION pubspec=$PUBSPEC pyproject=$PYPROJECT"
+          # 三处必须一致：tag（对外）、客户端 pubspec、服务端 pyproject。
+          # 不一致就直接失败，别发一个「版本号对不上」的包出去。
+          if [ "$VERSION" != "$PUBSPEC" ]; then
+            echo "::error::client/pubspec.yaml 是 $PUBSPEC，与 tag $TAG 不一致"
+            exit 1
+          fi
+          if [ "$VERSION" != "$PYPROJECT" ]; then
+            echo "::error::server/pyproject.toml 是 $PYPROJECT，与 tag $TAG 不一致"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: 客户端 · Windows
+    needs: version
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart run tool/sync_version.dart --check
+      - run: flutter build windows --release
+      - name: 补 VC++ 运行库（Flutter 模板不会把它装进 Release）
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw "找不到 vswhere，runner 的 VS 环境不对" }
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw "找不到带 C++ 工具集的 Visual Studio" }
+          $crt = Get-ChildItem "$vs\VC\Redist\MSVC" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $src = Join-Path $crt.FullName "x64\Microsoft.VC14x.CRT"
+          Write-Host "从 $src 拷运行库"
+          Copy-Item (Join-Path $src "*.dll") "build\windows\x64\runner\Release\" -Force
+          if (-not (Test-Path "build\windows\x64\runner\Release\vcruntime140.dll")) {
+            throw "vcruntime140.dll 没拷进去，别发出一个起不来的包"
+          }
+      - name: 收拢产物
+        shell: pwsh
+        run: pwsh -ExecutionPolicy Bypass -File tool/stage_release.ps1 -Target windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-windows
+          path: releases/client-v${{ needs.version.outputs.version }}/*.zip
+          if-no-files-found: error
+
+  android:
+    name: 客户端 · Android
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart run tool/sync_version.dart --check
+      # 分包：单 ABI 约 39 MB，比 113 MB 的全量包更适合放进 Release
+      - run: flutter build apk --release --split-per-abi
+      - run: flutter build appbundle --release
+      - name: 收拢产物
+        shell: pwsh
+        run: ./tool/stage_release.ps1 -Target android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-android
+          path: |
+            releases/client-v${{ needs.version.outputs.version }}/*.apk
+            releases/client-v${{ needs.version.outputs.version }}/*.aab
+          if-no-files-found: error
+
+  docker:
+    name: 镜像 · 构建并推送
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: server
+          push: true
+          # latest 给「总是最新」的部署；带版本号的 tag 用来固定版本、方便回滚
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ needs.version.outputs.tag }}
+
+  release:
+    name: GitHub Release
+    needs: [version, windows, android, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: client-*
+          path: dist
+          merge-multiple: true
+      - name: 选发行说明
+        run: |
+          set -euo pipefail
+          NOTES=".github/release-notes/${{ needs.version.outputs.tag }}.md"
+          if [ -f "$NOTES" ]; then
+            cp "$NOTES" body.md
+            echo "用 $NOTES 作为发行说明"
+          else
+            PREV=$(git describe --tags --abbrev=0 "${{ needs.version.outputs.tag }}^" 2>/dev/null || true)
+            {
+              echo "# OmiocLink ${{ needs.version.outputs.tag }}"
+              echo
+              if [ -n "$PREV" ]; then
+                echo "自 $PREV 以来的改动："
+              else
+                echo "改动："
+              fi
+              echo
+              echo '```'
+              if [ -n "$PREV" ]; then
+                git log --oneline "$PREV".."${{ needs.version.outputs.tag }}"
+              else
+                git log --oneline -20
+              fi
+              echo '```'
+            } > body.md
+            echo "没有 .github/release-notes/${{ needs.version.outputs.tag }}.md，用提交列表代替"
+          fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
+          body_path: body.md
+          files: dist/*
+          fail_on_unmatched_files: true

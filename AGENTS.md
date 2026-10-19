@@ -8,6 +8,22 @@
 - `server/` — FastAPI 信令服务器（含 Web 管理控制台）。除明确要求，不要动。
 - `deploy/` — 部署用 compose：只拉 Docker Hub 上的 `omioc/omioclink:latest`，不构建；离线部署（把源码拷到目标机、本地构建）用 `server/docker-compose.yml`。
 
+## 版本号：只有一个来源，不许硬编码
+
+- 客户端版本 = `client/pubspec.yaml` 的 `version:`；服务端版本 = `server/pyproject.toml` 的 `version`。
+- 代码里**不要再写版本字面量**：`server/app/__init__.py` 从 pyproject 读（`app.__version__`），
+  `server/app/core/config.py` 直接用它；客户端运行时要用的版本走 `client/lib/core/app_version.dart`，
+  该文件由 `dart run tool/sync_version.dart` 从 pubspec 生成，**不要手改**。
+- 升版本只有三步：改 pubspec + pyproject 两处 → `cd client && dart run tool/sync_version.dart` → 提交。
+- 漂移会被测试拦下：`client/test/app_version_test.dart`（常量与 Runner.rc 兜底值）与
+  `server/tests/test_version.py`（包版本与 pyproject）。tag 与两处版本号不一致时，发版流水线第一步就会失败。
+
+## 发版：打 tag 就行，不要手工 build/上传
+
+- `git tag v1.0.3 && git push origin v1.0.3` → Windows/Android 构建、镜像推送、GitHub Release 全自动
+  （`.github/workflows/release.yml`）；PR 与 main push 的静态检查+单测在 `.github/workflows/ci.yml`。
+- 发行说明写在 `.github/release-notes/v<版本>.md`，没有就自动用「自上一个 tag 以来的提交列表」。
+
 ## 构建产物落位：一律进 `releases/`
 
 - 任何一端的最终产物（Windows zip、Android apk/aab、服务端 tar）都收到仓库根的

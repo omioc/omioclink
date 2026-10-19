@@ -222,6 +222,24 @@ uv run mypy            # 类型检查（严格模式）
 
 详见 client 包下的 [README](client/README.md)
 
+### 3.4 发版（CI 全自动）
+
+打 tag 即发版：构建、上传、建 Release、推镜像都在 GitHub Actions 里跑，本机不需要 Android SDK 与 VS
+
+```bash
+# 1) 两处版本号改成一致：client/pubspec.yaml 的 version: 与 server/pyproject.toml 的 version
+#    客户端里的字面量（app_version.dart / Runner.rc）由脚本从 pubspec 同步
+cd client && dart run tool/sync_version.dart
+cd .. && git commit -am '版本统一到 1.0.3'
+git tag v1.0.3
+git push origin main --tags
+```
+
+- `.github/workflows/ci.yml`：main 的每次 push 与所有 PR 跑 `flutter analyze + test`、`ruff / mypy / pytest`，外加版本号漂移检查
+- `.github/workflows/release.yml`：`v*` tag 触发 → 校验 tag 与两处版本号一致 → Windows 客户端（自动补 VC++ 运行库）+ Android 分包 apk / aab → 镜像 `omioc/omioclink:latest` 与 `omioc/omioclink:v1.0.3` 推 Docker Hub → 建 GitHub Release
+- 仓库 Secrets 需配 `DOCKERHUB_USERNAME` 与 `DOCKERHUB_TOKEN`（Docker Hub 的 Access Token，不是登录密码）
+- 发行说明写 `.github/release-notes/v1.0.3.md`，Release 正文就用它；没有则自动用「自上一个 tag 以来的提交列表」
+
 ---
 
 ## 4. 现状与困境

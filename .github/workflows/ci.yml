@@ -1,0 +1,54 @@
+name: CI
+
+# main 上每次 push、所有 PR 都跑：静态检查 + 单测 + 版本号漂移检查。
+# 发版是另一条流水线（release.yml，由 tag 触发），这里不构建产物。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 与 client/README「环境要求」保持一致。如果 runner 上装不到这个版本，
+  # 把这一行删掉、只留 channel: stable 用最新稳定版即可。
+  FLUTTER_VERSION: "3.47.7"
+
+jobs:
+  client:
+    name: 客户端 · analyze + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: 版本号一致性（pubspec → app_version.dart / Runner.rc）
+        run: dart run tool/sync_version.dart --check
+      - run: flutter analyze lib test
+      - run: flutter test
+
+  server:
+    name: 服务端 · ruff + mypy + pytest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run mypy
+      - run: uv run pytest -q

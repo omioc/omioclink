@@ -21,8 +21,8 @@ from app.signaling.music import (
     MUSIC_MODE_SHUFFLE,
     PER_USER_QUEUE_LIMIT,
     PREROLL_MS,
-    EnqueueRequest,
     UNKNOWN_DURATION_CAP_MS,
+    EnqueueRequest,
     MusicError,
     RoomMusic,
 )
@@ -302,12 +302,16 @@ def test_shuffle_plays_every_entry_once() -> None:
     for index, peer in enumerate(["p1", "p2", "p3"]):
         _enqueue(music, peer_id=peer, song_id=str(index), now=0)
 
-    played = [music.current.song_id]
+    first = music.current
+    assert first is not None
+    played = [first.song_id]
     for _ in range(2):
         current = music.current
         assert current is not None
         assert music.tick(current.anchor_server_ms + 180_000 + END_GRACE_MS) is True
-        played.append(music.current.song_id)
+        following = music.current
+        assert following is not None
+        played.append(following.song_id)
 
     # 随机的是顺序，不是重复：「三首各播一次」
     assert sorted(played) == ["0", "1", "2"]
