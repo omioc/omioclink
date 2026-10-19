@@ -44,7 +44,7 @@ DENSITIES = {
 LEGACY_DP = 48
 ADAPTIVE_DP = 108
 
-#: 圆角半径占边长的比例，与 ``tool/make_brand_assets.py`` 的 Windows 图标一致
+#: 圆角半径占边长的比例，与 ``client/tool/make_brand_assets.py`` 的 Windows 图标一致
 CORNER_RATIO = 0.18
 #: 图形占图标的比例（其余是底色留白），同样沿用 Windows 那套
 INNER_RATIO = 0.9

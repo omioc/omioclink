@@ -74,7 +74,7 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # 品牌图形（由仓库根的 OmiocLink.png 生成，见 tool/make_brand_assets.py）
+  # 品牌图形（由仓库根的 OmiocLink.png 生成，见 client/tool/make_brand_assets.py）
   assets:
     - assets/branding/
     # MusicFree 插件运行时（构建期由 tool/build_musicfree_runtime.mjs 生成）

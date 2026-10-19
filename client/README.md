@@ -1,7 +1,7 @@
 # OmiocLink 客户端
 
-Flutter 写的桌面 + 手机客户端：Windows 无边框窗口，安卓手机单栏。**平板与桌面沿用同一套三栏布局**
-（短边 ≥ 600dp），手机（短边 < 600dp）自动切单栏 + 底部导航，判定见 `lib/core/platform.dart`。
+Flutter 写的桌面 + 手机客户端：Windows 无边框窗口，安卓手机单栏；**平板与桌面沿用同一套三栏布局**
+（短边 ≥ 600dp），手机（短边 < 600dp）自动切单栏 + 底部导航，判定见 `lib/core/platform.dart`
 
 ---
 
@@ -20,7 +20,7 @@ Flutter 写的桌面 + 手机客户端：Windows 无边框窗口，安卓手机�
 [Environment]::SetEnvironmentVariable('ANDROID_HOME', 'D:\Android\Sdk', 'User')
 ```
 
-改完新开终端，`flutter doctor -v` 的 Android toolchain 那一段应该是 `[√]`。
+改完新开终端，`flutter doctor -v` 的 Android toolchain 那一段应该是 `[√]`
 
 ---
 
@@ -61,14 +61,14 @@ flutter devices      # 拿设备 id
 flutter run -d <设备id>
 ```
 
-模拟器和真机都支持热重载（`r`）/ 热重启（`R`）。
+模拟器和真机都支持热重载（`r`）/ 热重启（`R`）
 
 ---
 
 ## 三、构建发布包
 
 所有产物统一收拢到**仓库根的 `releases/client-v<版本>/`**（版本取 `pubspec.yaml` 的 `version:`，
-当前 `1.0.1`），文件名也带版本，拿到一个包就知道它是哪一版。`releases/` 在 `.gitignore` 里，不进版本库。
+当前 `1.0.1`），文件名也带版本，拿到一个包就知道它是哪一版；`releases/` 在 `.gitignore` 里，不进版本库
 
 先构建，再用脚本收拢（`tool/stage_release.ps1`，自动读版本号并建目录）：
 
@@ -89,36 +89,36 @@ powershell -ExecutionPolicy Bypass -File tool\stage_release.ps1
 | `omioclink-client-android-1.0.1.apk` | `build\app\outputs\flutter-apk\app-release.apk`，4 个 ABI 全带 | ~112 MB |
 | `omioclink-client-android-1.0.1.aab` | `build\app\outputs\bundle\release\app-release.aab` | ~83 MB |
 
-- Windows 包解压到任意目录双击 exe 就能跑，不需要安装。`Compress-Archive` 写出的条目分隔符是反斜杠
-  （`data\app.so`），Windows 解压无影响；要到 Linux/macOS 上解压就换 7-Zip 打一次。
+- Windows 包解压到任意目录双击 exe 就能跑，不需要安装；`Compress-Archive` 写出的条目分隔符是反斜杠
+  （`data\app.so`），Windows 解压无影响；要到 Linux/macOS 上解压就换 7-Zip 打一次
 - **VC++ 运行库要自己拷**：Flutter 模板的 CMake 不会把 `msvcp140.dll` / `vcruntime140.dll` 装进
   `Release\`，而这些 dll 一旦被 `flutter clean` 清掉就不会自己回来，发出去的包在没装运行库的机器上
-  会报「找不到 vcruntime140.dll」。打包前把
+  会报「找不到 vcruntime140.dll」；打包前把
   `<VS 安装目录>\VC\Redist\MSVC\<版本>\x64\Microsoft.VC14x.CRT\*.dll` 拷进 `build\windows\x64\runner\Release\`
   再跑脚本（形如 `<VS>\VC\Redist\MSVC\<版本>\x64\Microsoft.VC14x.CRT\`）；
-  `stage_release.ps1` 发现缺 `vcruntime140.dll` 会警告。
+  `stage_release.ps1` 发现缺 `vcruntime140.dll` 会警告
 - 想按 ABI 出小包（arm64 约 39 MB，装机首选）：`flutter build apk --release --split-per-abi` 再跑脚本，
-  会一并收成 `omioclink-client-android-1.0.1-<abi>.apk`。`build\app\outputs\flutter-apk\` 里可能残留
-  上一次的旧分包，收拢前看一眼时间戳，或者 `flutter clean` 重打。
+  会一并收成 `omioclink-client-android-1.0.1-<abi>.apk`；`build\app\outputs\flutter-apk\` 里可能残留
+  上一次的旧分包，收拢前看一眼时间戳，或者 `flutter clean` 重打
 - 装到手机：`adb install -r ..\releases\client-v1.0.1\omioclink-client-android-1.0.1.apk`
 
-> 目前 release 用的是模板自带的 **debug 签名**，能装能跑但不能上架。
-> 上架前要在 `android/app/build.gradle.kts` 里配自己的 `signingConfigs`（keystore）。
+> 目前 release 用的是模板自带的 **debug 签名**，能装能跑但不能上架
+> 上架前要在 `android/app/build.gradle.kts` 里配自己的 `signingConfigs`（keystore）
 
 ---
 
 ## 四、安卓构建的几个坑（本机踩过，配好就不用再管）
 
 1. **Gradle 分发包 / 依赖走镜像**：`android/gradle/wrapper/gradle-wrapper.properties` 指向腾讯 Gradle 镜像，
-   `~\.gradle\init.gradle` 把 Maven Central 换到腾讯镜像。`google()` 保持直连。
+   `~\.gradle\init.gradle` 把 Maven Central 换到腾讯镜像，`google()` 保持直连
 2. **media_kit 的安卓原生库只托管在 GitHub Releases**：直连 github.com 超时的话，
    需要在 `~\.gradle\gradle.properties` 里给 Gradle 配代理（`systemProp.http.proxyHost/Port` 与 https 两项），
-   否则会卡在下载 `default-arm64-v8a.jar`。关掉代理后要记得改回来。
+   否则会卡在下载 `default-arm64-v8a.jar`；关掉代理后要记得改回来
 3. **`kotlin.incremental=false`**（`android/gradle.properties`）：Windows + Kotlin 2.4 + AGP 9 下
-   插件模块编译结束会报 `Could not close incremental caches` 直接构建失败。
+   插件模块编译结束会报 `Could not close incremental caches` 直接构建失败
 4. **权限**：录音 / 摄像头在首次进房时弹系统权限；`ws://` 明文信令依赖 Manifest 里的
-   `android:usesCleartextTraffic="true"`，改信令为 https 后可收紧。
-5. 安卓上不提供的能力：屏幕共享（`getDisplayMedia` 无安卓实现）、本机麦克风系统音量（仅 Windows）。
+   `android:usesCleartextTraffic="true"`，改信令为 https 后可收紧
+5. 安卓上不提供的能力：屏幕共享（`getDisplayMedia` 无安卓实现）、本机麦克风系统音量（仅 Windows）
 
 ---
 
@@ -130,7 +130,7 @@ flutter analyze lib test
 flutter test
 ```
 
-两条都必须干净 / 全绿；不要跑仓库级 `dart format`（本仓库并非 format-clean）。
+两条都必须干净 / 全绿；不要跑仓库级 `dart format`（本仓库并非 format-clean）
 
 ---
 
@@ -144,4 +144,4 @@ flutter test
 | 通话页窄屏分支 | `lib/features/call_view.dart`（`_CompactStageArea`、聊天与队列改底部面板） |
 | 安卓工程配置 | `android/app/build.gradle.kts`、`android/app/src/main/AndroidManifest.xml` |
 
-服务端在仓库根的 `server/`，与本目录无关；客户端只改 `client/`。
+服务端在仓库根的 `server/`，与本目录无关；客户端只改 `client/`

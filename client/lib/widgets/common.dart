@@ -183,7 +183,7 @@ class BrandMark extends StatelessWidget {
   /// 图标边长；标题栏用默认值，连接页这类大场面可以放大。
   final double size;
 
-  /// 品牌图（由仓库根的 `OmiocLink.png` 生成，见 `tool/make_brand_assets.py`）。
+  /// 品牌图（由仓库根的 `OmiocLink.png` 生成，见 `client/tool/make_brand_assets.py`）。
   static const String assetName = 'assets/branding/omioclink.png';
 
   @override
