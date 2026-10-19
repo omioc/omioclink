@@ -31,6 +31,7 @@ jobs:
   version:
     name: 版本号校验
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       tag: ${{ steps.check.outputs.tag }}
       version: ${{ steps.check.outputs.version }}
@@ -61,6 +62,7 @@ jobs:
     name: 客户端 · Windows
     needs: version
     runs-on: windows-latest
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: client
@@ -68,8 +70,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
+          # 只给 flutter-version：走 SDK 压缩包（带缓存）。同时给 channel 会让 action
+          # 退化成 git clone stable 分支再 checkout，在 runner 上能慢到十几分钟
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
           cache: true
       - run: flutter pub get
       - run: dart run tool/sync_version.dart --check
@@ -101,6 +104,7 @@ jobs:
     name: 客户端 · Android
     needs: version
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: client
@@ -112,8 +116,9 @@ jobs:
           java-version: "21"
       - uses: subosito/flutter-action@v2
         with:
+          # 只给 flutter-version：走 SDK 压缩包（带缓存）。同时给 channel 会让 action
+          # 退化成 git clone stable 分支再 checkout，在 runner 上能慢到十几分钟
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
           cache: true
       - run: flutter pub get
       - run: dart run tool/sync_version.dart --check
@@ -135,6 +140,7 @@ jobs:
     name: 镜像 · 构建并推送
     needs: version
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -155,6 +161,7 @@ jobs:
     name: GitHub Release
     needs: [version, windows, android, docker]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:

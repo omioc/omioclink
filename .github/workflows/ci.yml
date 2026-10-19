@@ -13,14 +13,15 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # 与 client/README「环境要求」保持一致。如果 runner 上装不到这个版本，
-  # 把这一行删掉、只留 channel: stable 用最新稳定版即可。
+  # 与 client/README「环境要求」保持一致。runner 上装不到这个版本时，改成任一存在的 3.x 版本。
   FLUTTER_VERSION: "3.47.7"
 
 jobs:
   client:
     name: 客户端 · analyze + test
     runs-on: ubuntu-latest
+    # 正常 3~6 分钟；卡住别让它挂到 GitHub 默认的 6 小时
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: client
@@ -28,8 +29,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
+          # 只给 flutter-version：走 SDK 压缩包（带缓存）。同时给 channel 会让 action
+          # 退化成 git clone stable 分支再 checkout，在 runner 上能慢到十几分钟
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
           cache: true
       - run: flutter pub get
       - name: 版本号一致性（pubspec → app_version.dart / Runner.rc）
@@ -40,6 +42,7 @@ jobs:
   server:
     name: 服务端 · ruff + mypy + pytest
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: server
