@@ -880,6 +880,11 @@ class AppState extends ChangeNotifier {
       await session.join(roomId: roomId, password: password);
       // 密码是对的：记住它，同一个房间下次直接进
       await _rememberRoomPassword(roomId, password);
+      // 进房成功就在后台把点歌台的数据拉起来（插件、排行榜、热门歌单标签）：
+      // 用户切过去时大概率已经有内容，不用先看一轮转圈。没开音乐的服务器跳过。
+      if (_serverInfo?.musicEnabled ?? false) {
+        _music.warmUp();
+      }
       // 进过的房间会进入「我加入的房间」，立刻刷新一次，
       // 让左栏马上就能看到自己进的房间和它的实时人数
       unawaited(refreshRooms());

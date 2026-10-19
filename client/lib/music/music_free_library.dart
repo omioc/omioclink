@@ -102,6 +102,19 @@ class MusicFreeLibrary extends ChangeNotifier {
     }
   }
 
+  /// 进房后立刻在后台把点歌台要用的数据备好（只做一次性的「预热」，不阻塞任何人）。
+  ///
+  /// 点歌台挂载时会依次读音质偏好、排行榜（默认落在这一屏）、热门歌单标签；
+  /// 全部提前跑掉，用户切过去时这几个方法都已经有结果 / 正在跑，界面直接出内容，
+  /// 不必先看一轮转圈。四个方法自身都是幂等的（已加载、正在加载会直接返回），
+  /// 所以点歌台再调一次也不会重复发请求。
+  void warmUp() {
+    _ensurePlugins();
+    unawaited(loadPreferences());
+    unawaited(loadCharts());
+    unawaited(loadTagSections());
+  }
+
   /// 从服务器取订阅 URL 并同步插件（首次启动 / 连上服务器时调用）。
   ///
   /// [urls] / [hash] 来自服务器的 `/music/plugin-subscription`。

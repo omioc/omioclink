@@ -69,6 +69,62 @@ class _RacingService extends MusicFreeService {
   }
 }
 
+/// 进房预热用的假服务：榜单 / 标签 / 标签下的歌单，各记一次调用。
+class _WarmUpService extends MusicFreeService {
+  _WarmUpService(super.plugins);
+
+  int chartCalls = 0;
+  int tagCalls = 0;
+  int sheetCalls = 0;
+
+  @override
+  Future<List<MusicFreeTopListGroup>> topLists({bool refresh = false}) async {
+    chartCalls++;
+    return <MusicFreeTopListGroup>[
+      MusicFreeTopListGroup(
+        platform: 'kg',
+        title: '热门榜单',
+        items: <MusicFreeSheet>[
+          MusicFreeSheet(
+            platform: 'kg',
+            id: 'k1',
+            title: '酷狗TOP500',
+            raw: <String, dynamic>{'id': 'k1'},
+          ),
+        ],
+      ),
+    ];
+  }
+
+  @override
+  Future<MusicFreeTags> recommendTags({bool refresh = false}) async {
+    tagCalls++;
+    return MusicFreeTags(
+      pinned: <MusicFreeTag>[
+        MusicFreeTag(
+          platform: 'kg',
+          id: 'g1',
+          title: '流行',
+          raw: <String, dynamic>{'id': 'g1'},
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<List<MusicFreeSheet>> sheetsByTag(MusicFreeTag tag, {int page = 1}) async {
+    sheetCalls++;
+    return <MusicFreeSheet>[
+      MusicFreeSheet(
+        platform: 'kg',
+        id: 'p1',
+        title: '纯音乐歌单',
+        raw: <String, dynamic>{'id': 'p1'},
+      ),
+    ];
+  }
+}
+
 MusicTrack _track(String name) => MusicTrack(
   platform: 'kg',
   id: name,
@@ -167,5 +223,33 @@ void main() {
     await firstRound;
     expect(racingLibrary.tracks.single.name, '新的');
     expect(racingLibrary.searching, isFalse);
+  });
+
+  test('warmUp：进房后一次备好排行榜与热门歌单，点歌台再调一遍不重复请求', () async {
+    final paths = PluginPaths(root: tempDir.path);
+    final plugins = MusicFreePlugins(
+      host: MusicFreeHost(bundleSource: '', paths: paths),
+      paths: paths,
+    );
+    final warm = _WarmUpService(plugins);
+    final warmLibrary = MusicFreeLibrary(plugins: plugins, service: warm);
+    addTearDown(warmLibrary.dispose);
+
+    // 进房那一刻（AppState.joinRoom）就是这一步：后台跑，不等人
+    warmLibrary.warmUp();
+    await pumpEventQueue();
+
+    expect(warm.chartCalls, 1);
+    expect(warm.tagCalls, 1);
+    expect(warm.sheetCalls, 1, reason: '热门歌单要把第一个标签下的歌单一并备好');
+    expect(warmLibrary.chartGroups, isNotEmpty);
+    expect(warmLibrary.selectedTag, isNotNull);
+
+    // 之后点开点歌台：挂载时会再调一次，但已经备好了，不该再发请求
+    await warmLibrary.loadCharts();
+    await warmLibrary.loadTagSections();
+    expect(warm.chartCalls, 1);
+    expect(warm.tagCalls, 1);
+    expect(warm.sheetCalls, 1);
   });
 }
