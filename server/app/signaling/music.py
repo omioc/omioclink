@@ -36,14 +36,15 @@ __all__ = [
     "RoomMusic",
     "now_ms",
 ]
-#: 队列上限：与信令帧大小折中（协议 §4.1）
-MAX_QUEUE_SIZE = 30
+#: 队列上限：产品侧要求「一整张歌单能排进来」，不再按信令帧体积折中；
+#: 帧体积由下面单条 ``musicInfo`` 的 2KB 限长兜底（协议 §4.1）
+MAX_QUEUE_SIZE = 429
 #: 单条 ``musicInfo`` 的 JSON 上限（字节）：保护信令帧
 MAX_MUSIC_INFO_BYTES = 2048
 #: 每个点歌人最多同时占用的条目数（含正在播的那首）
-PER_USER_QUEUE_LIMIT = 2
-#: 两次点歌的最小间隔（毫秒）
-ENQUEUE_COOLDOWN_MS = 10_000
+PER_USER_QUEUE_LIMIT = 88
+#: 两次点歌的最小间隔（毫秒）：只拦连点 / 误触，不再用来限制「一次排一整张歌单」的节奏
+ENQUEUE_COOLDOWN_MS = 2_000
 #: 切歌预滚：给各客户端留出「解析直链 → 打开 → 缓冲」的时间（协议 §5.2）
 PREROLL_MS = 3_000
 #: 时长结束后的宽限：各端播放器落点有抖动，别让 tick 抢在客户端前面切

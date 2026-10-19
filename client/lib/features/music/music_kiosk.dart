@@ -1668,7 +1668,7 @@ class _QueuePanel extends StatelessWidget {
     if (queue.isOwner) {
       return '你是房主：可以切歌、清空队列，也能移除别人点的歌。';
     }
-    return '每人最多 2 首；点歌人可以切自己点的歌，清空队列需要房主。';
+    return '每人最多 88 首；点歌人可以切自己点的歌，清空队列需要房主。';
   }
 }
 

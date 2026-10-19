@@ -58,7 +58,7 @@ class MusicEntryDraft {
 /// * **本地模式**（没有绑 sink，或服务器不支持点歌）：退化成离线本地队列，
 ///   保持旧行为，老服务器上也能用。
 class RoomMusicQueue extends ChangeNotifier {
-  RoomMusicQueue({this.capacity = 30});
+  RoomMusicQueue({this.capacity = 429});
 
   /// 队列上限（服务端同口径，本地模式也按这个来）。
   final int capacity;

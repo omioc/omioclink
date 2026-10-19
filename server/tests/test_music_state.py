@@ -9,6 +9,7 @@ import pytest
 
 from app.signaling.music import (
     END_GRACE_MS,
+    ENQUEUE_COOLDOWN_MS,
     MAX_MUSIC_INFO_BYTES,
     MAX_QUEUE_SIZE,
     PER_USER_QUEUE_LIMIT,
@@ -58,18 +59,43 @@ def test_first_enqueue_becomes_current_with_preroll_anchor() -> None:
     assert music.revision == 1
 
 
-def test_queue_order_and_per_user_limit() -> None:
+def test_queue_order_follows_enqueue_time() -> None:
     music = RoomMusic()
     _enqueue(music, peer_id="p1", song_id="1", now=0)
     _enqueue(music, peer_id="p2", song_id="2", now=0)
     _enqueue(music, peer_id="p2", song_id="3", now=20_000)
 
     assert [item.song_id for item in music.queue] == ["2", "3"]
-    # p2 已经有 2 首（队列里两首，当前曲是 p1 的）
+
+
+def test_per_user_limit() -> None:
+    music = RoomMusic()
+    # 冷却按人算：同一个人的 N 首歌之间要各自错开 ENQUEUE_COOLDOWN_MS
+    for index in range(PER_USER_QUEUE_LIMIT):
+        _enqueue(
+            music,
+            peer_id="p1",
+            song_id=str(index),
+            now=index * ENQUEUE_COOLDOWN_MS,
+        )
+    # 名额含正在播的那首：自己占满时 size 正好等于上限
+    assert music.size == PER_USER_QUEUE_LIMIT
+    assert music.current is not None
+    assert music.current.requested_by.peer_id == "p1"
+
     with pytest.raises(MusicError) as info:
-        _enqueue(music, peer_id="p2", song_id="4", now=40_000)
+        _enqueue(
+            music,
+            peer_id="p1",
+            song_id="extra",
+            now=PER_USER_QUEUE_LIMIT * ENQUEUE_COOLDOWN_MS,
+        )
     assert info.value.code == ErrorCode.MUSIC_QUEUE_FULL
     assert str(PER_USER_QUEUE_LIMIT) in info.value.message
+
+    # 别人不占同一份名额
+    _enqueue(music, peer_id="p2", song_id="other", now=1_000)
+    assert len(music.queue) == PER_USER_QUEUE_LIMIT
 
 
 def test_enqueue_cooldown() -> None:
@@ -77,15 +103,17 @@ def test_enqueue_cooldown() -> None:
     _enqueue(music, peer_id="p1", song_id="1", now=0)
 
     with pytest.raises(MusicError) as info:
-        _enqueue(music, peer_id="p1", song_id="2", now=1_000)
+        _enqueue(music, peer_id="p1", song_id="2", now=ENQUEUE_COOLDOWN_MS - 1)
     assert info.value.code == ErrorCode.MUSIC_RATE_LIMITED
 
-    # 冷却过后可以点（此时第一首已不再占「每人 2 首」的名额以外的位置）
-    _enqueue(music, peer_id="p1", song_id="2", now=10_000)
+    # 冷却走完就能再点（下限是毫秒级的 ENQUEUE_COOLDOWN_MS，不再按 10 秒算）
+    _enqueue(music, peer_id="p1", song_id="2", now=ENQUEUE_COOLDOWN_MS)
     assert music.queue[0].song_id == "2"
+
+
 def test_queue_size_limit() -> None:
     music = RoomMusic()
-    # 用不同 peer 绕开「每人 2 首」限制，只看队列总上限
+    # 用不同 peer 绕开「每人 88 首」限制，只看队列总上限
     for index in range(MAX_QUEUE_SIZE + 1):
         _enqueue(music, peer_id=f"p{index}", song_id=str(index), now=0)
     assert len(music.queue) == MAX_QUEUE_SIZE  # 第一首成了当前曲

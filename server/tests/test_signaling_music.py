@@ -120,7 +120,7 @@ def test_enqueue_rate_limit_and_per_user_limit(client: TestClient) -> None:
         _enqueue(ws, "song-1")
         _recv(ws, "music_state")
 
-        # 同一个人的第二首会被 10 秒冷却拦下
+        # 同一个人的第二首会被 2 秒冷却拦下（两条消息之间远不到 2 秒）
         _enqueue(ws, "song-2")
         error = _recv(ws, "error")
         assert error["code"] == "music_rate_limited"
