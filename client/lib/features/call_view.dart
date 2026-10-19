@@ -103,6 +103,7 @@ class _CallViewState extends State<CallView> {
               library: music,
               session: session,
               player: state.musicPlayer,
+              favorites: state.musicFavorites,
             ),
           )
         else ...[
@@ -117,6 +118,7 @@ class _CallViewState extends State<CallView> {
               child: AmbientCard(
                 queue: session.music,
                 player: state.musicPlayer,
+                favorites: state.musicFavorites,
                 // 窄屏放不下「封面 + 标题 + 传输 + 音量」：音量条让位
                 compact: compact,
               ),

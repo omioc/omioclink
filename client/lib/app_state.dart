@@ -15,6 +15,7 @@ import 'media/media_engine.dart';
 import 'media/mic_volume_controller.dart';
 import 'media/media_port.dart';
 import 'music/clock_sync.dart';
+import 'music/music_favorites.dart';
 import 'music/music_free_library.dart';
 import 'musicfree/musicfree_host.dart';
 import 'musicfree/musicfree_plugins.dart';
@@ -47,6 +48,8 @@ class AppState extends ChangeNotifier {
     unawaited(_micVolume.load());
     // 点歌台发现没有可用插件时（比如首次登录那次还在失败重试中）能主动要一次同步
     _music.requestSync = () => _loadMusicPlugins();
+    // 「我喜欢」是本机缓存：启动时读一次，点进点歌台之前心形状态就已经是对的
+    unawaited(_favorites.load());
   }
 
   final SessionStore _store;
@@ -65,6 +68,9 @@ class AppState extends ChangeNotifier {
 
   /// 点歌台数据源（应用级：搜索、排行榜、热门歌单、插件管理）。
   late final MusicFreeLibrary _music = MusicFreeLibrary(plugins: _pluginStore);
+
+  /// 「我喜欢」：本机收藏（`SharedPreferences`），不进服务器、不跨设备同步。
+  final MusicFavorites _favorites = MusicFavorites();
 
   final RoomMusicQueue _musicQueue = RoomMusicQueue();
 
@@ -166,6 +172,9 @@ class AppState extends ChangeNotifier {
   User? get user => _user;
   MediaEngine get media => _media;
   MusicPlayer get musicPlayer => _musicPlayer;
+
+  /// 「我喜欢」：本机收藏，纯客户端缓存（服务器不知道，换账号也不同步）。
+  MusicFavorites get musicFavorites => _favorites;
 
   /// 麦克风音量控制器（本机默认录音设备的主音量，纯本地）。
   MicVolumeController get micVolumeController => _micVolume;
@@ -1175,6 +1184,7 @@ class AppState extends ChangeNotifier {
     _api?.close();
     _pluginHost.dispose();
     _micVolume.dispose();
+    _favorites.dispose();
     super.dispose();
   }
 

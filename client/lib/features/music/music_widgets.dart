@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import '../../core/app_theme.dart';
 import '../../core/formatting.dart';
 import '../../data/music_models.dart';
+import '../../music/music_favorites.dart';
 
 /// 封面：网络图 + 渐变兜底。
-///
 /// 音源经常给不出封面（酷我的搜索结果基本没有），所以兜底必须体面：按 id 派生
 /// 渐变 + 音符图标，与成员头像的兜底是同一套路数。
 class MusicCover extends StatelessWidget {
@@ -300,6 +300,88 @@ class MusicAddButton extends StatelessWidget {
             added ? Icons.check_circle : Icons.add_circle_outline,
             color: added ? context.palette.success : context.palette.textSecondary,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 「喜欢」小圆钮：实心心形＝已经在「我喜欢」里，再点一下取消。
+///
+/// 尺寸和 [MusicAddButton] 完全同档（28×28 / 图标 16）：两者并排站在行尾，
+/// 差一点就会让整行忽高忽低。红色取 `palette.danger`——它在深浅两套主题里
+/// 都是「红」，而强调色（薄荷绿 / 天蓝 / 蜜橙）用来标「喜欢」在不同主题下含义会跑偏。
+class MusicFavoriteButton extends StatelessWidget {
+  const MusicFavoriteButton({
+    super.key,
+    required this.favorited,
+    this.onPressed,
+  });
+
+  final bool favorited;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: favorited ? '取消喜欢' : '喜欢',
+      child: SizedBox(
+        width: 28,
+        height: 28,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          iconSize: 16,
+          onPressed: onPressed,
+          icon: Icon(
+            favorited ? Icons.favorite : Icons.favorite_border,
+            color: favorited
+                ? context.palette.danger
+                : context.palette.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 「喜欢当前这首歌」：播放条 / 氛围音卡片上，紧挨在播放模式按钮左边那颗。
+///
+/// 和 [MusicFavoriteButton] 是同一套视觉，差别只有两点：
+/// 图标跟「播放模式」同档大小（宽屏 20、窄屏 18），以及**没有在播的歌时禁用**——
+/// 队列空的时候心形还留在原位，播放条不会因为少一颗按钮而跳一下。
+class NowPlayingFavoriteButton extends StatelessWidget {
+  const NowPlayingFavoriteButton({
+    super.key,
+    required this.favorites,
+    required this.track,
+    this.compact = false,
+  });
+
+  final MusicFavorites favorites;
+
+  /// 这一条正在展示的歌（还没起播时就是队列里的下一首）。
+  final MusicTrack? track;
+
+  /// 手机窄屏：和播放模式按钮一起缩一档。
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = track;
+    final favorited = current != null && favorites.contains(current);
+    return Tooltip(
+      message: current == null
+          ? '还没有在播的歌'
+          : (favorited ? '取消喜欢' : '喜欢这首歌'),
+      child: IconButton(
+        onPressed: current == null ? null : () => favorites.toggle(current),
+        iconSize: compact ? 18 : 20,
+        visualDensity: VisualDensity.compact,
+        icon: Icon(
+          favorited ? Icons.favorite : Icons.favorite_border,
+          color: favorited
+              ? context.palette.danger
+              : context.palette.textSecondary,
         ),
       ),
     );

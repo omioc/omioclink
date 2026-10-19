@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/app_theme.dart';
 import '../../data/music_models.dart';
+import '../../music/music_favorites.dart';
 import '../../music/music_player.dart';
 import '../../room/room_music.dart';
 import '../../widgets/common.dart';
@@ -37,15 +38,17 @@ class NowPlayingBar extends StatelessWidget {
     super.key,
     required this.queue,
     required this.player,
+    required this.favorites,
   });
 
   final RoomMusicQueue queue;
   final MusicPlayer player;
+  final MusicFavorites favorites;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge(<Listenable>[queue, player]),
+      animation: Listenable.merge(<Listenable>[queue, player, favorites]),
       builder: (context, _) {
         final view = resolveNowPlaying(queue, player: player);
         return Container(
@@ -84,6 +87,8 @@ class NowPlayingBar extends StatelessWidget {
               _TransportControls(
                 playing: player.playing,
                 player: player,
+                favorites: favorites,
+                track: view?.track,
               ),
               const SizedBox(width: AppSpacing.md),
               PlayerVolumeControl(player: player, label: '我的音量'),
@@ -189,16 +194,27 @@ class _TrackSummary extends StatelessWidget {
 
 /// 传输控制：接通本机播放引擎；切歌/上一首按队列能力逐步完善。
 class _TransportControls extends StatelessWidget {
-  const _TransportControls({required this.playing, required this.player});
+  const _TransportControls({
+    required this.playing,
+    required this.player,
+    required this.favorites,
+    required this.track,
+  });
 
   final bool playing;
   final MusicPlayer player;
+  final MusicFavorites favorites;
+
+  /// 这一条正在展示的歌：喜欢按钮跟着它走（没有曲目时按钮禁用但保留）。
+  final MusicTrack? track;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // 喜欢当前这首：紧挨在播放模式左边，点一下就把在播的歌收进「我喜欢」
+        NowPlayingFavoriteButton(favorites: favorites, track: track),
         // 播放模式：房间级设置，点一下轮到下一个模式（图标即当前模式）
         PlaybackModeButton(queue: player.queue),
         const SizedBox(width: AppSpacing.xs),
@@ -311,11 +327,13 @@ class AmbientCard extends StatelessWidget {
     super.key,
     required this.queue,
     required this.player,
+    required this.favorites,
     this.compact = false,
   });
 
   final RoomMusicQueue queue;
   final MusicPlayer player;
+  final MusicFavorites favorites;
 
   /// 手机窄屏：这一行放不下「封面 + 标题 + 传输 + 音量」，音量条让位
   final bool compact;
@@ -323,7 +341,7 @@ class AmbientCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge(<Listenable>[queue, player]),
+      animation: Listenable.merge(<Listenable>[queue, player, favorites]),
       builder: (context, _) {
         final view = resolveNowPlaying(queue);
         final upcoming = queue.length;
@@ -411,7 +429,12 @@ class AmbientCard extends StatelessWidget {
                   // 卡片表头已有状态胶囊，这里不重复挂
                   Expanded(child: _TrackSummary(view: view, showBadge: false)),
                   const SizedBox(width: AppSpacing.sm),
-                  _TransportControls(playing: player.playing, player: player),
+                  _TransportControls(
+                    playing: player.playing,
+                    player: player,
+                    favorites: favorites,
+                    track: view?.track,
+                  ),
                   const SizedBox(width: AppSpacing.sm),
                   if (!compact) PlayerVolumeControl(player: player),
                 ],

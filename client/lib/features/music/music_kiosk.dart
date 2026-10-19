@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import '../../core/app_theme.dart';
 import '../../core/platform.dart';
 import '../../data/music_models.dart';
+import '../../music/music_favorites.dart';
 import '../../music/music_free_library.dart';
 import '../../music/music_player.dart';
 import '../../musicfree/musicfree_service.dart';
@@ -17,19 +18,21 @@ import 'music_widgets.dart';
 import 'now_playing.dart';
 import 'playback_mode.dart';
 
-/// 点歌台（MusicFree 式）：顶部搜索框 + 左导航（排行榜 / 热门歌单）。
+/// 点歌台（MusicFree 式）：顶部搜索框 + 左导航（排行榜 / 热门歌单 / 我喜欢）。
 ///
 /// 搜索不占导航项——上面就是搜索框，清空搜索会回到原来看的那一屏。
 ///
-/// * 数据全部来自 [MusicFreeLibrary]（插件由设置页「音乐插件」管理）；
-/// * 队列仍走房间的 [RoomMusicQueue]，右侧面板与底部播放条看到的是同一份；
-/// * 服务器元数据（平台能力 / 专题 / 最近点过）已不再参与点歌台。
+/// * 搜索结果、榜单、歌单详情全部来自 [MusicFreeLibrary]（插件由设置页「音乐插件」管理）；
+/// * 「我喜欢」是唯一的本地列表：[MusicFavorites]，只缓存这台设备上点过的喜欢，
+///   不经过服务器，也不受「换服务器 / 换插件」影响；
+/// * 队列仍走房间的 [RoomMusicQueue]，右侧面板与底部播放条看到的是同一份。
 class MusicKiosk extends StatefulWidget {
   const MusicKiosk({
     super.key,
     required this.library,
     required this.session,
     required this.player,
+    required this.favorites,
   });
 
   final MusicFreeLibrary library;
@@ -37,6 +40,9 @@ class MusicKiosk extends StatefulWidget {
 
   /// 房间播放引擎（应用级单例，由 `CallView` 注入）。
   final MusicPlayer player;
+
+  /// 本机收藏（应用级单例，由 `CallView` 注入）；只在客户端缓存，服务端无关。
+  final MusicFavorites favorites;
 
   @override
   State<MusicKiosk> createState() => _MusicKioskState();
@@ -59,6 +65,9 @@ class _MusicKioskState extends State<MusicKiosk> {
 
   MusicPlayer get player => widget.player;
 
+  /// 「我喜欢」：本机收藏（`AppState` 注入），只有它这份数据不来自插件。
+  MusicFavorites get favorites => widget.favorites;
+
   @override
   void initState() {
     super.initState();
@@ -66,6 +75,9 @@ class _MusicKioskState extends State<MusicKiosk> {
     // 热门歌单要按标签翻页，等用户真的点进来再取（也会按需同步订阅）。
     unawaited(library.loadPreferences());
     unawaited(library.loadCharts());
+    // 「我喜欢」是本机缓存：`AppState` 启动时已经读过一次，这里兜底
+    // （单独挂载点歌台的测试 / 极端时序下也能拿到上次的收藏）
+    unawaited(favorites.load());
     // 点歌被服务端拒绝（队列满 / 冷却 / 权限）：弹一次 snackbar，不打扰主视觉
     queue.addListener(_drainMusicError);
   }
@@ -100,6 +112,30 @@ class _MusicKioskState extends State<MusicKiosk> {
       return;
     }
     _notify(queue.contains(track) ? '这首歌已经在播放队列里了' : '播放队列已满');
+  }
+
+  /// 喜欢 / 取消喜欢：心形立刻变实心（或空），不再弹提示——
+  /// 和点歌一样，行尾那个按钮本身就是反馈，多一句 toast 只会打断人。
+  void _toggleFavorite(MusicTrack track) {
+    favorites.toggle(track);
+  }
+
+  /// 歌曲行尾部的一整组动作：先「喜欢」，再「加入队列」（顺序固定，别处不要各拼一套）。
+  Widget _trackActions(MusicTrack track) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        MusicFavoriteButton(
+          favorited: favorites.contains(track),
+          onPressed: () => _toggleFavorite(track),
+        ),
+        const SizedBox(width: 2),
+        MusicAddButton(
+          added: queue.contains(track),
+          onPressed: () => _enqueue(track),
+        ),
+      ],
+    );
   }
 
   /// 批量点歌：新服务端支持一次点一批（整批算一次请求），一批立刻到位；
@@ -226,6 +262,9 @@ class _MusicKioskState extends State<MusicKiosk> {
         unawaited(library.loadCharts());
       case MusicFreeSection.sheets:
         unawaited(library.loadTagSections());
+      case MusicFreeSection.favorites:
+        // 本机数据，打开即是最新的：不需要预热 / 拉取
+        break;
     }
   }
 
@@ -247,7 +286,12 @@ class _MusicKioskState extends State<MusicKiosk> {
     return ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
       child: AnimatedBuilder(
-        animation: Listenable.merge(<Listenable>[library, queue, player]),
+        animation: Listenable.merge(<Listenable>[
+          library,
+          queue,
+          player,
+          favorites,
+        ]),
         builder: (context, _) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -309,6 +353,7 @@ class _MusicKioskState extends State<MusicKiosk> {
             _KioskNowPlayingBar(
               queue: queue,
               player: player,
+              favorites: favorites,
               compact: useCompactLayout(context),
             ),
           ],
@@ -324,16 +369,16 @@ class _MusicKioskState extends State<MusicKiosk> {
         library.detailError != null) {
       return _DetailPane(
         library: library,
-        queue: queue,
         onEnqueue: _enqueue,
         onEnqueueAll: _enqueueAll,
+        trackActions: _trackActions,
       );
     }
     return switch (_section) {
       MusicFreeSection.search => _SearchPane(
         library: library,
-        queue: queue,
         onEnqueue: _enqueue,
+        trackActions: _trackActions,
       ),
       MusicFreeSection.charts => _ChartsPane(
         library: library,
@@ -342,6 +387,12 @@ class _MusicKioskState extends State<MusicKiosk> {
       MusicFreeSection.sheets => _SheetsPane(
         library: library,
         onOpen: (sheet) => unawaited(library.openSheet(sheet)),
+      ),
+      MusicFreeSection.favorites => _FavoritesPane(
+        favorites: favorites,
+        onEnqueue: _enqueue,
+        trackActions: _trackActions,
+        onEnqueueAll: _enqueueAll,
       ),
     };
   }
@@ -432,7 +483,8 @@ class _SearchBar extends StatelessWidget {
 }
 
 // --------------------------------------------------------------------------- //
-// 左导航：只有排行榜 / 热门歌单两个入口（搜索走点歌台上面的搜索框）
+// 左导航：排行榜 / 热门歌单（插件给的），下面用分割线隔开「我喜欢」（本机收藏）；
+// 搜索不占入口，走点歌台上面的搜索框
 // --------------------------------------------------------------------------- //
 class _NavRail extends StatelessWidget {
   const _NavRail({
@@ -470,6 +522,24 @@ class _NavRail extends StatelessWidget {
             selected: section == MusicFreeSection.sheets,
             accent: context.palette.accent,
             onTap: () => onChanged(MusicFreeSection.sheets),
+          ),
+          // 分割线：上面是插件给的内容，下面是你自己在这台机器上存的喜欢，
+          // 两类入口分开，用户才不会以为「我喜欢」也是某个音源给的
+          Padding(
+            key: const ValueKey<String>('nav-divider'),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 7,
+              vertical: AppSpacing.xs,
+            ),
+            child: Container(height: 1, color: context.palette.divider),
+          ),
+          NavRow(
+            icon: Icons.favorite_border,
+            label: collapsed ? '' : '我喜欢',
+            dense: true,
+            selected: section == MusicFreeSection.favorites,
+            accent: context.palette.accent,
+            onTap: () => onChanged(MusicFreeSection.favorites),
           ),
           const Spacer(),
           _NavCollapseButton(
@@ -572,13 +642,15 @@ class _PillTab extends StatelessWidget {
 class _SearchPane extends StatelessWidget {
   const _SearchPane({
     required this.library,
-    required this.queue,
     required this.onEnqueue,
+    required this.trackActions,
   });
 
   final MusicFreeLibrary library;
-  final RoomMusicQueue queue;
   final ValueChanged<MusicTrack> onEnqueue;
+
+  /// 行尾动作（喜欢 + 加入队列）：由点歌台统一给，各面板不要自己拼按钮。
+  final Widget Function(MusicTrack track) trackActions;
 
   /// 类型 tab 的中文名（未知类型直接用插件里的原始 id）。
   static String _searchTypeLabel(String type) => switch (type) {
@@ -681,12 +753,7 @@ class _SearchPane extends StatelessWidget {
                     key: ValueKey<String>('search:${track.key}'),
                     track: track,
                     onTap: isMusic ? () => onEnqueue(track) : null,
-                    trailing: isMusic
-                        ? MusicAddButton(
-                            added: queue.contains(track),
-                            onPressed: () => onEnqueue(track),
-                          )
-                        : null,
+                    trailing: isMusic ? trackActions(track) : null,
                   ),
             ],
           ),
@@ -1309,20 +1376,102 @@ class _SheetsPaneState extends State<_SheetsPane> {
 }
 
 // --------------------------------------------------------------------------- //
+// 内容：我喜欢（本机收藏，与插件 / 服务器无关）
+// --------------------------------------------------------------------------- //
+/// 「我喜欢」：本机的一份收藏（对应 MusicFree 的默认歌单「我喜欢的音乐」）。
+///
+/// 数据只来自 `MusicFavorites`（客户端缓存），所以插件全挂了、换了服务器、
+/// 甚至断网，这一屏照样能看、能再点一遍——这也是它和其他几屏最大的区别。
+class _FavoritesPane extends StatelessWidget {
+  const _FavoritesPane({
+    required this.favorites,
+    required this.onEnqueue,
+    required this.onEnqueueAll,
+    required this.trackActions,
+  });
+
+  final MusicFavorites favorites;
+  final ValueChanged<MusicTrack> onEnqueue;
+  final ValueChanged<Iterable<MusicTrack>> onEnqueueAll;
+  final Widget Function(MusicTrack track) trackActions;
+
+  @override
+  Widget build(BuildContext context) {
+    final tracks = favorites.tracks;
+    if (tracks.isEmpty) {
+      return const MusicEmptyHint(
+        icon: Icons.favorite_border,
+        text: '还没有喜欢的歌',
+        hint: '在搜索结果、榜单里点歌曲右侧的心形，就会收进这里',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        MusicSectionTitle(
+          text: '我喜欢的音乐',
+          trailing: MusicBadge(
+            text: '${tracks.length} 首',
+            color: context.palette.accent,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Row(
+          children: [
+            // 把「存在哪」说清楚：用户换电脑找不到这份列表时，得知道为什么
+            Expanded(
+              child: Text(
+                '只保存在这台设备上，换电脑 / 换账号都不同步',
+                style: TextStyle(
+                  color: context.palette.textMuted,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => onEnqueueAll(tracks),
+              icon: const Icon(Icons.playlist_add, size: 16),
+              label: const Text('全部加入队列'),
+            ),
+          ],
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: tracks.length,
+            itemBuilder: (context, i) {
+              final track = tracks[i];
+              // 点整行＝再把这首点一遍（进房间队列），行尾的实心心形管取消喜欢
+              return MusicSongTile(
+                key: ValueKey<String>('favorite:${track.key}'),
+                track: track,
+                onTap: () => onEnqueue(track),
+                trailing: trackActions(track),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// --------------------------------------------------------------------------- //
 // 内容：详情（榜单 / 歌单共用）
 // --------------------------------------------------------------------------- //
 class _DetailPane extends StatelessWidget {
   const _DetailPane({
     required this.library,
-    required this.queue,
     required this.onEnqueue,
     required this.onEnqueueAll,
+    required this.trackActions,
   });
 
   final MusicFreeLibrary library;
-  final RoomMusicQueue queue;
   final ValueChanged<MusicTrack> onEnqueue;
   final ValueChanged<Iterable<MusicTrack>> onEnqueueAll;
+
+  /// 行尾动作（喜欢 + 加入队列）：与搜索 / 我喜欢共用同一套按钮。
+  final Widget Function(MusicTrack track) trackActions;
 
   @override
   Widget build(BuildContext context) {
@@ -1453,10 +1602,7 @@ class _DetailPane extends StatelessWidget {
                       track: track,
                       rank: detail.isChart ? i + 1 : null,
                       onTap: () => onEnqueue(track),
-                      trailing: MusicAddButton(
-                        added: queue.contains(track),
-                        onPressed: () => onEnqueue(track),
-                      ),
+                      trailing: trackActions(track),
                     );
                   },
                 ),
@@ -1698,11 +1844,13 @@ class _KioskNowPlayingBar extends StatelessWidget {
   const _KioskNowPlayingBar({
     required this.queue,
     required this.player,
+    required this.favorites,
     this.compact = false,
   });
 
   final RoomMusicQueue queue;
   final MusicPlayer player;
+  final MusicFavorites favorites;
 
   /// 手机窄屏：音量条与队列侧栏让位，队列改成按钮弹出
   final bool compact;
@@ -1753,7 +1901,7 @@ class _KioskNowPlayingBar extends StatelessWidget {
                   ),
           ),
           const SizedBox(width: AppSpacing.sm),
-          _transportControls(context, playing: playing),
+          _transportControls(context, playing: playing, track: track),
           if (compact)
             IconButton(
               tooltip: '播放队列',
@@ -1878,10 +2026,17 @@ class _KioskNowPlayingBar extends StatelessWidget {
   Widget _transportControls(
     BuildContext context, {
     required bool playing,
+    required MusicTrack? track,
   }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // 喜欢当前这首：紧挨在播放模式左边，点一下收进「我喜欢」
+        NowPlayingFavoriteButton(
+          favorites: favorites,
+          track: track,
+          compact: compact,
+        ),
         // 播放模式：房间级设置，点一下轮到下一个模式（图标即当前模式）
         PlaybackModeButton(queue: queue, compact: compact),
         const SizedBox(width: AppSpacing.xs),

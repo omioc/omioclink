@@ -10,11 +10,14 @@ import '../musicfree/musicfree_plugins.dart';
 import '../musicfree/musicfree_service.dart';
 import '../musicfree/plugin_models.dart';
 
-/// 点歌台的三个内容视图（与 MusicFree 的搜索 / 排行榜 / 热门歌单一一对应）。
+/// 点歌台的内容视图（与 MusicFree 的搜索 / 排行榜 / 热门歌单一一对应）。
 ///
 /// 注意：`search` 不是左导航入口——搜索由点歌台顶部的搜索框触发，
 /// 用户清空搜索后会回到进来之前那一屏（榜单或歌单）。
-enum MusicFreeSection { search, charts, sheets }
+///
+/// `favorites` 是唯一的例外：它不来自插件，读的是本机收藏（`MusicFavorites`），
+/// 所以插件全挂了它照样能用。
+enum MusicFreeSection { search, charts, sheets, favorites }
 
 /// 内容区正在看的详情（榜单 / 歌单共用一套）。
 class MusicFreeDetail {

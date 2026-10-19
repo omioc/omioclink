@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omioclink_client/core/app_theme.dart';
 import 'package:omioclink_client/data/music_models.dart';
+import 'package:omioclink_client/features/music/music_widgets.dart';
 import 'package:omioclink_client/features/music/now_playing.dart';
+import 'package:omioclink_client/features/music/playback_mode.dart';
+import 'package:omioclink_client/music/music_favorites.dart';
 import 'package:omioclink_client/music/music_player.dart';
 import 'package:omioclink_client/musicfree/musicfree_service.dart';
 import 'package:omioclink_client/room/room_music.dart';
@@ -30,9 +33,14 @@ MusicTrack _track(String id, String name) => MusicTrack(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  late MusicFavorites favorites;
+
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
+    favorites = MusicFavorites();
   });
+
+  tearDown(() => favorites.dispose());
 
   /// 造一个「正在播第一首 + 待播 queue」的播放器。
   ///
@@ -66,7 +74,11 @@ void main() {
           body: Center(
             child: SizedBox(
               width: 900,
-              child: AmbientCard(queue: queue, player: player),
+              child: AmbientCard(
+                queue: queue,
+                player: player,
+                favorites: favorites,
+              ),
             ),
           ),
         ),
@@ -181,5 +193,49 @@ void main() {
     expect(find.text('暂无歌词'), findsOneWidget);
     expect(find.text(_hintText), findsOneWidget);
     expect(find.text('富士山下'), findsOneWidget);
+  });
+
+  testWidgets('播放模式左边有「喜欢」：点一下收进我喜欢，再点取消', (tester) async {
+    final queue = RoomMusicQueue();
+    queue.enqueue(_track('1', '富士山下'));
+    queue.next();
+    queue.enqueue(_track('2', '第二名'));
+
+    await pumpCard(tester, queue, buildPlayer(queue));
+
+    final heart = find.byType(NowPlayingFavoriteButton);
+    expect(heart, findsOneWidget);
+    // 位置上确实在播放模式按钮左边
+    expect(
+      tester.getCenter(heart).dx,
+      lessThan(tester.getCenter(find.byType(PlaybackModeButton)).dx),
+      reason: '心形要排在播放模式左边',
+    );
+
+    await tester.tap(heart);
+    await tester.pumpAndSettle();
+    expect(favorites.contains(_track('1', '富士山下')), isTrue);
+    expect(find.byIcon(Icons.favorite), findsOneWidget);
+
+    await tester.tap(heart);
+    await tester.pumpAndSettle();
+    expect(favorites.isEmpty, isTrue);
+    expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+  });
+
+  testWidgets('没有在播的歌时心形还在，但点不动', (tester) async {
+    final queue = RoomMusicQueue();
+
+    await pumpCard(tester, queue, buildPlayer(queue));
+
+    final button = tester.widget<IconButton>(
+      find.descendant(
+        of: find.byType(NowPlayingFavoriteButton),
+        matching: find.byType(IconButton),
+      ),
+    );
+    expect(button.onPressed, isNull);
+    // 按钮还在原位（只是禁用），心形照常画出来
+    expect(find.byIcon(Icons.favorite_border), findsOneWidget);
   });
 }

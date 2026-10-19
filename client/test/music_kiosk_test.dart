@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -10,6 +11,8 @@ import 'package:omioclink_client/data/music_models.dart';
 import 'package:omioclink_client/data/server_endpoint.dart';
 import 'package:omioclink_client/features/music/music_kiosk.dart';
 import 'package:omioclink_client/features/music/music_widgets.dart';
+import 'package:omioclink_client/features/music/playback_mode.dart';
+import 'package:omioclink_client/music/music_favorites.dart';
 import 'package:omioclink_client/music/music_free_library.dart';
 import 'package:omioclink_client/music/music_player.dart';
 import 'package:omioclink_client/musicfree/musicfree_host.dart';
@@ -203,6 +206,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory tempDir;
+  late MusicFavorites favorites;
   late RoomSession session;
   late MusicFreeLibrary library;
   late _FakeService service;
@@ -218,6 +222,8 @@ void main() {
     );
     service = _FakeService(plugins);
     library = MusicFreeLibrary(plugins: plugins, service: service);
+    // 「我喜欢」是本机收藏：每个用例一份干净的，读写的是 mock 的 SharedPreferences
+    favorites = MusicFavorites();
     session = RoomSession(
       signaling: SignalingClient(
         endpoint: _endpoint,
@@ -238,6 +244,7 @@ void main() {
 
   tearDown(() {
     library.dispose();
+    favorites.dispose();
     session.dispose();
     player.dispose();
     try {
@@ -247,7 +254,11 @@ void main() {
     }
   });
 
-  Future<void> pumpKiosk(WidgetTester tester) async {
+  /// [withFavorites] 用来指定这一轮挂载用哪份本机收藏（默认就是 setUp 里那份）。
+  Future<void> pumpKiosk(
+    WidgetTester tester, {
+    MusicFavorites? withFavorites,
+  }) async {
     // 点歌台是三栏桌面布局：默认 800×600 会溢出
     await tester.binding.setSurfaceSize(const Size(1320, 860));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -256,18 +267,28 @@ void main() {
         theme: AppTheme.dark(),
         home: Scaffold(
           backgroundColor: AppThemePacks.night.palette.stage,
-          body: MusicKiosk(library: library, session: session, player: player),
+          body: MusicKiosk(
+            library: library,
+            session: session,
+            player: player,
+            favorites: withFavorites ?? favorites,
+          ),
         ),
       ),
     );
     await tester.pumpAndSettle();
   }
 
-  testWidgets('左导航只有排行榜 / 热门歌单两个入口（搜索走上面的搜索框）', (tester) async {
+  testWidgets('左导航：排行榜 / 热门歌单，分割线下面才是「我喜欢」（搜索走上面的搜索框）', (
+    tester,
+  ) async {
     await pumpKiosk(tester);
 
     expect(find.text('排行榜'), findsOneWidget);
     expect(find.text('热门歌单'), findsOneWidget);
+    // 「我喜欢」是本机收藏、不是插件给的：它和上面两个入口之间用一条分割线隔开
+    expect(find.text('我喜欢'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('nav-divider')), findsOneWidget);
     // 搜索只剩顶部那一个按钮，不再是导航项
     expect(find.text('搜索'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, '搜索'), findsOneWidget);
@@ -276,6 +297,66 @@ void main() {
     // 旧模式已经删掉
     expect(find.text('推荐'), findsNothing);
     expect(find.text('最近点过'), findsNothing);
+  });
+
+  testWidgets('搜索结果点心形收进「我喜欢」，从导航进去还能再点一遍', (tester) async {
+    await pumpKiosk(tester);
+
+    await tester.enterText(find.byType(TextField), '周杰伦');
+    await tester.tap(find.widgetWithText(FilledButton, '搜索'));
+    await tester.pumpAndSettle();
+
+    // 心形排在「加入队列」左边：点它只是收藏，不动队列
+    await tester.tap(find.byType(MusicFavoriteButton).first);
+    await tester.pumpAndSettle();
+    expect(favorites.length, 1);
+    expect(favorites.tracks.single.name, '搜到的歌');
+    expect(session.music.isEmpty, isTrue);
+
+    await tester.tap(find.text('我喜欢'));
+    await tester.pumpAndSettle();
+    expect(find.text('我喜欢的音乐'), findsOneWidget);
+    expect(find.text('1 首'), findsOneWidget);
+    expect(find.textContaining('只保存在这台设备上'), findsOneWidget);
+    expect(find.text('搜到的歌'), findsOneWidget);
+
+    // 点整行＝再把这首点进房间队列（所谓「再次播放」就是这个动作）
+    await tester.tap(find.byKey(const ValueKey<String>('favorite:test:s1')));
+    await tester.pumpAndSettle();
+    expect(session.music.length, 1);
+    expect(session.music.queue.single.name, '搜到的歌');
+  });
+
+  testWidgets('「我喜欢」里再点心形就取消喜欢，空了回到空态', (tester) async {
+    // 先读一次本机收藏，免得挂载时的兜底 load 盖掉下面预置的那首
+    await favorites.load();
+    favorites.add(_track('f1', '存下的歌'));
+    await pumpKiosk(tester);
+
+    await tester.tap(find.text('我喜欢'));
+    await tester.pumpAndSettle();
+    expect(find.text('存下的歌'), findsOneWidget);
+
+    await tester.tap(find.byType(MusicFavoriteButton));
+    await tester.pumpAndSettle();
+    expect(favorites.isEmpty, isTrue);
+    expect(find.text('还没有喜欢的歌'), findsOneWidget);
+  });
+
+  testWidgets('「我喜欢」读的是本机缓存：上次存的歌挂载后就在列表里', (tester) async {
+    // 预置一份「上次退出时留在这台机器上」的收藏：它和服务器没有任何关系
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'omioclink.music.favorites': <String>[
+        jsonEncode(_track('s1', '上次喜欢的歌').toJson()),
+      ],
+    });
+    await pumpKiosk(tester);
+
+    await tester.tap(find.text('我喜欢'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('上次喜欢的歌'), findsOneWidget);
+    expect(favorites.contains(_track('s1', '上次喜欢的歌')), isTrue);
   });
 
   testWidgets('没有插件时给出「还没有安装音乐插件」空态', (tester) async {
@@ -787,5 +868,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(service.lastSearchType, 'album', reason: '类型保持不变');
     expect(service.lastSearchPlatform, 'tx');
+  });
+
+  testWidgets('底部播放条：播放模式左边的心形把在播的歌收进「我喜欢」', (tester) async {
+    // 服务端模式下队列里就有「当前曲」，播放条显示的是它
+    session.music.setViewer(peerId: 'peer-me');
+    session.music.applySnapshot(
+      MusicSnapshot(revision: 1, current: _currentEntry('e1')),
+    );
+    await pumpKiosk(tester);
+
+    final heart = find.byType(NowPlayingFavoriteButton);
+    expect(heart, findsOneWidget);
+    expect(
+      tester.getCenter(heart).dx,
+      lessThan(tester.getCenter(find.byType(PlaybackModeButton)).dx),
+      reason: '心形要排在播放模式左边',
+    );
+
+    await tester.tap(heart);
+    await tester.pumpAndSettle();
+    expect(favorites.length, 1);
+    expect(favorites.tracks.single.name, '在播的歌');
+
+    // 收进去的立刻能在左导航「我喜欢」里再点一遍
+    await tester.tap(find.text('我喜欢'));
+    await tester.pumpAndSettle();
+    expect(find.text('在播的歌'), findsWidgets);
   });
 }
