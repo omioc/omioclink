@@ -190,6 +190,11 @@ class SignalingState:
             return None
         room = self._rooms.get(peer.room_id)
         peer.room_id = None
+        # 离开房间时把「只对房间有意义」的状态一起清掉：同一条信令连接重进房间用的
+        # 是同一个 peer 对象，留着 sharing=True 会让快照里自己也显示「正在共享」，
+        # 而本地其实没有采集——表现就是重进房间后黑屏、且要先点一次「停止共享」。
+        peer.sharing = False
+        peer.speaking = False
         if room is None:
             return None
         room.peers.pop(peer_id, None)

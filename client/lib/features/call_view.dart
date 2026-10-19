@@ -66,7 +66,7 @@ class _CallViewState extends State<CallView> {
     await session.startScreenShare(
       sourceId: source.id,
       withSystemAudio: source.withSystemAudio,
-      quality: source.quality,
+      policy: source.policy,
     );
   }
 

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:omioclink_client/media/media_models.dart';
 import 'package:omioclink_client/media/screen_capture.dart';
+import 'package:omioclink_client/media/uplink_budget.dart';
 
 Uint8List bytes(int length) => Uint8List.fromList(List<int>.filled(length, 1));
 
@@ -23,76 +24,56 @@ Map<dynamic, dynamic> videoOf(Map<String, dynamic> constraints) =>
     constraints['video'] as Map<dynamic, dynamic>;
 
 void main() {
-  group('ScreenShareQuality', () {
-    test('三档：清晰/游戏都是 60fps，流畅 30fps，界面只标帧率', () {
-      expect(ScreenShareQuality.clear.maxFps, 60);
-      expect(ScreenShareQuality.clear.maxBitrate, 8000000);
-      expect(ScreenShareQuality.game.maxFps, 60);
-      expect(ScreenShareQuality.game.maxBitrate, 10000000);
-      expect(ScreenShareQuality.smooth.maxFps, 30);
-      expect(ScreenShareQuality.smooth.maxBitrate, 6000000);
-      // 分辨率等于源的分辨率，标签里不写分辨率免得对超大源不准确
-      expect(ScreenShareQuality.clear.spec, '60fps');
-      expect(ScreenShareQuality.smooth.spec, '30fps');
-      expect(ScreenShareQuality.maxHeight, 1080);
-      expect(ScreenShareQuality.maxWidth, 1920);
-      // 默认档是清晰
-      expect(ScreenShareQuality.fallback, ScreenShareQuality.clear);
-    });
-
-    test('带宽吃紧时的取舍：只有游戏档保帧率', () {
-      expect(
-        ScreenShareQuality.clear.degradation,
-        RTCDegradationPreference.MAINTAIN_RESOLUTION,
-      );
-      expect(
-        ScreenShareQuality.smooth.degradation,
-        RTCDegradationPreference.MAINTAIN_RESOLUTION,
-      );
-      expect(
-        ScreenShareQuality.game.degradation,
-        RTCDegradationPreference.MAINTAIN_FRAMERATE,
-      );
-      // 每档都要有给用户看的说明
-      for (final quality in ScreenShareQuality.values) {
-        expect(quality.detail, isNotEmpty);
-        expect(quality.label, isNotEmpty);
-      }
-    });
-  });
-
   group('screenSendParameters', () {
-    test('默认（清晰）声明保分辨率：上行吃紧时宁可加重压缩也不缩小画面', () {
-      final parameters = screenSendParameters();
-      expect(
-        parameters.degradationPreference,
-        RTCDegradationPreference.MAINTAIN_RESOLUTION,
-      );
+    ScreenTarget target({
+      int maxBitrate = 8000000,
+      int minBitrate = 4000000,
+      int maxFramerate = 60,
+      double scaleResolutionDownBy = 1.0,
+      RTCDegradationPreference degradation =
+          RTCDegradationPreference.MAINTAIN_RESOLUTION,
+    }) => ScreenTarget(
+      maxBitrate: maxBitrate,
+      minBitrate: minBitrate,
+      maxFramerate: maxFramerate,
+      scaleResolutionDownBy: scaleResolutionDownBy,
+      degradation: degradation,
+      targetWidth: 2560,
+      targetHeight: 1440,
+    );
+
+    test('上限与下限一起下发：只给上限抬不动实速（已有实测结论）', () {
+      final parameters = screenSendParameters(target: target());
+      final encoding = parameters.encodings!.single;
+      expect(encoding.maxBitrate, 8000000);
+      expect(encoding.minBitrate, 4000000);
       // 原生的反序列化只认这串字符串，别写成枚举名
-      expect(
-        parameters.toMap()['degradationPreference'],
-        'maintain-resolution',
+      expect(parameters.toMap()['degradationPreference'], 'maintain-resolution');
+    });
+
+    test('下限必须真的进到原生收的 map 里（只在 Dart 侧赋值等于没设）', () {
+      final map = screenSendParameters(target: target()).encodings!.single.toMap();
+      expect(map['minBitrate'], 4000000);
+      expect(map['maxBitrate'], 8000000);
+    });
+
+    test('帧率、缩放、降级策略跟着目标走', () {
+      final parameters = screenSendParameters(
+        target: target(
+          maxFramerate: 30,
+          scaleResolutionDownBy: 2560 / 1920,
+          degradation: RTCDegradationPreference.MAINTAIN_FRAMERATE,
+        ),
       );
+      final encoding = parameters.encodings!.single;
+      expect(encoding.maxFramerate, 30);
+      expect(encoding.scaleResolutionDownBy, closeTo(2560 / 1920, 1e-9));
+      expect(parameters.toMap()['degradationPreference'], 'maintain-framerate');
     });
 
-    test('参数跟着档位走：帧率、码率上限、降级策略', () {
-      final game = screenSendParameters(quality: ScreenShareQuality.game);
-      expect(game.encodings!.single.maxFramerate, 60);
-      expect(game.encodings!.single.maxBitrate, 10000000);
-      expect(game.toMap()['degradationPreference'], 'maintain-framerate');
-
-      final smooth = screenSendParameters(quality: ScreenShareQuality.smooth);
-      expect(smooth.encodings!.single.maxFramerate, 30);
-      expect(smooth.encodings!.single.maxBitrate, 6000000);
-      expect(smooth.toMap()['degradationPreference'], 'maintain-resolution');
-    });
-
-    test('不做缩放：源多大就发多大（平台做不到压到 1080p，见实现说明）', () {
-      final encoding = screenSendParameters(
-        quality: ScreenShareQuality.game,
-      ).encodings!.single;
+    test('按源分辨率发的档位不缩放：源多大就发多大', () {
+      final encoding = screenSendParameters(target: target()).encodings!.single;
       expect(encoding.scaleResolutionDownBy, 1.0);
-      expect(encoding.toMap()['scaleResolutionDownBy'], 1.0);
       // 只送需要的字段，别把 rid/ssrc 这类混进去
       final map = encoding.toMap();
       expect(map['active'], isTrue);
@@ -122,6 +103,17 @@ void main() {
       expect(mandatory['frameRate'], 30.0);
       expect(mandatory.containsKey('maxFrameRate'), isFalse);
       expect(mandatory['chromeMediaSource'], 'desktop');
+    });
+
+    test('不再限制分辨率：输出规格交给分配器，采集恒按源尺寸拿', () {
+      final video = videoOf(
+        screenShareConstraints(sourceId: '0', withSystemAudio: false),
+      );
+      final mandatory = video['mandatory'] as Map<dynamic, dynamic>;
+      // DXGI 本来就忽略 maxHeight（请求 540 仍出 1920×1080），留着只会误导
+      expect(mandatory.containsKey('maxHeight'), isFalse);
+      // 采集必须给到 60fps，否则分辨率优先档想临时提帧时没有帧可取
+      expect(mandatory['frameRate'], 60.0);
     });
 
     test('不共享系统声音时 audio 为 false', () {

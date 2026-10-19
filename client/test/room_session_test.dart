@@ -9,7 +9,7 @@ import 'package:omioclink_client/data/server_endpoint.dart';
 import 'package:omioclink_client/media/media_engine.dart';
 import 'package:omioclink_client/media/media_models.dart';
 import 'package:omioclink_client/media/media_port.dart';
-import 'package:omioclink_client/media/screen_capture.dart';
+import 'package:omioclink_client/media/share_policy.dart';
 import 'package:omioclink_client/room/room_models.dart';
 import 'package:omioclink_client/room/room_session.dart';
 import 'package:omioclink_client/room/room_music_sync.dart';
@@ -42,9 +42,10 @@ class FakeMediaPort implements MediaPort {
   bool audioStopped = false;
   bool screenStarted = false;
   bool screenStopped = false;
+  bool screenSharing = false;
 
-  /// 最后一次共享请求带的参数（画质档位 / 是否要系统声音）。
-  ScreenShareQuality? screenQuality;
+  /// 最后一次共享请求带的参数（编码策略 / 是否要系统声音）。
+  SharePolicy? screenPolicy;
   bool? screenWithSystemAudio;
   bool muted = false;
   bool speakerEnabled = true;
@@ -100,15 +101,22 @@ class FakeMediaPort implements MediaPort {
   Future<void> startScreenShare({
     String? sourceId,
     bool withSystemAudio = false,
-    ScreenShareQuality quality = ScreenShareQuality.fallback,
+    SharePolicy policy = SharePolicy.fallback,
   }) async {
     screenStarted = true;
-    screenQuality = quality;
+    screenSharing = true;
+    screenPolicy = policy;
     screenWithSystemAudio = withSystemAudio;
   }
 
   @override
-  Future<void> stopScreenShare() async => screenStopped = true;
+  Future<void> stopScreenShare() async {
+    screenStopped = true;
+    screenSharing = false;
+  }
+
+  @override
+  bool get isScreenSharing => screenSharing;
 
   @override
   Future<void> ensurePeer(
@@ -599,11 +607,11 @@ void main() {
     await session.startScreenShare(
       sourceId: 'screen:1',
       withSystemAudio: true,
-      quality: ScreenShareQuality.smooth,
+      policy: SharePolicy.resolutionFirst,
     );
     expect(media.screenStarted, isTrue);
-    // 界面选的档位要原样传到媒体层
-    expect(media.screenQuality, ScreenShareQuality.smooth);
+    // 界面选的策略要原样传到媒体层
+    expect(media.screenPolicy, SharePolicy.resolutionFirst);
     expect(media.screenWithSystemAudio, isTrue);
     expect(session.selfMember!.sharing, isTrue);
 
@@ -618,6 +626,50 @@ void main() {
     expect(states[0]['muted'], isTrue);
     expect(states[1]['sharing'], isTrue);
     expect(states[2]['sharing'], isFalse);
+  });
+
+  test('重进房间时纠正服务端残留的共享状态：本地没在采集就不该显示共享', () async {
+    // 服务端的 peer 对象在离开房间后是被复用的，sharing 标记可能还留在进房快照里。
+    // 不纠正的话界面会显示一块黑屏，共享按钮第一次点也只是「停止」。
+    final joinFuture = session.join(roomId: 'BX4K9K');
+    await pump();
+    transports.first.emit(helloPayload());
+    await pump();
+    transports.first.emit(
+      roomStatePayload(
+        members: <Map<String, dynamic>>[
+          memberPayload(peerId: 'ac4b0391', userId: 7, sharing: true),
+        ],
+      ),
+    );
+    await joinFuture;
+    await pump();
+
+    expect(media.screenSharing, isFalse);
+    expect(session.selfMember!.sharing, isFalse);
+    // 还要回告服务器，否则别人那边还挂着「他在共享」
+    final patch = transports.first.sentJson.lastWhere(
+      (item) => item['type'] == 'member_state',
+    );
+    expect(patch['sharing'], isFalse);
+  });
+
+  test('本地确实在共享时不乱改状态：服务端说没共享也要纠回来', () async {
+    await joinRoom(extraMembers: <Map<String, dynamic>>[memberPayload()]);
+    await session.startScreenShare(sourceId: 'screen:1');
+    expect(media.screenSharing, isTrue);
+
+    // 模拟「重新订阅到一份把我说成没共享的快照」
+    transports.first.emit(
+      roomStatePayload(
+        members: <Map<String, dynamic>>[
+          memberPayload(peerId: 'ac4b0391', userId: 7, sharing: false),
+        ],
+      ),
+    );
+    await pump();
+
+    expect(session.selfMember!.sharing, isTrue);
   });
 
   test('说话状态翻转时上报 speaking，且不因电平抖动重复上报', () async {

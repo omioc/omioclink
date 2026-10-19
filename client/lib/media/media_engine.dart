@@ -11,6 +11,9 @@ import 'mic_capture.dart';
 import 'mic_meter.dart';
 import 'peer_audio_mixer.dart';
 import 'screen_capture.dart';
+import 'screen_policy_governor.dart';
+import 'share_policy.dart';
+import 'uplink_budget.dart';
 
 /// 媒体层的对外回调（由 `RoomSession` 实现，把本地 SDP / 候选交给信令送出）。
 class MediaEngineCallbacks {
@@ -130,8 +133,30 @@ class MediaEngine {
   MediaStream? _localAudio;
   MediaStream? _screen;
 
-  /// 当前屏幕共享的画质档位（帧率与码率上限跟着它走）。
-  ScreenShareQuality _screenQuality = ScreenShareQuality.fallback;
+  /// 用户选的编码策略：带宽吃紧时先牺牲分辨率还是帧率。
+  SharePolicy _screenPolicy = SharePolicy.fallback;
+
+  /// 每一路当前该用的编码目标（peerId → 参数），由 [_recomputeScreenPlan] 现算。
+  ///
+  /// 观众的增减都会让它作废重算——mesh 下每个人的额度都是别人让出来的。
+  Map<String, ScreenTarget> _screenPlan = const <String, ScreenTarget>{};
+
+  /// 采集源的实际分辨率。DXGI 不认采集约束里的 maxHeight，只能按出图尺寸量。
+  int _screenSourceWidth = 0;
+  int _screenSourceHeight = 0;
+
+  /// 采集刚起来时渲染器还没出帧，隔一小会儿按真实尺寸补算一次分配。
+  Timer? _screenPlanRefreshTimer;
+
+  /// 均衡档的内容判定状态机（只在用户选了均衡档时被驱动）。
+  final ScreenPolicyGovernor _policyGovernor = ScreenPolicyGovernor();
+
+  /// 均衡档的采样定时器：2 秒一次，跟着统计轮询的节奏走。
+  Timer? _policyTimer;
+
+  /// 当前实际生效的策略：均衡档下由 [_policyGovernor] 覆写，其余档位就是用户选的那个。
+  SharePolicy get _effectivePolicy =>
+      _policyGovernor.effective ?? _screenPolicy;
 
   /// 共享中把自己采到的画面挂上去，共享者本人也能看到「正在共享的是什么」。
   RTCVideoRenderer? _localScreenRenderer;
@@ -549,17 +574,18 @@ class MediaEngine {
   /// [withSystemAudio] 打开时会把系统回环声音并入共享流（Windows 1.5.0+）。
   /// 注意：回环音频不会成为麦克风回声消除的参考信号，外放场景需引导戴耳机。
   ///
-  /// 帧率与码率上限取 [quality]；分辨率等于源的分辨率，上行带宽吃紧时保分辨率
-  /// 不保帧率（见 [screenSendParameters]，另附「为什么不能压到 1080p」的实测说明）。
+  /// [policy] 决定带宽吃紧时先牺牲分辨率还是帧率；每一路具体发多大、多少帧，由
+  /// [allocateScreenPlan] 按观众人数现算（见 `uplink_budget.dart`）。采集恒定按源
+  /// 分辨率 60fps 拿，输出规格全在编码侧调。
   Future<void> startScreenShare({
     String? sourceId,
     bool withSystemAudio = false,
-    ScreenShareQuality quality = ScreenShareQuality.fallback,
+    SharePolicy policy = SharePolicy.fallback,
   }) async {
     if (_screen != null) {
       return;
     }
-    _screenQuality = quality;
+    _screenPolicy = policy;
     var target = sourceId;
     if (target == null || target.isEmpty) {
       final sources = await listScreenSources();
@@ -572,8 +598,6 @@ class MediaEngine {
     final constraints = screenShareConstraints(
       sourceId: target,
       withSystemAudio: withSystemAudio,
-      maxHeight: ScreenShareQuality.maxHeight,
-      maxFps: quality.maxFps,
     );
 
     try {
@@ -586,12 +610,155 @@ class MediaEngine {
       );
     }
     await _attachLocalScreenPreview();
+    _screenSourceWidth = 0;
+    _screenSourceHeight = 0;
+    _recomputeScreenPlan();
+    _logScreenPlan();
     await _applyScreenTrackToAllPeers();
+    _startPolicyGovernor();
+    _scheduleSourceSizeRefresh();
+  }
+
+  /// 按当前策略、观众人数与源分辨率，重算每一路的目标参数。
+  ///
+  /// 只算不落参数：落参数在 [_applyScreenSendParameters]（它贴在每一条 sender 上）。
+  void _recomputeScreenPlan() {
+    final source = _resolvedSourceSize();
+    _screenSourceWidth = source.width;
+    _screenSourceHeight = source.height;
+    _screenPlan = allocateScreenPlan(
+      ScreenBudgetInput(
+        policy: _effectivePolicy,
+        budgetBps: kDefaultScreenUplinkBudgetBps,
+        sourceWidth: _screenSourceWidth,
+        sourceHeight: _screenSourceHeight,
+        peerIds: _peers.keys.toList(growable: false),
+      ),
+    );
+  }
+
+  /// 采到的画面到底有多大。
+  ///
+  /// 先问轨道设置（原生创建时就填好了），拿不到再看本地预览渲染器解出来的尺寸；
+  /// 都还没有就按 1080p 先估一版，由 [_scheduleSourceSizeRefresh] 稍后补算——
+  /// 2K 源要是被当成 1080p，缩放倍数会整个偏掉。
+  ({int width, int height}) _resolvedSourceSize() {
+    try {
+      final settings = _screenTrack?.getSettings();
+      final width = (settings?['width'] as num?)?.toInt() ?? 0;
+      final height = (settings?['height'] as num?)?.toInt() ?? 0;
+      if (width > 0 && height > 0) {
+        return (width: width, height: height);
+      }
+    } on Object catch (error) {
+      AppLog.debug('读取屏幕轨道尺寸失败：$error');
+    }
+    final renderer = _localScreenRenderer;
+    if (renderer != null &&
+        renderer.videoWidth > 0 &&
+        renderer.videoHeight > 0) {
+      return (width: renderer.videoWidth, height: renderer.videoHeight);
+    }
+    if (_screenSourceWidth > 0 && _screenSourceHeight > 0) {
+      return (width: _screenSourceWidth, height: _screenSourceHeight);
+    }
+    return (width: 1920, height: 1080);
+  }
+
+  /// 采集刚起来时渲染器还没出帧，尺寸只能先估一个；隔一会儿按真实尺寸补算一次。
+  void _scheduleSourceSizeRefresh() {
+    _screenPlanRefreshTimer?.cancel();
+    _screenPlanRefreshTimer = Timer(const Duration(milliseconds: 600), () {
+      if (_disposed || _screen == null) {
+        return;
+      }
+      final before = (_screenSourceWidth, _screenSourceHeight);
+      _recomputeScreenPlan();
+      if (before == (_screenSourceWidth, _screenSourceHeight)) {
+        return;
+      }
+      AppLog.info(
+        '屏幕源尺寸补测为 $_screenSourceWidth×$_screenSourceHeight，重新分配上行',
+      );
+      _logScreenPlan();
+      unawaited(_applyScreenPlanToAllPeers());
+    });
+  }
+
+  /// 把这次分配结果写进日志：实测上行有没有真的按计划花出去，全靠这条对账。
+  void _logScreenPlan() {
+    if (_screenPlan.isEmpty) {
+      AppLog.info('屏幕共享：当前没有观众，未分配上行');
+      return;
+    }
+    final entries = _screenPlan.entries
+        .map((entry) => '${entry.key}=${entry.value.label}')
+        .join('、');
+    AppLog.info(
+      '屏幕共享分配（${_effectivePolicy.label}，源 $_screenSourceWidth×'
+      '$_screenSourceHeight，预算 '
+      '${(kDefaultScreenUplinkBudgetBps / 1000000).toStringAsFixed(1)}Mbps）：'
+      '$entries',
+    );
+  }
+
+  /// 起「均衡档」的内容判定：只有用户选了均衡档才需要，其它档位直接返回。
+  void _startPolicyGovernor() {
+    _policyTimer?.cancel();
+    _policyGovernor.reset();
+    if (_screenPolicy != SharePolicy.balanced) {
+      return;
+    }
+    _policyTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      unawaited(_reviewScreenPolicy());
+    });
+  }
+
+  /// 采一次画面复杂度，必要时在两个极端之间切一档。
+  Future<void> _reviewScreenPolicy() async {
+    if (_disposed || _screen == null) {
+      return;
+    }
+    final qp = await _averageQp();
+    final switched = _policyGovernor.sample(avgQp: qp, now: DateTime.now());
+    if (switched == null) {
+      return;
+    }
+    AppLog.info(
+      '屏幕共享按内容切到「${switched.label}」'
+      '（平均 QP ${qp?.toStringAsFixed(1) ?? '未知'}）',
+    );
+    _recomputeScreenPlan();
+    _logScreenPlan();
+    await _applyScreenPlanToAllPeers();
+  }
+
+  /// 各路屏幕视频的平均量化步长；一条都读不到就返回 null。
+  ///
+  /// 每路的链路质量不同、QP 也不同，但「画面是高动态还是静止」是全房间同一个事实，
+  /// 所以取第一条能读到的就够。
+  Future<double?> _averageQp() async {
+    for (final peerId in _peers.keys.toList(growable: false)) {
+      final snapshot = await statsFor(peerId);
+      final qp = snapshot?.avgQp;
+      if (qp != null) {
+        return qp;
+      }
+    }
+    return null;
   }
 
   Future<void> stopScreenShare() async {
+    _screenPlanRefreshTimer?.cancel();
+    _screenPlanRefreshTimer = null;
+    _policyTimer?.cancel();
+    _policyTimer = null;
+    _policyGovernor.reset();
     final stream = _screen;
     _screen = null;
+    _screenPlan = const <String, ScreenTarget>{};
+    _screenSourceWidth = 0;
+    _screenSourceHeight = 0;
     await _disposeLocalScreenPreview();
     if (stream == null) {
       return;
@@ -670,6 +837,10 @@ class MediaEngine {
     AppLog.info('PeerConnection 已创建 peer=$peerId');
     final slot = _PeerSlot(peerId: peerId, pc: pc, polite: polite);
     _peers[peerId] = slot;
+    // 多了一个观众，每一路的额度都变小了：先重算分配，后面挂轨道时才会用到新参数
+    if (_screen != null) {
+      _recomputeScreenPlan();
+    }
 
     pc.onIceCandidate = (candidate) {
       if (candidate.candidate == null) {
@@ -730,6 +901,11 @@ class MediaEngine {
     AppLog.info('本地轨道挂到成员连接上 peer=$peerId');
     await _replaceAudioTrack(slot, _localAudioTrack);
     await _replaceScreenTrack(slot, _screenTrack);
+    // 新观众进来后每一路的额度都变了：老的那几条也要按新分配重设，否则合计超预算
+    if (_screenTrack != null) {
+      _logScreenPlan();
+      await _applyScreenPlanToAllPeers();
+    }
     AppLog.info('已为成员 $peerId 建立 PeerConnection（polite=$polite）');
     return pc;
   }
@@ -917,6 +1093,12 @@ class MediaEngine {
     slot.closed = true;
     await _disposeSlot(slot);
     peerAudio.forget(peerId);
+    // 少了一个观众，剩下每一路的额度都变宽了：重算并整组重设
+    if (_screenTrack != null) {
+      _recomputeScreenPlan();
+      _logScreenPlan();
+      await _applyScreenPlanToAllPeers();
+    }
     callbacks?.onLinkStateChanged(peerId, PeerLinkState.closed);
   }
 
@@ -1147,6 +1329,8 @@ class MediaEngine {
     int? bytesReceived;
     int? packetsLost;
     double? roundTripTimeMs;
+    double? avgQp;
+    String? qualityLimitationReason;
     String? localCandidateId;
     String? remoteCandidateId;
 
@@ -1157,6 +1341,19 @@ class MediaEngine {
           final sent = values['bytesSent'];
           if (sent is num) {
             bytesSent = (bytesSent ?? 0) + sent.toInt();
+          }
+          final kind = values['kind'] ?? values['mediaType'];
+          if (kind == 'video') {
+            // qpSum / framesEncoded = 平均量化步长：均衡档靠它判断画面复杂度
+            final qpSum = values['qpSum'];
+            final frames = values['framesEncoded'];
+            if (qpSum is num && frames is num && frames > 0) {
+              avgQp = qpSum / frames;
+            }
+            final reason = values['qualityLimitationReason'];
+            if (reason is String) {
+              qualityLimitationReason = reason;
+            }
           }
         case 'inbound-rtp':
           final received = values['bytesReceived'];
@@ -1198,6 +1395,8 @@ class MediaEngine {
       remoteCandidateType: candidateType(remoteCandidateId),
       roundTripTimeMs: roundTripTimeMs,
       packetsLost: packetsLost,
+      avgQp: avgQp,
+      qualityLimitationReason: qualityLimitationReason,
     );
   }
 
@@ -1249,24 +1448,49 @@ class MediaEngine {
     }
   }
 
-  /// 屏幕轨道挂上发送通道后，声明「保分辨率」的上行编码策略。
+  /// 按分配器算好的目标，给这一路声明编码参数。
   ///
-  /// 每次（重新）挂上屏幕轨道都要设一遍，`setParameters` 是贴着这条 sender 的。
+  /// 每次（重新）挂上屏幕轨道都要设一遍，`setParameters` 是贴着这条 sender 的；
+  /// 观众进出后也要对全部 sender 重设一遍——每个人的额度都是别人让出来的。
   /// 失败只记日志：最多退回默认的 `balanced`，不影响能不能共享。
   Future<void> _applyScreenSendParameters(_PeerSlot slot) async {
     final sender = slot.screenSender;
     if (sender == null) {
       return;
     }
+    if (_screenPlan.isEmpty && _screen != null) {
+      // 正常路径上 startScreenShare 已经算过；这里兜住「轨道先到、观众后到」的窗口期
+      _recomputeScreenPlan();
+    }
+    final target = _screenPlan[slot.peerId];
+    if (target == null) {
+      return;
+    }
     try {
       final accepted = await sender.setParameters(
-        screenSendParameters(quality: _screenQuality),
+        screenSendParameters(target: target),
       );
       if (!accepted) {
         AppLog.warn('屏幕共享编码参数未被原生接受 peer=${slot.peerId}');
       }
     } on Object catch (error) {
       AppLog.warn('设置屏幕共享编码参数失败 peer=${slot.peerId}', error: error);
+    }
+  }
+
+  /// 把当前分配结果落到每一条已经挂着屏幕轨道的连接上。
+  ///
+  /// 观众增减后必须整组重设：只改新增/剩下的那一条的话，老连接会继续按旧额度发，
+  /// 合计就超预算了。
+  Future<void> _applyScreenPlanToAllPeers() async {
+    if (_screenTrack == null) {
+      return;
+    }
+    for (final slot in _peers.values) {
+      if (slot.closed) {
+        continue;
+      }
+      await _applyScreenSendParameters(slot);
     }
   }
 

@@ -11,7 +11,7 @@ import '../data/volume_store.dart';
 import '../media/media_engine.dart';
 import '../media/media_models.dart';
 import '../media/media_port.dart';
-import '../media/screen_capture.dart';
+import '../media/share_policy.dart';
 import '../music/clock_sync.dart';
 import '../signaling/protocol.dart';
 import '../signaling/signaling_client.dart';
@@ -479,6 +479,9 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
     // 进房时房间里的我还被服务端记成「没说话」，清掉本地缓存以便
     // 下一个采样周期把当前真实状态补报一次
     _selfSpeaking = false;
+    // 服务端可能还记着上一次会话的共享状态（peer 对象在离开房间时被复用），
+    // 先按本地媒体层纠一次，免得进来的第一帧就画一块黑屏
+    _reconcileSharing();
     _setPhase(RoomPhase.active);
     // 进房就连打几发 ping 估时钟偏移：点歌锚点要靠它换算成本机时刻
     unawaited(_calibrateClock());
@@ -494,6 +497,32 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
     await _dialExistingMembers();
     AppLog.info('与既有成员的建连已发起完毕');
     _startStatsTimer();
+  }
+
+  /// 把「我是否在共享」的对外状态与本地媒体层对齐。
+  ///
+  /// 服务端在离开房间时只把会话摘出房间，重进房间用的还是同一个 peer 对象：那边要是
+  /// 残留着 `sharing=true`，进房快照里自己就是「正在共享」。界面会照着一块没有数据源
+  /// 的画面去渲染（黑屏），而共享按钮按「已经在共享」处理——第一次点只是「停止」，
+  /// 得点第二次才真的开始共享。所以这里以本地有没有在采集为准纠正一次，并回告服务器。
+  void _reconcileSharing() {
+    final self = _selfPeerId;
+    if (self == null) {
+      return;
+    }
+    final member = _members[self];
+    if (member == null) {
+      return;
+    }
+    final actual = media.isScreenSharing;
+    if (member.sharing == actual) {
+      return;
+    }
+    AppLog.info(
+      '进房时纠正共享状态：服务端=${member.sharing} 本地=$actual，以本地为准',
+    );
+    _members[self] = member.copyWith(sharing: actual);
+    signaling.send(memberStateMessage(sharing: actual));
   }
 
   /// 把「我是谁 / 我是不是房主」告诉点歌队列。
@@ -791,15 +820,18 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
   Future<void> toggleSpeaker() => setSpeakerEnabled(!_speakerEnabled);
 
   /// 开始共享屏幕；[withSystemAudio] 打开会并入系统回环声音。
+  ///
+  /// [policy] 只是「带宽不够时先牺牲什么」的偏好，每一路发多大由媒体层按观众人数
+  /// 现算（见 `uplink_budget.dart`），房间层不参与分配。
   Future<void> startScreenShare({
     String? sourceId,
     bool withSystemAudio = false,
-    ScreenShareQuality quality = ScreenShareQuality.fallback,
+    SharePolicy policy = SharePolicy.fallback,
   }) async {
     await media.startScreenShare(
       sourceId: sourceId,
       withSystemAudio: withSystemAudio,
-      quality: quality,
+      policy: policy,
     );
     _patchSelf(sharing: true);
     signaling.send(memberStateMessage(sharing: true));

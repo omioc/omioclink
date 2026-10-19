@@ -112,6 +112,25 @@ def test_leave_room_keeps_the_session_registered() -> None:
     assert state.is_user_online(peer.user_id) is True
 
 
+def test_leave_room_resets_room_scoped_state() -> None:
+    """离开房间要清掉 sharing / speaking。
+
+    同一条信令连接重进房间时用的是同一个 ``Peer`` 对象：留着 ``sharing=True``，
+    重进后的房间快照里自己就是「正在共享」，客户端会显示一块黑屏，而且得先点一次
+    「停止共享」才能真的再共享。
+    """
+    state = SignalingState()
+    peer = add_peer(state)
+    join(state, peer)
+    peer.sharing = True
+    peer.speaking = True
+
+    state.leave_room(peer.peer_id)
+
+    assert peer.sharing is False
+    assert peer.speaking is False
+
+
 def test_user_index_tracks_sessions_and_duplicates() -> None:
     state = SignalingState()
     first = add_peer(state, user_id=7, username="alice")

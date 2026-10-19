@@ -28,6 +28,9 @@ class _Harness {
 
 Future<_Harness> _joinWithSharingMember({bool selfSharing = false}) async {
   final media = FakeMediaPort();
+  // 「自己正在共享」必须是媒体层真的在采集：房间层进房时会按本地采集状态纠正
+  // 服务器快照（避免服务端残留的 sharing=true 让界面画黑屏），只改快照会被纠回去
+  media.screenSharing = selfSharing;
   final transports = <FakeTransport>[];
   final signaling = SignalingClient(
     endpoint: _endpoint,

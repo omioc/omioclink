@@ -161,6 +161,8 @@ class PeerStatsSnapshot {
     this.remoteCandidateType,
     this.roundTripTimeMs,
     this.packetsLost,
+    this.avgQp,
+    this.qualityLimitationReason,
   });
 
   final int? bytesSent;
@@ -171,6 +173,17 @@ class PeerStatsSnapshot {
   final String? remoteCandidateType;
   final double? roundTripTimeMs;
   final int? packetsLost;
+
+  /// 这一路视频最近的平均量化步长（`qpSum / framesEncoded`）。
+  ///
+  /// 低 = 画面好编（静态界面、文档），高 = 高动态或细节极多。均衡档靠它判断
+  /// 「现在该保帧率还是保分辨率」。
+  final double? avgQp;
+
+  /// libwebrtc 给的限流原因：`none` / `bandwidth` / `cpu` / `other`。
+  ///
+  /// 排查「卡到底是带宽不够还是 CPU 不够」时，这一条是最直接的答案。
+  final String? qualityLimitationReason;
 
   /// 把候选类型翻译成用户能看懂的连接路径描述。
   String get pathDescription {
@@ -193,7 +206,8 @@ class PeerStatsSnapshot {
   @override
   String toString() =>
       'PeerStatsSnapshot(sent=$bytesSent, recv=$bytesReceived, local=$localCandidateType, '
-      'remote=$remoteCandidateType, rtt=$roundTripTimeMs, lost=$packetsLost)';
+      'remote=$remoteCandidateType, rtt=$roundTripTimeMs, lost=$packetsLost, '
+      'qp=$avgQp, limit=$qualityLimitationReason)';
 }
 
 /// 由媒体层抛出、可直接展示给用户的错误。

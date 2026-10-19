@@ -5,6 +5,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../core/app_log.dart';
 import 'media_models.dart';
+import 'uplink_budget.dart';
 
 /// 屏幕共享的采集约束。
 ///
@@ -15,11 +16,17 @@ import 'media_models.dart';
 ///   即整屏；用 `exact` 才是窗口自身的尺寸）。
 /// * 帧率键名是 `mandatory.frameRate`（原生只认 double），不是 `maxFrameRate`：
 ///   后者原样落进媒体约束里，没有任何采集器读它。
+///
+/// 这里**不再限制分辨率**：`maxHeight` 会被 DXGI 采集完全忽略（请求 540 仍出
+/// 1920×1080），而真正发出去的分辨率现在由 `uplink_budget.dart` 按观众人数在编码
+/// 侧决定。采集恒按源分辨率拿、缩放在编码前做，才不会先糊一遍再压一遍。
+///
+/// 帧率恒按 60 请求：发送侧用 `maxFramerate` 现调，采集侧要是只给 30，分辨率优先
+/// 档想临时提到 60 帧时根本没有帧可取。
 Map<String, dynamic> screenShareConstraints({
   required String sourceId,
   required bool withSystemAudio,
-  int maxHeight = 1080,
-  int maxFps = 30,
+  int maxFps = 60,
 }) {
   return <String, dynamic>{
     'audio': withSystemAudio
@@ -31,96 +38,35 @@ Map<String, dynamic> screenShareConstraints({
       'deviceId': <String, dynamic>{'exact': sourceId},
       'mandatory': <String, dynamic>{
         'chromeMediaSource': 'desktop',
-        'maxHeight': maxHeight,
         'frameRate': maxFps.toDouble(),
       },
     },
   };
 }
 
-/// 屏幕共享的画质档位。
+/// 把一档编码目标翻译成原生 `setParameters` 认的结构。
 ///
-/// 分辨率都跟着源的分辨率走（平台不允许「把超 1080p 的源压到 1080p」，见
-/// [screenSendParameters] 的说明），档位之间差的是**帧率**，以及**带宽吃紧时保什么**。
-///
-/// 实测（1080p 高动态画面 + 本机 loopback，目标码率约 1.7 Mbps）：
-/// * 保分辨率 → 1920×1080 但只有 **16~20fps**（游戏会卡成幻灯片）；
-/// * 保帧率 → **54~55fps** 但掉到 480×270。
-/// 两者不可兼得，所以高动态画面单独给一档让用户自己选。
-enum ScreenShareQuality {
-  /// 清晰：60fps，带宽不够时保分辨率。看文档、演示、静态界面。
-  clear('清晰', 60, 8000000, RTCDegradationPreference.MAINTAIN_RESOLUTION),
-
-  /// 游戏：60fps，带宽不够时保帧率、分辨率自适应。高动态画面优先流畅。
-  game('游戏', 60, 10000000, RTCDegradationPreference.MAINTAIN_FRAMERATE),
-
-  /// 流畅：30fps，保分辨率，上行带宽省一半。
-  smooth('流畅', 30, 6000000, RTCDegradationPreference.MAINTAIN_RESOLUTION);
-
-  const ScreenShareQuality(
-    this.label,
-    this.maxFps,
-    this.maxBitrate,
-    this.degradation,
-  );
-
-  /// 界面上的名字。
-  final String label;
-
-  /// 帧率上限。
-  final int maxFps;
-
-  /// 编码码率上限。**只是上限**，真实速率仍由带宽估计（BWE）决定
-  /// （实测把上限从 8 Mbps 提到 16 Mbps 对上行走势没有影响）。
-  final int maxBitrate;
-
-  /// 带宽吃紧时的取舍：保分辨率还是保帧率。
-  final RTCDegradationPreference degradation;
-
-  /// 默认档：分辨率最稳，适合绝大多数共享场景。
-  static const ScreenShareQuality fallback = ScreenShareQuality.clear;
-
-  /// 采集时请求的分辨率上限（**只是请求**，见下）。
-  static const int maxWidth = 1920;
-  static const int maxHeight = 1080;
-
-  /// 界面上的规格说明。
-  ///
-  /// 只写帧率不写分辨率：发出去的分辨率等于源的分辨率（不会低于 1080p，
-  /// 超过 1080p 的源也不会被压下来），写成「1080p60」对超大源不准确。
-  String get spec => '${maxFps}fps';
-
-  /// 选中这档时的补充说明。
-  String get detail => switch (this) {
-    ScreenShareQuality.clear => '保分辨率，适合文档、演示、静态界面',
-    ScreenShareQuality.game => '保帧率，高动态画面优先流畅（分辨率随带宽自适应）',
-    ScreenShareQuality.smooth => '30fps，上行带宽省一半，保分辨率',
-  };
-}
-
-/// 按档位生成屏幕共享的上行编码参数：**分辨率不许被自动缩小**（[ScreenShareQuality.game]
-/// 是唯一例外，它主动选了「保帧率」，允许分辨率自适应）。
-///
-/// 两个坑（都实测过）：
+/// 三个坑（都实测过）：
 /// * 默认的 `balanced` 降级策略在上行吃紧时先砍分辨率，实测直接把 1080p 掉到
-///   480×270，共享出去的文字、表格全糊——所以要显式改掉策略；
-/// * **没有「源超过 1080p 就压到 1080p」的档位**，因为这个平台做不到：采集约束
-///   `maxHeight` 被 DXGI 采集完全忽略（请求 540 仍出 1920×1080）；编码参数
-///   `scaleResolutionDownBy` 与 `maintain-resolution` 互斥（两种设置顺序都实测被忽略，
-///   接收侧仍是 1920×1080），换成允许缩放的策略又会完全交给自适应。所以源超过 1080p
-///   （4K 屏、超大窗口）时按原尺寸发送，代价是同样码率下更糊一些。
-RTCRtpParameters screenSendParameters({
-  ScreenShareQuality quality = ScreenShareQuality.fallback,
-}) => RTCRtpParameters(
-  encodings: <RTCRtpEncoding>[
-    RTCRtpEncoding(
-      maxBitrate: quality.maxBitrate,
-      maxFramerate: quality.maxFps,
-      scaleResolutionDownBy: 1.0,
-    ),
-  ],
-  degradationPreference: quality.degradation,
-);
+///   480×270，共享出去的文字、表格全糊——所以要显式给降级策略；
+/// * `scaleResolutionDownBy` 与 `maintain-resolution` 互斥：两种设置顺序都实测被
+///   忽略，接收侧仍是原尺寸。所以分辨率优先档必须把缩放留在 1.0，只有允许降分辨率
+///   的那几档才真的缩放（见 `uplink_budget.dart` 的档位表）；
+/// * 只给上限抬不动实速：把上限从 8 Mbps 提到 16 Mbps 对上行走势没有任何影响，
+///   必须同时给下限，编码器才会把这些比特花出去。
+RTCRtpParameters screenSendParameters({required ScreenTarget target}) =>
+    RTCRtpParameters(
+      encodings: <RTCRtpEncoding>[
+        RTCRtpEncoding(
+          maxBitrate: target.maxBitrate,
+          minBitrate: target.minBitrate,
+          maxFramerate: target.maxFramerate,
+          scaleResolutionDownBy: target.scaleResolutionDownBy,
+          active: target.active,
+        ),
+      ],
+      degradationPreference: target.degradation,
+    );
 
 /// 向原生要缩略图的请求参数。
 ///

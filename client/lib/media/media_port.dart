@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import 'media_engine.dart';
 import 'media_models.dart';
-import 'screen_capture.dart';
+import 'share_policy.dart';
 import '../signaling/protocol.dart';
 import '../room/peer_volume_controller.dart';
 
@@ -33,8 +33,14 @@ abstract interface class MediaPort {
   Future<void> startScreenShare({
     String? sourceId,
     bool withSystemAudio = false,
-    ScreenShareQuality quality = ScreenShareQuality.fallback,
+    SharePolicy policy = SharePolicy.fallback,
   });
+
+  /// 本地是否正在采集屏幕。
+  ///
+  /// 「我对服务器上报的共享状态」与界面都以它为准：服务端的记录可能落后于本地
+  /// （见 `RoomSession` 里对共享状态的纠偏），真正的事实只有本机有没有在采。
+  bool get isScreenSharing;
   Future<void> stopScreenShare();
 
   Future<void> ensurePeer(
@@ -115,15 +121,18 @@ class EngineMediaPort implements MediaPort {
   Future<void> startScreenShare({
     String? sourceId,
     bool withSystemAudio = false,
-    ScreenShareQuality quality = ScreenShareQuality.fallback,
+    SharePolicy policy = SharePolicy.fallback,
   }) => engine.startScreenShare(
     sourceId: sourceId,
     withSystemAudio: withSystemAudio,
-    quality: quality,
+    policy: policy,
   );
 
   @override
   Future<void> stopScreenShare() => engine.stopScreenShare();
+
+  @override
+  bool get isScreenSharing => engine.isScreenSharing;
 
   @override
   Future<void> ensurePeer(

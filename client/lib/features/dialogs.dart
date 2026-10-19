@@ -10,7 +10,7 @@ import '../core/formatting.dart';
 import '../data/api_client.dart';
 import '../media/media_engine.dart';
 import '../media/media_models.dart';
-import '../media/screen_capture.dart';
+import '../media/share_policy.dart';
 import '../media/stun_probe.dart';
 import '../widgets/common.dart';
 
@@ -359,8 +359,8 @@ Future<void> showRoomCodeDialog(BuildContext context, String roomId) async {
   );
 }
 
-/// 屏幕/窗口选择器：返回选中的源、是否并入系统声音、以及画质档位。
-Future<({String id, bool withSystemAudio, ScreenShareQuality quality})?>
+/// 屏幕/窗口选择器：返回选中的源、是否并入系统声音、以及编码策略。
+Future<({String id, bool withSystemAudio, SharePolicy policy})?>
 showScreenSourceDialog(BuildContext context, MediaEngine media) async {
   List<ScreenSource> sources = const <ScreenSource>[];
   String? error;
@@ -376,9 +376,9 @@ showScreenSourceDialog(BuildContext context, MediaEngine media) async {
   ScreenSource? selected = sources.isEmpty ? null : sources.first;
   // 默认把系统声音一起分享：共享的游戏/视频本来就是为了让对方听到
   var withSystemAudio = true;
-  var quality = ScreenShareQuality.fallback;
+  var policy = SharePolicy.fallback;
 
-  return showDialog<({String id, bool withSystemAudio, ScreenShareQuality quality})>(
+  return showDialog<({String id, bool withSystemAudio, SharePolicy policy})>(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
       builder: (dialogContext, setState) => AlertDialog(
@@ -484,25 +484,34 @@ showScreenSourceDialog(BuildContext context, MediaEngine media) async {
                   SizedBox(
                     width: 56,
                     child: Text(
-                      '画质',
+                      '优先保证',
                       style: TextStyle(
                         color: context.palette.textSecondary,
                         fontSize: 12,
                       ),
                     ),
                   ),
-                  for (final item in ScreenShareQuality.values) ...[
-                    if (item != ScreenShareQuality.values.first)
+                  for (final item in SharePolicy.values) ...[
+                    if (item != SharePolicy.values.first)
                       const SizedBox(width: AppSpacing.sm),
                     Expanded(
-                      child: _QualityCard(
-                        quality: item,
-                        selected: item == quality,
-                        onTap: () => setState(() => quality = item),
+                      child: _PolicyCard(
+                        policy: item,
+                        selected: item == policy,
+                        onTap: () => setState(() => policy = item),
                       ),
                     ),
                   ],
                 ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '码率不用手调：按观众人数自动分配，单路上行不超过 30 Mbps',
+                style: TextStyle(
+                  color: context.palette.textMuted,
+                  fontSize: 11,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: AppSpacing.sm),
               Row(
@@ -516,7 +525,7 @@ showScreenSourceDialog(BuildContext context, MediaEngine media) async {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      quality.detail,
+                      policy.detail,
                       style: TextStyle(
                         color: context.palette.textMuted,
                         fontSize: 11,
@@ -566,7 +575,7 @@ showScreenSourceDialog(BuildContext context, MediaEngine media) async {
                     Navigator.of(dialogContext).pop((
                       id: source.id,
                       withSystemAudio: withSystemAudio,
-                      quality: quality,
+                      policy: policy,
                     ));
                   },
             child: const Text('开始共享'),
@@ -577,24 +586,24 @@ showScreenSourceDialog(BuildContext context, MediaEngine media) async {
   );
 }
 
-/// 画质档位卡片：选中的用强调色描边 + 淡底，未选中的用面板底色，
+/// 策略卡片：选中的用强调色描边 + 淡底，未选中的用面板底色，
 /// 鼠标移上去描边微亮（和源选择卡片、导航项保持同一套视觉语言）。
-class _QualityCard extends StatefulWidget {
-  const _QualityCard({
-    required this.quality,
+class _PolicyCard extends StatefulWidget {
+  const _PolicyCard({
+    required this.policy,
     required this.selected,
     required this.onTap,
   });
 
-  final ScreenShareQuality quality;
+  final SharePolicy policy;
   final bool selected;
   final VoidCallback onTap;
 
   @override
-  State<_QualityCard> createState() => _QualityCardState();
+  State<_PolicyCard> createState() => _PolicyCardState();
 }
 
-class _QualityCardState extends State<_QualityCard> {
+class _PolicyCardState extends State<_PolicyCard> {
   bool _hovering = false;
 
   @override
@@ -625,7 +634,7 @@ class _QualityCardState extends State<_QualityCard> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                widget.quality.label,
+                widget.policy.label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -638,7 +647,9 @@ class _QualityCardState extends State<_QualityCard> {
               ),
               const SizedBox(height: 1),
               Text(
-                widget.quality.spec,
+                widget.policy.scene,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: selected
                       ? context.palette.textSecondary
