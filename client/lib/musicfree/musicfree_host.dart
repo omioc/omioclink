@@ -8,6 +8,7 @@ import 'package:http/io_client.dart';
 import 'package:quickjs_engine/quickjs_engine.dart';
 
 import '../core/app_log.dart';
+import '../core/app_version.dart';
 import '../core/system_proxy.dart';
 import 'plugin_models.dart';
 import 'plugin_paths.dart';
@@ -46,7 +47,7 @@ class MusicFreeHost {
     http.Client? httpClient,
     PluginPaths? paths,
     String? bundleSource,
-    this.appVersion = '1.0.2',
+    this.appVersion = kAppVersion,
     this.lang = 'zh-CN',
   }) : _http = httpClient ?? _clientWithProxy(SystemProxy.address),
        _paths = paths ?? PluginPaths(),

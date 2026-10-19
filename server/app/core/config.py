@@ -11,6 +11,8 @@ from typing import Annotated, Any
 from pydantic import BeforeValidator, Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from app import __version__
+
 __all__ = ["Settings", "get_settings"]
 
 
@@ -60,7 +62,8 @@ class Settings(BaseSettings):
     # ---- 服务标识 ----
     app_name: str = "OmiocLink"
     server_name: str = "OmiocLink 信令服务器"
-    version: str = "1.0.2"
+    #: 版本号来自包元数据（pyproject 的 [project] version），不在代码里写字面量
+    version: str = __version__
     protocol_version: int = 1
 
     # ---- 网络 ----
