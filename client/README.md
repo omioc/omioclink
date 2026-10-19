@@ -68,7 +68,7 @@ flutter run -d <设备id>
 ## 三、构建发布包
 
 所有产物统一收拢到**仓库根的 `releases/client-v<版本>/`**（版本取 `pubspec.yaml` 的 `version:`，
-当前 `1.0.1`），文件名也带版本，拿到一个包就知道它是哪一版；`releases/` 在 `.gitignore` 里，不进版本库
+当前 `1.0.2`），文件名也带版本，拿到一个包就知道它是哪一版；`releases/` 在 `.gitignore` 里，不进版本库
 
 先构建，再用脚本收拢（`tool/stage_release.ps1`，自动读版本号并建目录）：
 

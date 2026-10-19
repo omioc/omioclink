@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     # ---- 服务标识 ----
     app_name: str = "OmiocLink"
     server_name: str = "OmiocLink 信令服务器"
-    version: str = "1.0.1"
+    version: str = "1.0.2"
     protocol_version: int = 1
 
     # ---- 网络 ----
