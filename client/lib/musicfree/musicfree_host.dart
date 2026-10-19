@@ -46,7 +46,7 @@ class MusicFreeHost {
     http.Client? httpClient,
     PluginPaths? paths,
     String? bundleSource,
-    this.appVersion = '1.0.0',
+    this.appVersion = '1.0.1',
     this.lang = 'zh-CN',
   }) : _http = httpClient ?? _clientWithProxy(SystemProxy.address),
        _paths = paths ?? PluginPaths(),

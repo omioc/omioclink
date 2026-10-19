@@ -68,7 +68,7 @@ flutter run -d <设备id>
 ## 三、构建发布包
 
 所有产物统一收拢到**仓库根的 `releases/client-v<版本>/`**（版本取 `pubspec.yaml` 的 `version:`，
-当前 `1.0.0`），文件名也带版本，拿到一个包就知道它是哪一版。`releases/` 在 `.gitignore` 里，不进版本库。
+当前 `1.0.1`），文件名也带版本，拿到一个包就知道它是哪一版。`releases/` 在 `.gitignore` 里，不进版本库。
 
 先构建，再用脚本收拢（`tool/stage_release.ps1`，自动读版本号并建目录）：
 
@@ -81,13 +81,13 @@ powershell -ExecutionPolicy Bypass -File tool\stage_release.ps1
 # 只想收一端：加 -Target windows 或 -Target android
 ```
 
-落到 `..\releases\client-v1.0.0\`：
+落到 `..\releases\client-v1.0.1\`：
 
 | 产物 | 来源 | 体积 |
 | --- | --- | --- |
-| `omioclink-client-win-x64-1.0.0.zip` | `build\windows\x64\runner\Release\` 整个目录（`omioclink_client.exe` + dll + `data\`） | ~29 MB |
-| `omioclink-client-android-1.0.0.apk` | `build\app\outputs\flutter-apk\app-release.apk`，4 个 ABI 全带 | ~112 MB |
-| `omioclink-client-android-1.0.0.aab` | `build\app\outputs\bundle\release\app-release.aab` | ~83 MB |
+| `omioclink-client-win-x64-1.0.1.zip` | `build\windows\x64\runner\Release\` 整个目录（`omioclink_client.exe` + dll + `data\`） | ~29 MB |
+| `omioclink-client-android-1.0.1.apk` | `build\app\outputs\flutter-apk\app-release.apk`，4 个 ABI 全带 | ~112 MB |
+| `omioclink-client-android-1.0.1.aab` | `build\app\outputs\bundle\release\app-release.aab` | ~83 MB |
 
 - Windows 包解压到任意目录双击 exe 就能跑，不需要安装。`Compress-Archive` 写出的条目分隔符是反斜杠
   （`data\app.so`），Windows 解压无影响；要到 Linux/macOS 上解压就换 7-Zip 打一次。
@@ -98,9 +98,9 @@ powershell -ExecutionPolicy Bypass -File tool\stage_release.ps1
   再跑脚本（形如 `<VS>\VC\Redist\MSVC\<版本>\x64\Microsoft.VC14x.CRT\`）；
   `stage_release.ps1` 发现缺 `vcruntime140.dll` 会警告。
 - 想按 ABI 出小包（arm64 约 39 MB，装机首选）：`flutter build apk --release --split-per-abi` 再跑脚本，
-  会一并收成 `omioclink-client-android-1.0.0-<abi>.apk`。`build\app\outputs\flutter-apk\` 里可能残留
+  会一并收成 `omioclink-client-android-1.0.1-<abi>.apk`。`build\app\outputs\flutter-apk\` 里可能残留
   上一次的旧分包，收拢前看一眼时间戳，或者 `flutter clean` 重打。
-- 装到手机：`adb install -r ..\releases\client-v1.0.0\omioclink-client-android-1.0.0.apk`
+- 装到手机：`adb install -r ..\releases\client-v1.0.1\omioclink-client-android-1.0.1.apk`
 
 > 目前 release 用的是模板自带的 **debug 签名**，能装能跑但不能上架。
 > 上架前要在 `android/app/build.gradle.kts` 里配自己的 `signingConfigs`（keystore）。
