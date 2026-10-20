@@ -37,8 +37,8 @@
   cd client
   flutter build windows --release        # 按需，只打安卓时可跳过
   flutter build apk --release
-  flutter build appbundle --release
   powershell -ExecutionPolicy Bypass -File tool\stage_release.ps1   # 加 -Target windows/android 只收一端
+  # AAB 默认不构建也不收（它只给 Google Play，手机装不了）；确实要才 flutter build appbundle --release 并加 -IncludeAab
   ```
 
 - `releases/` 在 `.gitignore` 里（本机/发布机的产物区），不要把二进制提交上去。

@@ -123,17 +123,15 @@ jobs:
       - run: flutter pub get
       - run: dart run tool/sync_version.dart --check
       # 分包：单 ABI 约 39 MB，比 113 MB 的全量包更适合放进 Release
+      # 只出分包 APK；AAB 是给 Google Play 的，Release 里不分发也不构建
       - run: flutter build apk --release --split-per-abi
-      - run: flutter build appbundle --release
       - name: 收拢产物
         shell: pwsh
         run: ./tool/stage_release.ps1 -Target android
       - uses: actions/upload-artifact@v4
         with:
           name: client-android
-          path: |
-            releases/client-v${{ needs.version.outputs.version }}/*.apk
-            releases/client-v${{ needs.version.outputs.version }}/*.aab
+          path: releases/client-v${{ needs.version.outputs.version }}/*.apk
           if-no-files-found: error
 
   docker:

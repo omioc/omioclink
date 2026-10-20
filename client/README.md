@@ -76,7 +76,6 @@ flutter run -d <设备id>
 cd client
 flutter build windows --release        # 只打安卓时可跳过
 flutter build apk --release
-flutter build appbundle --release
 powershell -ExecutionPolicy Bypass -File tool\stage_release.ps1
 # 只想收一端：加 -Target windows 或 -Target android
 ```
@@ -87,7 +86,6 @@ powershell -ExecutionPolicy Bypass -File tool\stage_release.ps1
 | --- | --- | --- |
 | `omioclink-client-win-x64-<tag>.zip` | `build\windows\x64\runner\Release\` 整个目录（`omioclink_client.exe` + dll + `data\`） | ~29 MB |
 | `omioclink-client-android-<tag>.apk` | `build\app\outputs\flutter-apk\app-release.apk`，4 个 ABI 全带 | ~112 MB |
-| `omioclink-client-android-<tag>.aab` | `build\app\outputs\bundle\release\app-release.aab` | ~83 MB |
 
 - Windows 包解压到任意目录双击 exe 就能跑，不需要安装；`Compress-Archive` 写出的条目分隔符是反斜杠
   （`data\app.so`），Windows 解压无影响；要到 Linux/macOS 上解压就换 7-Zip 打一次
@@ -100,6 +98,8 @@ powershell -ExecutionPolicy Bypass -File tool\stage_release.ps1
 - 想按 ABI 出小包（arm64 约 39 MB，装机首选）：`flutter build apk --release --split-per-abi` 再跑脚本，
   会一并收成 `omioclink-client-android-<tag>-<abi>.apk`；`build\app\outputs\flutter-apk\` 里可能残留
   上一次的旧分包，收拢前看一眼时间戳，或者 `flutter clean` 重打
+- **AAB 默认不参与构建、打包、收拢**：它只能传 Google Play，手机上装不了，而且现在还是 debug 签名、
+  上不了架。确实要时才 `flutter build appbundle --release`，再给脚本加 `-IncludeAab`
 - 装到手机：`adb install -r ..\releases\client-v<tag>\omioclink-client-android-<tag>.apk`
 
 > 目前 release 用的是模板自带的 **debug 签名**，能装能跑但不能上架

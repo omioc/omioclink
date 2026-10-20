@@ -12,8 +12,10 @@
     cd client
     flutter build windows --release        # 只打安卓时可以不跑
     flutter build apk --release
-    flutter build appbundle --release
     powershell -ExecutionPolicy Bypass -File tool\stage_release.ps1
+
+  AAB 默认不参与：它是给 Google Play 的，手机里装不了，而且现在还是 debug 签名、上不了架。
+  确实要用时才 flutter build appbundle --release，并给这个脚本加 -IncludeAab。
 
   版本号取自 pubspec.yaml 的 `version:`（x.y.z+build 只取前面的 x.y.z）。
   没构建过的那一端会被跳过并给一条警告，不会猜一个包出来。
@@ -25,7 +27,10 @@ param(
   [string[]] $Target = @('all'),
 
   # 手动指定版本号（默认读 pubspec.yaml）
-  [string] $Version
+  [string] $Version,
+
+  # 连 Android App Bundle 一起收；默认不收（AAB 只给 Google Play，本地发布用不上）
+  [switch] $IncludeAab
 )
 
 $ErrorActionPreference = 'Stop'
@@ -89,12 +94,14 @@ if ($targets -contains 'android') {
   foreach ($abi in @('arm64-v8a', 'armeabi-v7a', 'x86_64')) {
     Add-Artifact (Join-Path $apkDir "app-$abi-release.apk") "omioclink-client-android-$Version-$abi.apk" | Out-Null
   }
-  Add-Artifact (Join-Path $clientDir 'build\app\outputs\bundle\release\app-release.aab') "omioclink-client-android-$Version.aab" | Out-Null
+  if ($IncludeAab) {
+    Add-Artifact (Join-Path $clientDir 'build\app\outputs\bundle\release\app-release.aab') "omioclink-client-android-$Version.aab" | Out-Null
+  }
 }
 
 # 一个文件都没收到，说明既没构建也不是路径写错：直接失败，别让人以为打包成功了
 if ($staged.Count -eq 0) {
-  Write-Error '没有收拢到任何构建产物：先跑 flutter build windows / apk / appbundle --release'
+  Write-Error '没有收拢到任何构建产物：先跑 flutter build windows / apk --release'
   exit 1
 }
 
