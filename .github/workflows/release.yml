@@ -84,12 +84,22 @@ jobs:
           if (-not (Test-Path $vswhere)) { throw "找不到 vswhere，runner 的 VS 环境不对" }
           $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if (-not $vs) { throw "找不到带 C++ 工具集的 Visual Studio" }
-          $crt = Get-ChildItem "$vs\VC\Redist\MSVC" -Directory | Sort-Object Name -Descending | Select-Object -First 1
-          $src = Join-Path $crt.FullName "x64\Microsoft.VC14x.CRT"
-          Write-Host "从 $src 拷运行库"
-          Copy-Item (Join-Path $src "*.dll") "build\windows\x64\runner\Release\" -Force
-          if (-not (Test-Path "build\windows\x64\runner\Release\vcruntime140.dll")) {
-            throw "vcruntime140.dll 没拷进去，别发出一个起不来的包"
+
+          # 目录名随工具集版本变：VS2022 是 v143\Microsoft.VC143.CRT，VS18 是 v145\Microsoft.VC145.CRT。
+          # 所以不要写死 CRT 文件夹名，按版本从新到旧扫一遍，取第一个存在的 x64\Microsoft.VC*.CRT。
+          $redistRoot = Join-Path $vs 'VC\Redist\MSVC'
+          $crtDir = Get-ChildItem $redistRoot -Directory |
+            Sort-Object Name -Descending |
+            ForEach-Object { Get-ChildItem (Join-Path $_.FullName 'x64') -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue } |
+            Select-Object -First 1
+          if (-not $crtDir) {
+            throw "在 $redistRoot 下找不到 x64\Microsoft.VC*.CRT，看看 runner 的 VS 布局"
+          }
+          Write-Host "从 $($crtDir.FullName) 拷运行库"
+          Copy-Item (Join-Path $crtDir.FullName '*.dll') 'build\windows\x64\runner\Release\' -Force
+          Get-ChildItem 'build\windows\x64\runner\Release' -Filter '*140*.dll' | ForEach-Object { Write-Host "  已放入 $($_.Name)" }
+          if (-not (Test-Path 'build\windows\x64\runner\Release\vcruntime140.dll')) {
+            throw 'vcruntime140.dll 没拷进去，别发出一个起不来的包'
           }
       - name: 收拢产物
         shell: pwsh
