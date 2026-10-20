@@ -321,8 +321,9 @@ apply_stun() {
       stun_uri="stun:${host}:${STUN_PORT}"
     fi
 
-    # 自建 + 公共兜底：自建那条最快，cloudflare 那条防自建端口被拦
-    env_set OMIOCLINK_ICE_SERVERS "${stun_uri},stun:stun.cloudflare.com:3478"
+    # 只用用户给的那一个：既然这一步指定了自建 STUN，就不要再混进公共地址 ——
+    # 客户端会为每个 STUN 各探一轮，多一条只会更慢（cloudflare 在国内还经常打不通）
+    env_set OMIOCLINK_ICE_SERVERS "${stun_uri}"
     log "OMIOCLINK_ICE_SERVERS = $(env_get OMIOCLINK_ICE_SERVERS)"
     log "自建 STUN 会监听 UDP ${STUN_PORT}，记得在防火墙/安全组放行"
   else
