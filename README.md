@@ -5,15 +5,24 @@
 <h1 align="center">OmiocLink</h1>
 
 <p align="center">
-  为小圈子打造的自部署点对点通讯应用 —— <b> 一起开黑语音、游戏投屏、听歌观影 </b>
+  为小圈子打造的自部署点对点 P2P 通讯应用 —— <b> 一起开黑语音、游戏投屏、听歌观影 </b>
 </p>
 
 <p align="center">
-  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-win-x64-1.0.3.zip">Windows 免安装版下载</a>
+  只需两步，即可拥有自己的专属圈子：1. 一键部署服务端 2. 安装客户端
+</p>
+
+
+<p align="center">
+  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-win-x64-1.0.4.zip">Windows 免安装版下载</a>
   &nbsp;|&nbsp;
-  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-android-1.0.3-arm64-v8a.apk">Android APK 下载</a>
+  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-android-1.0.4-arm64-v8a.apk">Android APK 下载</a>
   &nbsp;|&nbsp;
   <a href="https://hub.docker.com/r/omioc/omioclink">服务端镜像（Docker Hub）</a>
+  <br>
+  <a href="server/README.md">服务端部署</a>
+  &nbsp;|&nbsp;
+  <a href="client/README.md">移动端编译、调试、打包</a>
 </p>
 
 ---
@@ -29,8 +38,8 @@ OmiocLink 是一个**给自己和固定好友使用**的桌面通讯工具，你
 | 目录 | 内容 |
 | --- | --- |
 | `client/` | Flutter 客户端：Windows 桌面 + Android，iOS 在路上迫切希望得到助力 |
-| `server/` | FastAPI 信令服务器 + 自研 STUN + Web 管理台；`server/docker-compose.yml` 在本机构建并启动 |
-| `deploy/` | 服务端在线部署所用 compose：只拉 `omioc/omioclink:latest` 镜像，`docker compose up -d` 即起（可选 STUN profile） |
+| `server/` | FastAPI 信令服务器 + 自研 STUN + Web 管理台，含离线部署 compose 与镜像导出脚本（见 [server/README](server/README.md)） |
+| `deploy/` | 服务端在线部署所用 compose：只拉 Docker Hub 镜像，部署步骤见 [server/README](server/README.md) |
 
 有一条设计约束贯穿整个 OmiocLink 项目，所有功能都建立在它之上：
 
@@ -128,138 +137,15 @@ OmiocLink 是一个**给自己和固定好友使用**的桌面通讯工具，你
 
 ---
 
-## 3. 部署与构建
-
-### 3.1 服务端
-
-服务端有两份 compose：
-
-| 位置 | 用途 | 起法 |
-| --- | --- | --- |
-| `deploy/docker-compose.yml` | 在线部署：只拉 Docker Hub 上的 `omioc/omioclink:latest`，由作者构建发布 | `cd deploy && docker compose --profile stun up -d` |
-| `server/docker-compose.yml` | 离线部署：把源码拷到目标机，从 `server/Dockerfile` 构建 `omioc/omioclink:latest` 再启动，不需要 Docker Hub，但需要环境具备基础镜像 | `cd server && docker compose --profile stun up -d --build` |
-
-两份 compose 的项目名都是 `omioclink`，数据卷同为 `omioclink_server-data`：两种部署方式可以互相切换、数据不用搬
-
-端口和数据卷：
-
-| 项 | 值 |
-| --- | --- |
-| 监听端口 | `21077` 服务端主服务通讯接口，`3478` 服务端 stun 服务接口 |
-| 数据卷 | `omioclink_server-data` → `/app/data`（SQLite + 头像 + 插件订阅，备份时把卷拿走即可；两份 compose 项目名相同，共用这一个卷） |
-
-关键环境变量：
-
-| 变量 | 默认 | 说明 |
-| --- | --- | --- |
-| `OMIOCLINK_JWT_SECRET` | 无（必填） | 至少 32 字节，HS256 签名用 |
-| `OMIOCLINK_ALLOW_REGISTRATION` | `false` | 是否允许自行注册，也可在管理台临时切换 |
-| `OMIOCLINK_ADMIN_TOKEN` | 空 | Web 管理台令牌；**留空即彻底关闭**（`/admin` 与 `/api/v1/admin/*` 路由都不存在） |
-| `OMIOCLINK_ICE_SERVERS` | `stun:stun.cloudflare.com:3478` | 下发给客户端的 STUN 列表，注意使用你 linux 主机对应的域名，**只填 `stun:`，本项目不支持 TURN** |
-| `OMIOCLINK_BIND_ADDR` | `0.0.0.0` | 挂 TLS 反代时建议收紧成 `127.0.0.1` |
-| `OMIOCLINK_MUSIC_ENABLED` | `true` | 点歌台总开关 |
-| `OMIOCLINK_PIP_INDEX_URL` | 清华镜像 | 只对 `server/docker-compose.yml` 的 `--build` 有效：构建时装依赖的源 |
-
-#### 部署前提
-
-一台有公网 IPv4 的 Linux 机器（VPS），装好 Docker 与 compose 插件
-
-#### 在线部署
-
-```bash
-cd deploy
-cp .env.example .env
-# 记得用下面的命令生成并填写 OMIOCLINK_JWT_SECRET 和 OMIOCLINK_ADMIN_TOKEN
-openssl rand -hex 32                          # 生成一个 32 字节的密钥填进去
-# 把 OMIOCLINK_ICE_SERVERS 改成 stun:<你的公网IP/域名>:3478
-docker compose --profile stun up -d           # 本地没镜像会自动 pull；不要 STUN 就去掉 --profile stun
-docker ps                                     # 看到服务 healthy 即可
-```
-
-STUN 容器必须用 `network_mode: host`（Linux 专用）：走 bridge + 端口映射时容器看到的来源地址会被 SNAT 成 docker 网关，回显出去的映射地址是错的，打洞必然失败；它只回答「你的公网映射地址是什么」，和信令同属"连接发现"，**不是中继**
-
-**TLS**：建议前面挂一层 Caddy / Nginx，对外只开 443，内部反代到 `127.0.0.1:21077`，然后客户端填域名即可（`wss://`）
-
-#### 离线部署
-
-```bash
-# 1) 在能联网的机器上导出镜像（产物名带版本与架构，脚本见 server/tool/export_image.ps1）
-cd server
-powershell -ExecutionPolicy Bypass -File tool\export_image.ps1                      # linux/amd64
-# ARM 主机（树莓派 / 甲骨文 ARM 之类）：
-# powershell -ExecutionPolicy Bypass -File tool\export_image.ps1 -Platform linux/arm64 -BuildIfMissing
-
-# 2) 把 tar 拷到服务器后导入并运行
-docker load -i omioclink-server-<版本>-<架构>.tar
-cd deploy
-cp .env.example .env
-# 记得用下面的命令生成并填写 OMIOCLINK_JWT_SECRET 和 OMIOCLINK_ADMIN_TOKEN
-openssl rand -hex 32                          # 生成一个 32 字节的密钥填进去
-# 把 OMIOCLINK_ICE_SERVERS 改成 stun:<你的公网IP/域名>:3478
-docker compose --profile stun up -d           # 本地已有镜像，不会再 pull
-docker ps                                     # 看到服务 healthy 即可
-```
-
-#### 本地开发
-
-```bash
-cd server
-uv sync
-uv run uvicorn app.main:app --port 21077 --reload
-uv run pytest          # 测试
-uv run ruff check .    # 静态检查
-uv run mypy            # 类型检查（严格模式）
-```
-
-### 3.2 Web 管理台
-
-在 `deploy/.env` 里设好 `OMIOCLINK_ADMIN_TOKEN` 并启动，浏览器打开 `http://<服务器>:21077/admin`，页面顶部输入令牌（请求头 `X-Admin-Token`）即可
-
-四个区块：
-
-- **用户自注册**：临时开关（重启后回到 `deploy/.env` 的值）
-- **房间**：在线房间列表、人数上限、当前成员、把某个成员移出、解散房间
-- **账号**：按用户名/昵称搜索、新建账号、禁用/启用、删除
-- **音乐插件订阅**：维护给客户端下发的插件订阅地址（`.json` 清单或 `.js` 直链），客户端连上服务器后自动同步、按 `sha256` 判断是否需要重装
-
-> 注册默认是关的，要开账号：`deploy/.env` 里改 `OMIOCLINK_ALLOW_REGISTRATION=true` → `cd deploy && docker compose up -d` → 客户端注册
-
-### 3.3 客户端：编译与打包
-
-详见 client 包下的 [README](client/README.md)
-
-### 3.4 发版（CI 全自动）
-
-打 tag 即发版：构建、上传、建 Release、推镜像都在 GitHub Actions 里跑，本机不需要 Android SDK 与 VS
-
-```bash
-# 1) 两处版本号改成一致：client/pubspec.yaml 的 version: 与 server/pyproject.toml 的 version
-#    客户端里的字面量（app_version.dart / Runner.rc）由脚本从 pubspec 同步
-cd client && dart run tool/sync_version.dart
-cd .. && git commit -am '版本统一到 1.0.3'
-git tag v1.0.3
-git push origin main --tags
-```
-
-- `.github/workflows/ci.yml`：main 的每次 push 与所有 PR 跑 `flutter analyze + test`、`ruff / mypy / pytest`，外加版本号漂移检查
-- `.github/workflows/release.yml`：`v*` tag 触发 → 校验 tag 与两处版本号一致 → Windows 客户端（自动补 VC++ 运行库）+ Android 分包 apk / aab → 镜像 `omioc/omioclink:latest` 与 `omioc/omioclink:v1.0.3` 推 Docker Hub（一份 manifest 同时含 `linux/amd64` 与 `linux/arm64`） → 建 GitHub Release
-- 仓库 Secrets 需配 `DOCKERHUB_USERNAME` 与 `DOCKERHUB_TOKEN`（Docker Hub 的 Access Token，不是登录密码）
-- 发行说明写 `.github/release-notes/v1.0.3.md`，Release 正文就用它；没有则自动用「自上一个 tag 以来的提交列表」
-
----
-
-## 4. 现状与困境
+## 3. 现状
 
 **已经能用的**：Windows 端功能是完整的（语音、屏幕共享、点歌台、一起听歌、好友与房间、主题、日志与崩溃报告）；Android 端整体功能也基本可用
 
 **目前困境：iOS 打包编译和上架**
 
-代码层已经把「桌面 / 手机」两套布局拆开（短边 < 600dp 自动切单栏），安卓端跑同一套代码是没有问题的，iOS 移植的工作量并不大；目前由于没有 **Apple Developer Program** 的账号，没有签名、没有 TestFlight、无法上架 App Store
+代码层已经把「桌面 / 手机」两套布局拆开（短边 < 600dp 自动切单栏），安卓端跑同一套代码没有问题，iOS 移植的工作量并不大；目前由于没有 **Apple Developer Program** 的账号，没有签名、没有 TestFlight、无法上架 App Store
 
-所以：
-
-> **若有大佬赞助 99 美元/年的苹果开发者账号，感激不尽，助力 iOS 版早日上线**
-> 一笔赞助换来的不是一个 App，而是这个项目从"自己用的 Windows 工具"变成"三端都在的自部署产品"，将会在赞助列表表示感谢（收款码与联系方式见第 7 节）
+> **若有大佬赞助 99 美元/年的苹果开发者账号，感激不尽，助力 iOS 版早日上线，让这个项目从"自己用的 Windows 工具"变成"三端都在的自部署产品"，将会在赞助列表表示感谢**
 
 其他已知问题：
 
@@ -269,7 +155,7 @@ git push origin main --tags
 
 ---
 
-## 5. 关键技术与致谢
+## 4. 关键技术与致谢
 
 | 领域 | 用了什么 |
 | --- | --- |
@@ -281,19 +167,18 @@ git push origin main --tags
 | 播放 | **media_kit**（libmpv）播放直链，LRC 歌词解析，SNTP 式时钟对齐 |
 | 音频设备 | Windows Core Audio 调麦克风系统音量、设备枚举与热插拔 |
 | 界面 | Flutter 无边框窗口（`window_manager`）+ 6 套主题色板，桌面三栏 / 手机单栏自适应 |
-| 交付 | Docker 单阶段精简镜像、`uv` 锁依赖、PowerShell 收拢产物脚本 |
 
 ### 特别致谢 MusicFree
 
 点歌台的整套插件生态是 **MusicFree** 的功劳：插件协议、插件安装与版本规则、目录结构、搜索结果的表现方式、榜单与歌单的卡片样式，都是参考（并对齐）[MusicFree](https://github.com/maotoumao/MusicFree) 与其桌面版实现的
 
-没有 MusicFree 这套开放、干净的插件规范，这个项目的点歌台大概会停在"内置几个平台接口"的水平，真诚感谢作者与所有写插件的朋友们
+没有 MusicFree 这套开放、干净的插件规范，这个项目的点歌台大概会停在"内置几个平台接口"的水平，真诚感谢作者与所有写插件的朋友
 
 > 本项目**不内置任何音源**，插件由服务端管理员通过订阅地址下发、由各客户端在本地执行；音频请求直接从客户端发往插件返回的地址，不经过 OmiocLink 服务器
 
 ---
 
-## 6. 参与贡献：Issue 与 PR
+## 5. 参与贡献：Issue 与 PR
 
 ### 提 Issue 之前
 
@@ -320,16 +205,16 @@ git push origin main --tags
 
 ### 提交 PR
 
-- Fork → 开一条描述性分支 → 只改这件事需要的文件，不要顺手重构无关代码
-- 注释写**中文**，解释「为什么这么写」（踩过的坑、约束来源），不要复述代码在做什么
-- 客户端：`flutter analyze lib test` 必须无 error/warning，`flutter test` 必须全绿；**不要跑仓库级 `dart format`**（本仓库并非 format-clean，全量格式化会制造巨大噪声 diff）
+- Fork → 开一条描述性分支 → 只改这件事需要的文件
+- 注释写**中文**，可解释「为什么这么写」（踩过的坑、约束来源）
+- 客户端：`flutter analyze lib test` 无 error/warning，`flutter test` 全绿；**不要跑仓库级 `dart format`**（本仓库并非 format-clean，全量格式化会制造巨大噪声 diff）
 - 服务端：`uv run pytest`、`uv run ruff check .`、`uv run mypy` 干净
-- PR 描述里写清三件事：**改了什么、为什么、你怎么验证的**（跑了哪些测试、有没有真机/真网络验证过），没验证的部分如实写"未验证"
-- UI 改动请附**改动前后**的对比截图
+- PR 描述写清：**改了什么、为什么、如何验证**（跑了哪些测试、有没有真机/真网络验证过），未验证部分如实写明
+- UI 改动建议附**改动前后**的对比截图
 
 ---
 
-## 7. 赞助与捐赠
+## 6. 赞助与捐赠
 
 如果 OmiocLink 帮你省下了一个会员、一次云盘、或者只是让你和朋友多笑了几晚，欢迎请作者喝杯咖啡
 
@@ -343,15 +228,15 @@ git push origin main --tags
 
 其他支持方式：
 
-- 提一个有日志、有复现步骤的 issue
+- 提一个有日志、能复现的 issue 或者提交 PR
 - 写一个能用、稳定的 MusicFree 插件
-- 在别的机器上跑一遍，告诉我们哪里没适配好
+- 在别的设备上跑一遍，告诉我们哪里没适配好
 
-## 8. 许可证
+## 7. 许可证
 
 本项目以 [MIT](LICENSE) 许可证开源：可自由使用、修改、分发与商用，保留版权与许可声明即可
 
-## 9. 社区
+## 8. 社区
 
 感谢 [LINUX DO](https://linux.do) 社区；学 AI，上 L 站
 

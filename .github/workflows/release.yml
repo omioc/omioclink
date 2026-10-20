@@ -4,7 +4,18 @@ name: Release
 #
 #   git tag v1.0.3 && git push origin v1.0.3
 #
-# 依次做：版本号校验 → 客户端 Windows / Android 构建 → 服务端镜像构建推送 → 建 GitHub Release。
+# 依次做：版本号校验 → 客户端 Windows / Android 构建 → 服务端镜像构建推送 → 导出离线镜像包 → 建 GitHub Release。
+#
+# 一次发版产出的东西（和三个 README 里的下载/部署说明一一对应）：
+#   omioclink-client-win-x64-<版本>.zip           ← 根 README「Windows 免安装版下载」
+#   omioclink-client-android-<版本>-arm64-v8a.apk ← 根 README「Android APK 下载」
+#   omioclink-server-<版本>-amd64.tar             ← server/README「方式一：从项目下载 tar 包离线部署」
+#   omioclink-server-<版本>-arm64.tar             ← 同上（ARM 主机）
+#   Docker Hub: omioc/omioclink:latest 与 omioc/omioclink:v<版本>（多架构 manifest）
+#
+# 镜像名固定带 latest：`deploy/docker-compose.yml` 与 `server/docker-compose.yml` 都写的是
+# `${OMIOCLINK_IMAGE:-omioc/omioclink:latest}`，离线包 load 进来的 tag 必须是 latest 才对得上，
+# 带版本号的那个 tag 只用于固定版本 / 回滚（README 第十节）。
 #
 # 仓库 Secrets 需要：
 #   DOCKERHUB_USERNAME   Docker Hub 账号
@@ -24,6 +35,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # 与 client/README「环境要求」保持一致
   FLUTTER_VERSION: "3.47.7"
   IMAGE: omioc/omioclink
 
@@ -40,6 +52,7 @@ jobs:
       - id: check
         run: |
           set -euo pipefail
+          # tag 形如 v1.0.3：tag 是对外的，version 是不带 v 的版本号（产物文件名用它）
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
           PUBSPEC=$(sed -n 's/^version: *\([0-9][^+ ]*\).*/\1/p' client/pubspec.yaml | head -n1)
@@ -47,6 +60,8 @@ jobs:
           echo "tag=$TAG version=$VERSION pubspec=$PUBSPEC pyproject=$PYPROJECT"
           # 三处必须一致：tag（对外）、客户端 pubspec、服务端 pyproject。
           # 不一致就直接失败，别发一个「版本号对不上」的包出去。
+          # 客户端里的字面量（app_version.dart / Runner.rc）由 client/tool/sync_version.dart 从 pubspec 生成，
+          # 下面两个客户端 job 都会跑 --check 兜一遍。
           if [ "$VERSION" != "$PUBSPEC" ]; then
             echo "::error::client/pubspec.yaml 是 $PUBSPEC，与 tag $TAG 不一致"
             exit 1
@@ -133,11 +148,10 @@ jobs:
       - run: flutter pub get
       - run: dart run tool/sync_version.dart --check
       # 分包：单 ABI 约 39 MB，比 113 MB 的全量包更适合放进 Release
-      # 只出分包 APK；AAB 是给 Google Play 的，Release 里不分发也不构建
+      # 只出分包 APK；AAB 是给 Google Play 的，Release 里不分发也不构建（见 client/README 第三节）
       - run: flutter build apk --release --split-per-abi
       - name: 收拢产物
-        shell: pwsh
-        run: ./tool/stage_release.ps1 -Target android
+        run: pwsh -ExecutionPolicy Bypass -File tool/stage_release.ps1 -Target android
       # 只上传 arm64 分包：另外两个 ABI（32 位 ARM / x86_64 模拟器）构建完直接丢弃，
       # 免得 Release 里三个 apk 让人挑错、下错还装不上（arm64 覆盖近十年的手机）
       - uses: actions/upload-artifact@v4
@@ -147,7 +161,7 @@ jobs:
           if-no-files-found: error
 
   docker:
-    name: 镜像 · 构建并推送（amd64 + arm64）
+    name: 服务端 · 构建并推送镜像（amd64 + arm64）
     needs: version
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -173,16 +187,65 @@ jobs:
           # arm64 是模拟构建，依赖层很慢：用 Actions 缓存兜一下第二次之后的构建
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # latest 给「总是最新」的部署；带版本号的 tag 用来固定版本、方便回滚
+          # latest 是 compose 默认引用的那个 tag（在线部署直接能用）；
+          # 带版本号的 tag 用来固定版本、回滚（见 server/README 第十节）
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ needs.version.outputs.tag }}
 
+  server-image:
+    name: 服务端 · 导出离线镜像包
+    needs: [version, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: 确认 latest 已经是本次构建的多架构 manifest
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "${IMAGE}:latest" | tee /tmp/latest.txt
+          for arch in amd64 arm64; do
+            grep -q "linux/${arch}" /tmp/latest.txt || {
+              echo "::error::${IMAGE}:latest 里没有 linux/${arch}，manifest 没推全"
+              exit 1
+            }
+          done
+      - name: 导出两个架构的 tar（镜像名固定 latest）
+        run: |
+          set -euo pipefail
+          # 文件名与 server/README 的下载链接一致：omioclink-server-<版本>-<架构>.tar（版本不带 v）
+          VERSION="${{ needs.version.outputs.version }}"
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            docker pull --platform "linux/${arch}" "${IMAGE}:latest"
+            # 只对能原生跑起来的 amd64 核对版本：arm64 要 QEMU 起容器，慢而且没必要——
+            # 两个架构来自同一个 manifest，上面已经确认过
+            if [ "$arch" = "amd64" ]; then
+              got=$(docker run --rm --platform linux/amd64 "${IMAGE}:latest" python -c 'import app; print(app.__version__)')
+              echo "镜像里的版本：$got，期望：$VERSION"
+              if [ "$got" != "$VERSION" ]; then
+                echo "::error::latest 里的版本是 $got，与 tag 对应的 $VERSION 不一致（可能是拉到了旧的 latest）"
+                exit 1
+              fi
+            fi
+            # docker save 会保留 tag：目标机 docker load 之后就是 omioc/omioclink:latest，
+            # 正好对上两份 compose 里的默认值
+            docker save "${IMAGE}:latest" -o "dist/omioclink-server-${VERSION}-${arch}.tar"
+            ls -lh "dist/omioclink-server-${VERSION}-${arch}.tar"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-image
+          path: dist/*.tar
+          if-no-files-found: error
+          # 镜像层本身已经压缩过，再压一遍纯浪费时间
+          compression-level: 0
+
   release:
     name: GitHub Release
-    needs: [version, windows, android, docker]
+    needs: [version, windows, android, server-image]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -192,6 +255,12 @@ jobs:
           pattern: client-*
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-image
+          path: dist
+      - name: 列出这次要发的文件
+        run: ls -lh dist
       - name: 选发行说明
         run: |
           set -euo pipefail

@@ -68,3 +68,23 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy
       - run: uv run pytest -q
+
+  deploy-script:
+    name: 部署脚本 · bash -n
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # 在线部署就是一行「curl install.sh 再 sudo bash」，脚本语法错等于所有人都装不上；
+      # 顺手确认它下载/复制的那几个文件仍在原位（README 的「四、在线部署」指过来的）
+      - name: 语法检查
+        run: bash -n deploy/install.sh
+      - name: 脚本依赖的文件都在
+        run: |
+          set -euo pipefail
+          for f in deploy/install.sh deploy/docker-compose.yml deploy/.env.example; do
+            test -f "$f" || { echo "::error::缺 $f"; exit 1; }
+          done
+          grep -q '^OMIOCLINK_JWT_SECRET=' deploy/.env.example
+          grep -q '^services:' deploy/docker-compose.yml
+          echo "部署脚本与它拉的配置都齐了"
