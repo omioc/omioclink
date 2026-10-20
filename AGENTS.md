@@ -41,6 +41,16 @@
   # AAB 默认不构建也不收（它只给 Google Play，手机装不了）；确实要才 flutter build appbundle --release 并加 -IncludeAab
   ```
 
+- 服务端离线包用脚本导出，别手搓 `docker save`（镜像名/文件名容易和版本对不上）：
+
+  ```powershell
+  cd server
+  powershell -ExecutionPolicy Bypass -File tool\export_image.ps1                                    # linux/amd64
+  powershell -ExecutionPolicy Bypass -File tool\export_image.ps1 -Platform linux/arm64 -BuildIfMissing
+  # 产出 releases\server-v<版本>\omioclink-server-<版本>-<架构>.tar
+  # 版本读 pyproject；导出前会把镜像跑起来核对 app.__version__，对不上直接失败
+  ```
+
 - `releases/` 在 `.gitignore` 里（本机/发布机的产物区），不要把二进制提交上去。
 
 ## 验证与截图：不要自己截图

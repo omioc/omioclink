@@ -183,8 +183,14 @@ STUN 容器必须用 `network_mode: host`（Linux 专用）：走 bridge + 端�
 #### 离线部署
 
 ```bash
-# 从项目 release 下载镜像搬到服务器导入并运行
-docker load -i omioclink-latest.tar
+# 1) 在能联网的机器上导出镜像（产物名带版本与架构，脚本见 server/tool/export_image.ps1）
+cd server
+powershell -ExecutionPolicy Bypass -File tool\export_image.ps1                      # linux/amd64
+# ARM 主机（树莓派 / 甲骨文 ARM 之类）：
+# powershell -ExecutionPolicy Bypass -File tool\export_image.ps1 -Platform linux/arm64 -BuildIfMissing
+
+# 2) 把 tar 拷到服务器后导入并运行
+docker load -i omioclink-server-<版本>-<架构>.tar
 cd deploy
 cp .env.example .env
 # 记得用下面的命令生成并填写 OMIOCLINK_JWT_SECRET 和 OMIOCLINK_ADMIN_TOKEN
