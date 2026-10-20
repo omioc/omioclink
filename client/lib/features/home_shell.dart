@@ -182,18 +182,29 @@ class _HomeShellState extends State<HomeShell> {
 
   /// 切导航：去看别的页面时让出中栏，通话继续在后台跑。
   void _selectSection(NavSection value) {
+    final compact = useCompactLayout(context);
     setState(() {
       _section = value;
       _showCall = false;
       if (value == NavSection.rooms) {
-        // 点导航「我的房间」＝看「我创建的房间」，与 tab 的选择无关
-        _roomSource = RoomListSource.created;
+        // 桌面左栏的「我的房间」＝看「我创建的房间」；手机底部只有一个「房间」
+        // 入口，回到它就是回房间列表，该看「我加入的」——想管自己建的，点上面
+        // 那排 tab（那条路走 _changeRoomSource），不该被这里顺手改掉
+        _roomSource = compact ? RoomListSource.joined : RoomListSource.created;
       }
     });
     // 切到好友页就顺手拉一次：首次登录那一次可能还在路上（也可能抖掉了），
     // 不该让用户只能干等 15 秒后的轮询
     if (value == NavSection.friends) {
       unawaited(context.read<AppState>().refreshFriends());
+    }
+    if (value == NavSection.rooms) {
+      // 列表还空着就先补一次：手机上从设置/主题切回来只看到一片空白的话，
+      // 用户根本不知道该去点那个小刷新图标
+      final state = context.read<AppState>();
+      if (state.myRooms.isEmpty && state.publicRooms.isEmpty) {
+        unawaited(state.refreshRooms());
+      }
     }
   }
 
@@ -3829,24 +3840,32 @@ class _CompactRoomsPane extends StatelessWidget {
             padding: const EdgeInsets.only(left: AppSpacing.page, right: 6),
             child: Row(
               children: [
-                Flexible(
-                  child: Text(
-                    _roomListTitle(roomSource),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.pageTitle,
+                // 标题与计数占满左侧，三个按钮才固定贴右。以前是 Flexible 标题
+                // 和 Spacer 平分剩余空间：Flexible 是 loose 的，标题短的那一档
+                // （「公开房间」）用不完自己那份，按钮就被往左推——三档之间对不齐。
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          _roomListTitle(roomSource),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.pageTitle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${rooms.length}',
+                        style: TextStyle(
+                          color: context.palette.textMuted,
+                          fontSize: 11.5,
+                          height: 1.2,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '${rooms.length}',
-                  style: TextStyle(
-                    color: context.palette.textMuted,
-                    fontSize: 11.5,
-                    height: 1.2,
-                  ),
-                ),
-                const Spacer(),
                 IconButton(
                   tooltip: '刷新',
                   onPressed: () => state.refreshRooms(),

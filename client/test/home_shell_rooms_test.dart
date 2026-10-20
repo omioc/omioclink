@@ -260,4 +260,89 @@ void main() {
 
     await close(tester, state);
   });
+
+  testWidgets('手机端从别的 tab 回到「房间」：回到「我加入的」而不是「我创建的」', (
+    tester,
+  ) async {
+    final state = await signedIn(tester);
+
+    // 换成手机尺寸（393×852）：底部只有一个「房间」入口
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppState>.value(
+        value: state,
+        child: const MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(size: Size(393, 852)),
+            child: Scaffold(body: HomeShell()),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 20));
+
+    // 先自己切到「我创建的」
+    await tester.tap(find.text('我创建'));
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(find.text('我创建的房间'), findsOneWidget);
+
+    // 去设置页转一圈，再点底部「房间」回来
+    await tester.tap(find.byIcon(Icons.settings_rounded));
+    await tester.pump(const Duration(milliseconds: 20));
+    await tester.tap(find.byIcon(Icons.forum_rounded));
+    await tester.pump(const Duration(milliseconds: 20));
+
+    expect(
+      find.text('我加入的房间'),
+      findsOneWidget,
+      reason: '回到房间应该看「我加入的」，不是上次点过的「我创建的」',
+    );
+    expect(find.text('我创建的房间'), findsNothing);
+    expect(
+      find.textContaining('OTHR01'),
+      findsOneWidget,
+      reason: '别人建的房（我加入过的）也要在',
+    );
+
+    await close(tester, state);
+  });
+
+  testWidgets('手机端三档列表右上角的按钮贴同一处（标题长短不该影响位置）', (tester) async {
+    final state = await signedIn(tester);
+
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppState>.value(
+        value: state,
+        child: const MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(size: Size(393, 852)),
+            child: Scaffold(body: HomeShell()),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 20));
+
+    double createRight() => tester.getTopRight(find.byTooltip('创建房间')).dx;
+
+    final joined = createRight();
+
+    await tester.tap(find.text('我创建'));
+    await tester.pump(const Duration(milliseconds: 20));
+    final created = createRight();
+
+    await tester.tap(find.text('公开'));
+    await tester.pump(const Duration(milliseconds: 20));
+    final publicRooms = createRight();
+
+    expect(created, joined, reason: '「我创建的」和「我加入的」按钮位置应一致');
+    expect(
+      publicRooms,
+      joined,
+      reason: '「公开房间」标题更短，按钮也不该被往左拉',
+    );
+
+    await close(tester, state);
+  });
 }

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:omioclink_client/app_state.dart';
 import 'package:omioclink_client/data/api_client.dart';
+import 'package:omioclink_client/data/session_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Map<String, dynamic> _room({
@@ -27,6 +28,21 @@ Map<String, dynamic> _room({
   'joined': false,
 };
 
+/// 模拟安卓上写不进去的本地存储：`saveAuth` 直接失败。
+///
+/// 登录流程不该被它拖住——首屏的房间与好友必须照常拉回来。
+class _FailingStore extends SessionStore {
+  @override
+  Future<void> saveAuth({
+    required String accessToken,
+    required String username,
+    String? displayName,
+    String? password,
+  }) async {
+    throw StateError('本地存储写不进去');
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -36,9 +52,10 @@ void main() {
   /// 让用例能模拟失败响应（默认 200）。
   late int status;
 
-  AppState buildState() {
+  AppState buildState({SessionStore? store}) {
     requested = <Uri>[];
     return AppState(
+      store: store,
       apiFactory: (endpoint) => ApiClient(
         endpoint: endpoint,
         httpClient: MockClient((request) async {
@@ -54,8 +71,8 @@ void main() {
   }
 
   /// 走完「连服务器 → 登录」，此时房间列表已刷过一轮。
-  Future<AppState> signedIn() async {
-    final state = buildState();
+  Future<AppState> signedIn({SessionStore? store}) async {
+    final state = buildState(store: store);
     expect(await state.connectToServer('127.0.0.1:21077'), isTrue);
     expect(
       await state.signIn(username: 'alice', password: 'password123'),
@@ -551,5 +568,57 @@ void main() {
       'test-token',
       reason: '失败时不能把本地令牌换掉',
     );
+  });
+
+  test('本地存储写不进去，登录后首屏的房间与好友照样拉回来', () async {
+    final state = await signedIn(store: _FailingStore());
+    addTearDown(state.dispose);
+
+    expect(state.user, isNotNull, reason: '登录本身要成功');
+    expect(
+      state.myRooms.map((room) => room.roomId),
+      <String>['PRIV01'],
+      reason: '落盘失败不该把首屏的房间一起拖掉',
+    );
+    expect(
+      state.rememberedUsername,
+      'alice',
+      reason: '内存里先记住，连接页照样能回填',
+    );
+  });
+
+  test('公开列表拉失败时「我加入的」照样落地（一份失败不牵连另一份）', () async {
+    const headers = {'content-type': 'application/json; charset=utf-8'};
+    final state = AppState(
+      apiFactory: (endpoint) => ApiClient(
+        endpoint: endpoint,
+        httpClient: MockClient((request) async {
+          final uri = request.url;
+          if (uri.path.endsWith('/rooms') &&
+              uri.queryParameters['scope'] != 'mine') {
+            return http.Response(
+              jsonEncode(<String, dynamic>{'detail': '服务器打盹了'}),
+              500,
+              headers: headers,
+            );
+          }
+          return http.Response(jsonEncode(handler(uri)), 200, headers: headers);
+        }),
+      ),
+    );
+    addTearDown(state.dispose);
+
+    expect(await state.connectToServer('127.0.0.1:21077'), isTrue);
+    expect(
+      await state.signIn(username: 'alice', password: 'password123'),
+      isTrue,
+    );
+
+    expect(
+      state.myRooms.map((room) => room.roomId),
+      <String>['PRIV01'],
+      reason: '公开列表 500 不该把「我加入的」一起丢掉',
+    );
+    expect(state.publicRooms, isEmpty);
   });
 }

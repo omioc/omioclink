@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omioclink_client/data/session_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -85,5 +87,95 @@ void main() {
     await store.saveRoomPassword('ABC123', 'new-pw');
 
     expect((await store.load()).roomPasswords['ABC123'], 'new-pw');
+  });
+
+  group('手机端的 JSON 副本（安卓上 prefs 会静默失手）', () {
+    late Directory dir;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('omioclink-session-test-');
+    });
+
+    tearDown(() {
+      if (dir.existsSync()) {
+        dir.deleteSync(recursive: true);
+      }
+    });
+
+    String mirrorPath() => '${dir.path}${Platform.pathSeparator}session.json';
+
+    test('prefs 里什么都没了（杀的进程/读不出来），地址与账号密码仍能读回', () async {
+      final path = mirrorPath();
+      final store = SessionStore(mirrorPath: path);
+      await store.saveServerAddress('10.0.0.2:21077');
+      await store.saveAuth(
+        accessToken: 'token-1',
+        username: 'alice',
+        password: 'password123',
+      );
+
+      // 杀掉进程再进来：prefs 这一侧什么都没留下
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final stored = await SessionStore(mirrorPath: path).load();
+      expect(stored.serverAddress, '10.0.0.2:21077');
+      expect(stored.username, 'alice');
+      expect(stored.password, 'password123');
+      expect(stored.hasToken, isTrue);
+    });
+
+    test('退出登录只清副本里的令牌，地址/用户名/密码还在', () async {
+      final path = mirrorPath();
+      final store = SessionStore(mirrorPath: path);
+      await store.saveServerAddress('10.0.0.2:21077');
+      await store.saveAuth(
+        accessToken: 'token-1',
+        username: 'alice',
+        password: 'password123',
+      );
+
+      await store.clearAuth();
+
+      final stored = await SessionStore(mirrorPath: path).load();
+      expect(stored.hasToken, isFalse);
+      expect(stored.serverAddress, '10.0.0.2:21077');
+      expect(stored.username, 'alice');
+      expect(stored.password, 'password123');
+    });
+
+    test('从老版本升级（只有 prefs）时，第一次读就把数据搬进副本', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'omioclink.server_address': '1.2.3.4:21077',
+        'omioclink.username': 'bob',
+        'omioclink.password': 'password123',
+      });
+      final path = mirrorPath();
+      final first = await SessionStore(mirrorPath: path).load();
+      expect(first.username, 'bob');
+      expect(File(path).existsSync(), isTrue, reason: '读完要顺手落一份副本');
+
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final stored = await SessionStore(mirrorPath: path).load();
+      expect(stored.serverAddress, '1.2.3.4:21077');
+      expect(stored.username, 'bob');
+      expect(stored.password, 'password123');
+    });
+
+    test('记住的房间密码也跟着副本走', () async {
+      final path = mirrorPath();
+      await SessionStore(mirrorPath: path).saveRoomPassword('ABC123', 'room-pw');
+
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      expect(
+        (await SessionStore(mirrorPath: path).load()).roomPasswords,
+        <String, String>{'ABC123': 'room-pw'},
+      );
+
+      await SessionStore(mirrorPath: path).clearRoomPassword('ABC123');
+      expect(
+        (await SessionStore(mirrorPath: path).load()).roomPasswords,
+        isEmpty,
+      );
+    });
   });
 }

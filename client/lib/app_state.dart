@@ -430,19 +430,25 @@ class AppState extends ChangeNotifier {
 
   /// 登录/注册成功后落地会话。[password] 是用户刚输入的明文密码，
   /// 记住它以后连接页就能直接回填。
+  ///
+  /// 顺序是「先记住内存里的 → 再拉首屏数据 → 最后落盘」：本地存储在少数安卓机上
+  /// 会抛错甚至一直不返回，以前卡在落盘上，后面的房间/好友就再也拉不回来——
+  /// 用户看到的是首页一片空，得自己点一下刷新才出数据。
   Future<void> _completeLogin(AuthSession auth, {String? password}) async {
     _applyLogin(auth.user, auth.accessToken);
-    await _store.saveAuth(
-      accessToken: auth.accessToken,
-      username: auth.user.username,
-      displayName: auth.user.displayName,
-      password: password,
-    );
     _rememberedUsername = auth.user.username;
     if (password != null && password.isNotEmpty) {
       _rememberedPassword = password;
     }
     await _loadWorkspace();
+    await _persistSession(
+      () => _store.saveAuth(
+        accessToken: auth.accessToken,
+        username: auth.user.username,
+        displayName: auth.user.displayName,
+        password: password,
+      ),
+    );
   }
 
   /// 登录态就绪后拉一轮「工作区」数据：房间列表（我的 + 公开）与好友。
@@ -451,6 +457,7 @@ class AppState extends ChangeNotifier {
   /// 用户得手动点「刷新」才看得到自己的房间。
   Future<void> _loadWorkspace() async {
     _friendsRetryRound = 0;
+    _roomRetryRound = 0;
     await refreshRooms();
     await refreshFriends();
     unawaited(_loadMusicPlugins());
@@ -458,6 +465,11 @@ class AppState extends ChangeNotifier {
     // 补两轮，别让用户盯着空列表等 15 秒后的轮询——那之前他也没有刷新入口。
     if (!_disposed && _friends.isEmpty) {
       _scheduleFriendsRetry();
+    }
+    // 房间同理：一个都没拿到就先补两轮。手机上没有左栏、也没有常驻的刷新
+    // 入口，整屏空白会被当成「我的房间全没了」。
+    if (!_disposed && _myRooms.isEmpty && _publicRooms.isEmpty) {
+      _scheduleRoomsRetry();
     }
     // 点歌台不在这里预热：平台能力是网络请求，只有真正打开点歌台的用户才需要，
     // 由点歌台界面在挂载时按需调用 `music.loadPlatforms()`。
@@ -678,10 +690,12 @@ class AppState extends ChangeNotifier {
     // 通话中改的：聊天署名与本地成员名一并更新（同房间其他人由服务端广播同步）
     _applyProfile(updated);
     if (token != null) {
-      await _store.saveAuth(
-        accessToken: token,
-        username: updated.username,
-        displayName: updated.displayName,
+      await _persistSession(
+        () => _store.saveAuth(
+          accessToken: token,
+          username: updated.username,
+          displayName: updated.displayName,
+        ),
       );
     }
     notifyListeners();
@@ -705,15 +719,18 @@ class AppState extends ChangeNotifier {
     // 信令连接用的是同一张令牌：热更新，免得掉线重连时拿着旧令牌被拒
     _signaling?.updateAccessToken(auth.accessToken);
     _user = auth.user;
-    await _store.saveAuth(
-      accessToken: auth.accessToken,
-      username: auth.user.username,
-      displayName: auth.user.displayName,
-      // 记住的密码跟着换新，否则下次回填的是旧密码
-      password: newPassword,
-    );
+    // 内存里的先换新：落盘只影响「下次回填」，不该让改密码看起来没成功
     _rememberedPassword = newPassword;
     notifyListeners();
+    await _persistSession(
+      () => _store.saveAuth(
+        accessToken: auth.accessToken,
+        username: auth.user.username,
+        displayName: auth.user.displayName,
+        // 记住的密码跟着换新，否则下次回填的是旧密码
+        password: newPassword,
+      ),
+    );
   }
 
   Future<void> logout() async {
@@ -729,7 +746,14 @@ class AppState extends ChangeNotifier {
     // leaveRoom() 里已经停过一次；这里兜底（比如会话早就断了、leaveRoom 提前返回）
     await _logoutStep('停止氛围音', _musicPlayer.stop);
     _musicQueue.reset();
-    await _logoutStep('清除本地令牌', _store.clearAuth);
+    await _logoutStep(
+      '清除本地令牌',
+      // 本地存储偶尔会卡住不返回：退出登录不能停在「清令牌」这一步不动
+      () => _store.clearAuth().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {},
+      ),
+    );
     _user = null;
     _myRooms = const <Room>[];
     _publicRooms = const <Room>[];
@@ -751,37 +775,125 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  // ------------------------------------------------------------------ 房间
-  /// 同时刷新两个范围。
+  /// 把登录信息写进本地存储，**绝不让它拖住界面和后续流程**。
+  ///
+  /// 安卓上 `shared_preferences` 偶发抛错，甚至一直不返回；这类失败只该让
+  /// 「下次进来要重新输密码」，不该把首屏的房间/好友一起拖死——以前就是卡在
+  /// 这一步，用户进了首页只看到一堆空列表，得自己点刷新才出数据。
+  /// 超时是兜底：挂住的那个 future 丢在后台，流程照常往下走。
+  Future<void> _persistSession(Future<void> Function() write) async {
+    try {
+      // 5 秒足够慢盘写完；超时只是兜底，挂住的 future 丢在后台（首屏数据早已拉到）
+      await write().timeout(const Duration(seconds: 5));
+    } on Object catch (error) {
+      AppLog.warn('保存登录信息失败', error: error);
+    }
+  }
 
+  // ------------------------------------------------------------------ 房间
+  Future<void>? _roomsInflight;
+
+  /// 首屏一个房间都没拿到时的补拉间隔（两轮，之后交给 5 秒轮询里的那一档）。
+  ///
+  /// 刚连上网络那一下最容易撞上：手机上后端稍慢、请求抖一下就是整屏空白，
+  /// 而手机没有左栏、也没有常驻的刷新入口，用户只能自己去找那个小图标。
+  static const List<Duration> _roomsRetryDelays = <Duration>[
+    Duration(seconds: 2),
+    Duration(seconds: 6),
+  ];
+
+  int _roomRetryRound = 0;
+  Timer? _roomRetryTimer;
+
+  void _scheduleRoomsRetry() {
+    if (_disposed || _roomRetryTimer != null) {
+      return;
+    }
+    if (_roomRetryRound >= _roomsRetryDelays.length) {
+      return;
+    }
+    final delay = _roomsRetryDelays[_roomRetryRound];
+    _roomRetryRound += 1;
+    // 用 Timer 而不是 Future.delayed：退出登录 / 释放状态时要能立刻取消
+    _roomRetryTimer = Timer(delay, () {
+      _roomRetryTimer = null;
+      if (_disposed || _user == null) {
+        return;
+      }
+      unawaited(refreshRooms());
+    });
+  }
+
+  /// 同时刷新两个范围（飞行中的重复调用直接复用同一次请求）。
+  ///
   /// 公开列表用于发现，我的房间（含私有）用于回访——私有房间不会出现在公开列表里，
   /// 只拉公开列表会让用户自己建的私有房间在界面上完全消失。
-  Future<void> refreshRooms() async {
+  ///
+  /// 两份列表**分开兜错**（与 [refreshFriends] 同一个道理）：以前任一失败就整轮
+  /// 作废，手机端后端稍慢一点首屏就是一片空，用户得自己点刷新才看得到房间。
+  /// 现在谁成功谁落地。
+  Future<void> refreshRooms() {
+    final inflight = _roomsInflight;
+    if (inflight != null) {
+      return inflight;
+    }
+    late final Future<void> future;
+    future = _refreshRooms().whenComplete(() {
+      if (identical(_roomsInflight, future)) {
+        _roomsInflight = null;
+      }
+    });
+    _roomsInflight = future;
+    return future;
+  }
+
+  Future<void> _refreshRooms() async {
     final api = _api;
     if (api == null || _user == null || _disposed) {
       return;
     }
+    final results = await Future.wait<List<Room>?>(<Future<List<Room>?>>[
+      _fetchRooms(api, RoomScope.public),
+      _fetchRooms(api, RoomScope.mine),
+    ]);
+    // 请求期间可能已经登出（令牌失效时 _fetchRooms 自己会走 logout）或被销毁，
+    // 这时候再把旧列表写回去 + notifyListeners 就是往已释放的对象上打
+    if (_disposed || _user == null) {
+      return;
+    }
+    final publicRooms = results[0];
+    final myRooms = results[1];
+    if (publicRooms == null && myRooms == null) {
+      return; // 两份都没拿到：保持原样，交给补拉与轮询
+    }
+    if (publicRooms != null) {
+      _publicRooms = publicRooms;
+    }
+    if (myRooms != null) {
+      _myRooms = myRooms;
+    }
+    if (_myRooms.isNotEmpty || _publicRooms.isNotEmpty) {
+      _roomRetryRound = 0;
+    }
+    notifyListeners();
+  }
+
+  /// 拉一份房间列表；失败返回 null，两份互不牵连。
+  Future<List<Room>?> _fetchRooms(ApiClient api, RoomScope scope) async {
     try {
-      final results = await Future.wait<List<Room>>(<Future<List<Room>>>[
-        api.listRooms(scope: RoomScope.public),
-        api.listRooms(scope: RoomScope.mine),
-      ]);
-      if (_disposed) {
-        return; // 请求期间可能已经登出/销毁，此时 notifyListeners 会抛错
-      }
-      _publicRooms = results[0];
-      _myRooms = results[1];
-      notifyListeners();
+      return await api.listRooms(scope: scope);
     } on ApiException catch (error) {
       if (error.isUnauthorized) {
         await logout();
       } else {
         AppLog.warn('刷新房间列表失败：${error.message}');
       }
+      return null;
     } on Object catch (error) {
-      // 这个方法是后台轮询与范围切换调用的（fire-and-forget），
+      // 这个方法是后台轮询与切页调用进来的（fire-and-forget），
       // 让它抛出去只会变成没人处理的异步异常
       AppLog.warn('刷新房间列表失败：$error');
+      return null;
     }
   }
 
@@ -1181,6 +1293,8 @@ class AppState extends ChangeNotifier {
     // 测试收尾时也会被判成「组件树销毁后仍有 Timer 挂着」
     _friendsRetryTimer?.cancel();
     _friendsRetryTimer = null;
+    _roomRetryTimer?.cancel();
+    _roomRetryTimer = null;
     _musicPluginRetryTimer?.cancel();
     _musicPluginRetryTimer = null;
     _disposeSession();
