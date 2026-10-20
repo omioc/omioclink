@@ -78,7 +78,9 @@ const String kAppVersionFull = '$full';
 /// 整份文件比对后覆盖；返回「原本不一致」（checkOnly 时也返回 true，只是不写盘）。
 bool _syncFile(File file, String content, {required bool checkOnly}) {
   final current = file.existsSync() ? file.readAsStringSync() : '';
-  if (current == content) {
+  // 只比内容、不比行尾：GitHub 的 Windows runner 上 core.autocrlf=true，检出来的文件是 CRLF，
+  // 而这里生成的是 LF。直接比字节会在这类工作区里误报「版本号漂移」（本机是 LF 所以看不出来）。
+  if (_sameIgnoringEol(current, content)) {
     return false;
   }
   if (!checkOnly) {
@@ -88,6 +90,10 @@ bool _syncFile(File file, String content, {required bool checkOnly}) {
   }
   return true;
 }
+
+/// 忽略 CRLF / LF 差异的文本相等判断。
+bool _sameIgnoringEol(String a, String b) =>
+    a.replaceAll('\r\n', '\n') == b.replaceAll('\r\n', '\n');
 
 /// 逐行替换 `#define <key> <值>`；返回是否有行需要改。
 ///
