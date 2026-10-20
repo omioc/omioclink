@@ -236,7 +236,7 @@ git push origin main --tags
 ```
 
 - `.github/workflows/ci.yml`：main 的每次 push 与所有 PR 跑 `flutter analyze + test`、`ruff / mypy / pytest`，外加版本号漂移检查
-- `.github/workflows/release.yml`：`v*` tag 触发 → 校验 tag 与两处版本号一致 → Windows 客户端（自动补 VC++ 运行库）+ Android 分包 apk / aab → 镜像 `omioc/omioclink:latest` 与 `omioc/omioclink:v1.0.3` 推 Docker Hub → 建 GitHub Release
+- `.github/workflows/release.yml`：`v*` tag 触发 → 校验 tag 与两处版本号一致 → Windows 客户端（自动补 VC++ 运行库）+ Android 分包 apk / aab → 镜像 `omioc/omioclink:latest` 与 `omioc/omioclink:v1.0.3` 推 Docker Hub（一份 manifest 同时含 `linux/amd64` 与 `linux/arm64`） → 建 GitHub Release
 - 仓库 Secrets 需配 `DOCKERHUB_USERNAME` 与 `DOCKERHUB_TOKEN`（Docker Hub 的 Access Token，不是登录密码）
 - 发行说明写 `.github/release-notes/v1.0.3.md`，Release 正文就用它；没有则自动用「自上一个 tag 以来的提交列表」
 
