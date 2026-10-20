@@ -96,7 +96,8 @@ powershell -ExecutionPolicy Bypass -File tool\stage_release.ps1
   再跑脚本（形如 `<VS>\VC\Redist\MSVC\<版本>\x64\Microsoft.VC14x.CRT\`）；
   `stage_release.ps1` 发现缺 `vcruntime140.dll` 会警告
 - 想按 ABI 出小包（arm64 约 39 MB，装机首选）：`flutter build apk --release --split-per-abi` 再跑脚本，
-  会一并收成 `omioclink-client-android-<tag>-<abi>.apk`；`build\app\outputs\flutter-apk\` 里可能残留
+  会一并收成 `omioclink-client-android-<tag>-<abi>.apk`（GitHub Release 只挂 arm64 那一个，其余仅本机留档）；
+  `build\app\outputs\flutter-apk\` 里可能残留
   上一次的旧分包，收拢前看一眼时间戳，或者 `flutter clean` 重打
 - **AAB 默认不参与构建、打包、收拢**：它只能传 Google Play，手机上装不了，而且现在还是 debug 签名、
   上不了架。确实要时才 `flutter build appbundle --release`，再给脚本加 `-IncludeAab`
