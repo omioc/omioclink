@@ -3,7 +3,7 @@
 // 一旦和 pubspec 漂移，`flutter test` 里的 app_version_test 会直接失败。
 
 /// 应用版本，不含 build 号（插件 UA、诊断信息用）。
-const String kAppVersion = '1.0.2';
+const String kAppVersion = '1.0.3';
 
 /// 完整版本（含 build 号），与 pubspec.yaml 的 `version:` 逐字一致。
-const String kAppVersionFull = '1.0.2+3';
+const String kAppVersionFull = '1.0.3+4';
