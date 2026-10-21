@@ -571,20 +571,30 @@ class MicLevelBar extends StatelessWidget {
         : context.palette.textMuted.withValues(alpha: 0.5);
     final fraction = enabled ? level.clamp(0.0, 1.0) : 0.0;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(height / 2),
-      child: Container(
-        height: height,
-        color: context.palette.panelElevated,
-        child: TweenAnimationBuilder<double>(
-          // 采样是 100ms 一次，这里再补一点插值，看起来才是连续起伏的
-          tween: Tween<double>(begin: 0, end: fraction),
-          duration: const Duration(milliseconds: 110),
-          builder: (context, value, _) => FractionallySizedBox(
-            alignment: Alignment.centerLeft,
-            widthFactor: value,
-            child: ColoredBox(color: fill),
-          ),
+    // 静默时不做补间：TweenAnimationBuilder 每进来一个新值就要排一帧动画，
+    // 电平一直是 0 也会让这根条永远「动画中」，应用再也回不到空闲帧。
+    // 用零尺寸孩子而不是 SizedBox.expand：宽度无约束时后者会撑出无穷宽。
+    final Widget bar = fraction <= 0.001
+        ? const SizedBox.shrink()
+        : TweenAnimationBuilder<double>(
+            // 采样 200ms 一次，这里补一点插值，看起来才是连续起伏的
+            tween: Tween<double>(begin: 0, end: fraction),
+            duration: const Duration(milliseconds: 160),
+            builder: (context, value, _) => FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: value,
+              child: ColoredBox(color: fill),
+            ),
+          );
+
+    // 单独一层重绘边界：电平每 200ms 变一次，不该带着整块面板重画
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(height / 2),
+        child: Container(
+          height: height,
+          color: context.palette.panelElevated,
+          child: bar,
         ),
       ),
     );
@@ -633,13 +643,13 @@ class MicStatusLine extends StatelessWidget {
           decoration: BoxDecoration(
             color: dot,
             shape: BoxShape.circle,
-            boxShadow: level.speaking
-                ? <BoxShadow>[
-                    BoxShadow(
-                      color: context.palette.success.withValues(alpha: 0.5),
-                      blurRadius: 7,
-                    ),
-                  ]
+            // 说话指示用一圈实边，不用模糊阴影：boxShadow + blurRadius 每次重绘都要
+            // 做一次高斯模糊，而电平每 200ms 刷一次，代价比这点效果值钱。
+            border: level.speaking
+                ? Border.all(
+                    color: context.palette.success.withValues(alpha: 0.55),
+                    width: 1.5,
+                  )
                 : null,
           ),
         ),

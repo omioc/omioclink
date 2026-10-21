@@ -225,7 +225,7 @@ void main() {
     expect(racingLibrary.searching, isFalse);
   });
 
-  test('warmUp：进房后一次备好排行榜与热门歌单，点歌台再调一遍不重复请求', () async {
+  test('warmUp 不碰插件：进房只读音质偏好，排行榜要等点开点歌台', () async {
     final paths = PluginPaths(root: tempDir.path);
     final plugins = MusicFreePlugins(
       host: MusicFreeHost(bundleSource: '', paths: paths),
@@ -235,17 +235,28 @@ void main() {
     final warmLibrary = MusicFreeLibrary(plugins: plugins, service: warm);
     addTearDown(warmLibrary.dispose);
 
-    // 进房那一刻（AppState.joinRoom）就是这一步：后台跑，不等人
+    // 进房那一刻（AppState.joinRoom）：只读本地偏好，绝不触发插件装载/榜单
+    // （插件装载 = QuickJS 同步编译整个运行时 bundle，会把窗口冻住几秒）
     warmLibrary.warmUp();
     await pumpEventQueue();
 
+    expect(warm.chartCalls, 0, reason: '进房不该拉榜单');
+    expect(warm.tagCalls, 0);
+    expect(warm.sheetCalls, 0);
+    expect(warmLibrary.chartGroups, isEmpty);
+
+    // 用户点开点歌台：这时才拉排行榜
+    await warmLibrary.loadCharts();
     expect(warm.chartCalls, 1);
+    expect(warmLibrary.chartGroups, isNotEmpty);
+
+    // 切到「热门歌单」：标签 + 第一个标签下的歌单
+    await warmLibrary.loadTagSections();
     expect(warm.tagCalls, 1);
     expect(warm.sheetCalls, 1, reason: '热门歌单要把第一个标签下的歌单一并备好');
-    expect(warmLibrary.chartGroups, isNotEmpty);
     expect(warmLibrary.selectedTag, isNotNull);
 
-    // 之后点开点歌台：挂载时会再调一次，但已经备好了，不该再发请求
+    // 再来一轮：都已备好，不该再发请求
     await warmLibrary.loadCharts();
     await warmLibrary.loadTagSections();
     expect(warm.chartCalls, 1);

@@ -187,7 +187,7 @@ void main() {
     expect(plugins.plugins.map((plugin) => plugin.platform).toSet(), <String>{'插件A', '插件B'});
   });
 
-  test('一个插件下载失败不会停在半成品：下次同步只补失败的那个', () async {
+  test('一个插件下载失败只如实报出：订阅没变就不再自动补装（要补得用户点刷新订阅）', () async {
     // 第一次：flaky 返回 500。同一份订阅里的插件A要照常装上。
     final first = await plugins.syncSubscription(
       urls: <String>['$base/sub2.json'],
@@ -201,23 +201,26 @@ void main() {
     );
     expect(plugins.plugins.map((plugin) => plugin.platform), isNot(contains('插件慢')));
 
-    // 签名没变（等价于用户下次打开应用）：上次失败的地址必须再试一次，
-    // 而不是因为「已经有插件了」就永远跳过。
+    // 订阅地址列表没变：一条请求都不发，也不自动补装
+    // （自动退避重试已经删掉：装不上往往是网络/音源自己的问题，反复重试只是烧流量）
     flakyDown = false;
+    fetchCount = 0;
     final second = await plugins.syncSubscription(
       urls: <String>['$base/sub2.json'],
       signature: 'sig-flaky',
     );
-    expect(second.failures, isEmpty);
-    expect(plugins.plugins.map((plugin) => plugin.platform), contains('插件慢'));
+    expect(second.reinstalled, isFalse);
+    expect(fetchCount, 0, reason: '订阅没变就一条请求都不发');
+    expect(plugins.plugins.map((plugin) => plugin.platform), isNot(contains('插件慢')));
 
-    // 装齐之后再同步：不该再发任何下载请求
-    fetchCount = 0;
-    await plugins.syncSubscription(
+    // 用户点「刷新订阅」（force）才清空重装
+    final forced = await plugins.syncSubscription(
       urls: <String>['$base/sub2.json'],
       signature: 'sig-flaky',
+      force: true,
     );
-    expect(fetchCount, 0, reason: '装齐之后不再重复下载');
+    expect(forced.reinstalled, isTrue);
+    expect(plugins.plugins.map((plugin) => plugin.platform), contains('插件慢'));
   });
 
   test('同 hash 重复安装静默跳过', () async {
@@ -285,7 +288,25 @@ void main() {
     expect(plugins.plugins.map((plugin) => plugin.hash).toList(), hashesBefore);
   });
 
-  test('订阅 URL 变化时清空本地插件并全量重装', () async {
+  test('签名变了但订阅地址没变：沿用本地插件，一条请求都不发', () async {
+    await plugins.syncSubscription(
+      urls: <String>['$base/sub.json'],
+      signature: 'sig-old',
+    );
+    final hashesBefore = plugins.plugins.map((plugin) => plugin.hash).toList();
+    fetchCount = 0;
+
+    // 服务端只是重新生成了签名（URL 列表没变）：不需要重新下载、重新解析
+    final result = await plugins.syncSubscription(
+      urls: <String>['$base/sub.json'],
+      signature: 'sig-new',
+    );
+    expect(result.reinstalled, isFalse);
+    expect(fetchCount, 0, reason: 'URL 列表一致就不该再发请求');
+    expect(plugins.plugins.map((plugin) => plugin.hash).toList(), hashesBefore);
+  });
+
+  test('订阅 URL 变化时只装新增、只卸被移除的插件（其余沿用）', () async {
     await plugins.syncSubscription(urls: <String>['$base/sub.json']);
     expect(plugins.plugins, hasLength(2));
 
@@ -302,12 +323,18 @@ void main() {
     expect(leftover, 1);
   });
 
-  test('服务器下发空列表时清空本地插件', () async {
+  test('服务器下发空列表时**保留**本地插件（一次空响应不能把插件删光）', () async {
     await plugins.syncSubscription(urls: <String>['$base/sub.json']);
     expect(plugins.plugins, isNotEmpty);
+    final before = plugins.plugins.map((plugin) => plugin.hash).toList();
+
     final result = await plugins.syncSubscription(urls: const <String>[]);
-    expect(result.reinstalled, isTrue);
-    expect(plugins.plugins, isEmpty);
+
+    // 以前这里会 uninstallAll()：一次瞬时拿空的订阅响应就把用户装好的插件全删了，
+    // 界面表现是「突然说没有插件，然后从头装一遍」。现在只提示，不动本地。
+    expect(result.reinstalled, isFalse);
+    expect(result.failures, isNotEmpty, reason: '要让界面知道这次没拿到订阅');
+    expect(plugins.plugins.map((plugin) => plugin.hash).toList(), before);
   });
 
   test('启停与排序写进本地偏好', () async {
@@ -341,5 +368,31 @@ void main() {
     final restored = MusicFreePlugins(host: second, paths: PluginPaths(root: tempRoot.path));
     await restored.loadInstalled();
     expect(restored.plugins.map((plugin) => plugin.platform).toSet(), <String>{'插件A', '插件B'});
+  });
+
+  test('元数据落盘：重启后不编译就能拿到插件列表（按需编译的前提）', () async {
+    await plugins.syncSubscription(urls: <String>['$base/sub.json']);
+    final expected = plugins.plugins.map((plugin) => plugin.hash).toSet();
+    expect(expected, isNotEmpty);
+
+    // 模拟重启：同一份数据目录，全新的 host（worker 一个都还没起）
+    final restartedHost = MusicFreeHost(
+      paths: PluginPaths(root: tempRoot.path),
+      bundleSource: bundle,
+    );
+    addTearDown(restartedHost.dispose);
+
+    final restored = await restartedHost.restoreMetadata();
+    expect(restored, expected.length);
+    expect(
+      restartedHost.plugins.map((plugin) => plugin.hash).toSet(),
+      expected,
+      reason: '插件列表应该直接来自缓存',
+    );
+    expect(
+      restartedHost.isReady,
+      isFalse,
+      reason: '只是登记元数据，不该为它启动 worker / 编译 JS',
+    );
   });
 }

@@ -10,7 +10,6 @@ import '../core/app_log.dart';
 import '../core/app_theme.dart';
 import '../core/formatting.dart';
 import '../core/platform.dart';
-import '../core/system_proxy.dart';
 import '../data/api_client.dart';
 import '../data/avatar_picker.dart';
 import '../data/models.dart';
@@ -1862,8 +1861,6 @@ class _SettingsPane extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         const _VolumeCard(),
         const SizedBox(height: AppSpacing.md),
-        const _MusicProxyCard(),
-        const SizedBox(height: AppSpacing.md),
         MusicPluginSettingsCard(
           library: library,
           syncing: state.musicSyncing,
@@ -1877,7 +1874,6 @@ class _SettingsPane extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SectionLabel(text: '服务器'),
               const SizedBox(height: AppSpacing.sm),
               _kv(context, '地址', state.endpoint?.display ?? '未连接'),
               _kv(context, '名称', info?.name ?? '—'),
@@ -2276,111 +2272,6 @@ class _AccountCardState extends State<_AccountCard> {
   }
 }
 
-/// 音源代理：客户端本机解析播放地址时的出口。
-///
-/// 音源接口在国内常被按域名阻断，桌面版洛雪（Electron）会自动走系统代理，
-/// 而本客户端只在**启动时**读一次——所以这里把「本次运行用的是哪套」和
-/// 「系统现在是什么」都摆出来，并提供只给本客户端配代理的入口。
-class _MusicProxyCard extends StatefulWidget {
-  const _MusicProxyCard();
-
-  @override
-  State<_MusicProxyCard> createState() => _MusicProxyCardState();
-}
-
-class _MusicProxyCardState extends State<_MusicProxyCard> {
-  late final TextEditingController _controller = TextEditingController(
-    text: SystemProxy.override ?? '',
-  );
-  String? _systemNow;
-  bool _probing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_probe());
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _probe() async {
-    setState(() => _probing = true);
-    final system = await SystemProxy.probeSystem();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _systemNow = system;
-      _probing = false;
-    });
-  }
-
-  Future<void> _save() async {
-    await SystemProxy.setOverride(_controller.text);
-    if (!mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已保存，重启客户端后生效')),
-    );
-    setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final active = SystemProxy.address;
-    return PanelCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionLabel(text: '音源代理'),
-          const SizedBox(height: AppSpacing.sm),
-          _kv(context, '本次运行', active == null ? '直连' : '$active（${SystemProxy.source}）'),
-          _kv(
-            context,
-            '系统当前',
-            _probing ? '检测中…' : (_systemNow == null ? '直连' : _systemNow!),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          TextField(
-            textAlignVertical: TextAlignVertical.center,
-            controller: _controller,
-            decoration: const InputDecoration(
-              isDense: true,
-              hintText: '自定义代理，如 127.0.0.1:7890（留空跟随系统）',
-            ),
-            style: const TextStyle(fontSize: 12),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              OutlinedButton(onPressed: _save, child: const Text('保存')),
-              const SizedBox(width: AppSpacing.sm),
-              TextButton(
-                onPressed: _probing ? null : _probe,
-                child: const Text('重新检测'),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            '音源接口被网络阻断时（国内常见）需要走代理才能解析播放地址；'
-            '代理只在客户端启动时读取一次，改动后请重启客户端',
-            style: TextStyle(
-              color: context.palette.textMuted,
-              fontSize: 11,
-              height: 1.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // --------------------------------------------------------------------------- //
 // 音乐插件（MusicFree）
@@ -2409,6 +2300,7 @@ class MusicPluginSettingsCard extends StatefulWidget {
   /// 刷新订阅（接到 `AppState.refreshMusicPlugins(force: true)`）。
   final Future<void> Function()? onRefreshSubscription;
 
+
   @override
   State<MusicPluginSettingsCard> createState() =>
       _MusicPluginSettingsCardState();
@@ -2418,6 +2310,10 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
   MusicFreeLibrary get library => widget.library;
 
   bool get _busy => widget.syncing || library.syncing;
+
+  // 刻意不在 initState 里自动装载插件：装载 = QuickJS 冷启动（编译 577KB bundle）
+  // + 逐个插件编译，全在主 isolate 上同步跑，打开设置页就会整窗卡死几秒。
+  // 装载只由用户显式点卡片上的「刷新订阅」触发（Force），可预期、可取消。
 
   Future<void> _refresh() async {
     final action = widget.onRefreshSubscription;
@@ -2559,7 +2455,9 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.sync, size: 16),
-                      label: const Text('刷新订阅'),
+                      // 装载期间把文案也换掉：只把按钮变灰不够明显，
+                      // 用户会以为「点了没反应」，然后继续点
+                      label: Text(_busy ? '装载中…' : '刷新订阅'),
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     TextButton(

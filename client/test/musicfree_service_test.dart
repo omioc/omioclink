@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:omioclink_client/musicfree/musicfree_host.dart';
 import 'package:omioclink_client/musicfree/musicfree_plugins.dart';
 import 'package:omioclink_client/musicfree/musicfree_service.dart';
+import 'package:omioclink_client/musicfree/plugin_models.dart';
 import 'package:omioclink_client/musicfree/plugin_paths.dart';
 
 /// MusicFreeService：多插件聚合、失败隔离、原始字段往返。
@@ -313,4 +314,160 @@ module.exports = {
     expect(only.skipped, isEmpty);
     expect(only.errors, isNotEmpty);
   });
+
+  // ------------------------------------------------ 榜单 / 标签的磁盘缓存
+
+  test('榜单 / 标签 / 歌单落盘：重启后直接命中，不再调用插件方法', () async {
+    final paths = PluginPaths(root: '${tempRoot.path}${Platform.pathSeparator}restart');
+    final firstHost = _CountingHost(paths: paths);
+    final first = MusicFreeService(MusicFreePlugins(host: firstHost, paths: paths));
+
+    final groups = await first.topLists();
+    final tags = await first.recommendTags();
+    final sheets = await first.sheetsByTag(tags.groups.first.tags.first);
+    expect(firstHost.calls, hasLength(3), reason: '第一次三个方法各问一遍：${firstHost.calls}');
+    expect(groups.first.items.first.title, '榜单条目 v1');
+    expect(sheets.single.title, '歌单 v1');
+
+    // 模拟重启：旧 service 丢掉（内存缓存跟着对象一起走），同一个 cacheDir 新建一整套
+    firstHost.dispose();
+    final secondHost = _CountingHost(paths: paths);
+    final second = MusicFreeService(MusicFreePlugins(host: secondHost, paths: paths));
+
+    final groupsAgain = await second.topLists();
+    final tagsAgain = await second.recommendTags();
+    final sheetsAgain = await second.sheetsByTag(tagsAgain.groups.first.tags.first);
+
+    expect(secondHost.calls, isEmpty, reason: '命中磁盘缓存就不该再调插件方法：${secondHost.calls}');
+    expect(groupsAgain.first.title, groups.first.title);
+    expect(groupsAgain.first.items.single.id, 'top-1');
+    expect(groupsAgain.first.items.single.raw['id'], 'top-1', reason: 'raw 要原样带回来');
+    expect(tagsAgain.pinned.single.title, tags.pinned.single.title);
+    expect(tagsAgain.groups.single.title, '语种');
+    expect(tagsAgain.groups.single.tags.single.id, 'tag-1');
+    expect(tagsAgain.groups.single.tags.single.raw?['id'], 'tag-1');
+    expect(sheetsAgain.single.id, 'sheet-1');
+    expect(sheetsAgain.single.title, sheets.single.title);
+  });
+
+  test('refresh: true 绕开磁盘缓存，拿到新内容并覆盖旧缓存', () async {
+    final paths = PluginPaths(root: '${tempRoot.path}${Platform.pathSeparator}refresh');
+    final host = _CountingHost(paths: paths);
+    final current = MusicFreeService(MusicFreePlugins(host: host, paths: paths));
+
+    final first = await current.topLists();
+    expect(first.first.title, '榜单分组 v1');
+
+    host.revision = 2;
+    final refreshed = await current.topLists(refresh: true);
+    expect(refreshed.first.title, '榜单分组 v2', reason: 'refresh 必须重新问插件');
+    expect(
+      host.calls.where((line) => line.startsWith(MusicFreeCapabilities.getTopLists)),
+      hasLength(2),
+      reason: 'refresh 那次也得真的调一次：${host.calls}',
+    );
+
+    // 覆盖生效：重启后读到的是刷新后的那份
+    host.dispose();
+    final restartHost = _CountingHost(paths: paths);
+    final restarted = MusicFreeService(MusicFreePlugins(host: restartHost, paths: paths));
+    final fromDisk = await restarted.topLists();
+    expect(fromDisk.first.title, '榜单分组 v2');
+    expect(restartHost.calls, isEmpty);
+  });
+
+  test('插件失败的时候不写缓存（下次还会重新问）', () async {
+    final paths = PluginPaths(root: '${tempRoot.path}${Platform.pathSeparator}failure');
+    final host = _CountingHost(paths: paths)..failTags = true;
+    final failing = MusicFreeService(MusicFreePlugins(host: host, paths: paths));
+
+    final empty = await failing.recommendTags();
+    expect(empty.isEmpty, isTrue, reason: '插件抛错只能返回空');
+    expect(host.calls, hasLength(1));
+
+    host.dispose();
+    final restartHost = _CountingHost(paths: paths);
+    final restarted = MusicFreeService(MusicFreePlugins(host: restartHost, paths: paths));
+    final tags = await restarted.recommendTags();
+    expect(tags.isEmpty, isFalse, reason: '失败那次没写缓存，重启后应该重新问插件');
+    expect(restartHost.calls, hasLength(1));
+  });
+}
+
+/// 假的插件宿主：只数调用次数、返回固定内容，不启动 JS 运行时。
+///
+/// 「重启之后有没有再打一遍插件方法」只能靠计数看出来，所以真宿主在这里没用。
+class _CountingHost extends MusicFreeHost {
+  _CountingHost({required super.paths});
+
+  /// 每次 `invoke` 记一条 `方法@hash`。
+  final List<String> calls = <String>[];
+
+  /// 内容版本号：改大它就等于「插件那边换了一批数据」。
+  int revision = 1;
+
+  /// 让标签方法直接失败（验证失败不写缓存）。
+  bool failTags = false;
+
+  static const MusicFreePlugin _plugin = MusicFreePlugin(
+    hash: 'fake-hash',
+    platform: '假音源',
+    path: 'musicfree-plugins/fake-hash.js',
+    version: '1.0.0',
+    supportedMethods: <String>[
+      MusicFreeCapabilities.getTopLists,
+      MusicFreeCapabilities.getRecommendSheetTags,
+      MusicFreeCapabilities.getRecommendSheetsByTag,
+    ],
+  );
+
+  @override
+  List<MusicFreePlugin> get plugins => const <MusicFreePlugin>[_plugin];
+
+  @override
+  Future<dynamic> invoke(
+    String hash,
+    String method,
+    List<Object?> args, {
+    Duration timeout = const Duration(seconds: 20),
+    bool flushWrites = true,
+  }) async {
+    calls.add('$method@$hash');
+    switch (method) {
+      case MusicFreeCapabilities.getTopLists:
+        return <dynamic>[
+          <String, dynamic>{
+            'title': '榜单分组 v$revision',
+            'data': <dynamic>[
+              <String, dynamic>{'id': 'top-1', 'title': '榜单条目 v$revision'},
+            ],
+          },
+        ];
+      case MusicFreeCapabilities.getRecommendSheetTags:
+        if (failTags) {
+          throw const MusicFreeException('标签故意失败');
+        }
+        return <String, dynamic>{
+          'pinned': <dynamic>[
+            <String, dynamic>{'id': 'p1', 'title': '置顶 v$revision'},
+          ],
+          'data': <dynamic>[
+            <String, dynamic>{
+              'title': '语种',
+              'data': <dynamic>[
+                <String, dynamic>{'id': 'tag-1', 'title': '华语 v$revision'},
+              ],
+            },
+          ],
+        };
+      case MusicFreeCapabilities.getRecommendSheetsByTag:
+        return <String, dynamic>{
+          'isEnd': true,
+          'data': <dynamic>[
+            <String, dynamic>{'id': 'sheet-1', 'title': '歌单 v$revision'},
+          ],
+        };
+    }
+    return null;
+  }
 }

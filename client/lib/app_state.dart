@@ -3,8 +3,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'core/app_log.dart';
-import 'core/platform.dart';
-import 'core/system_proxy.dart';
 import 'data/api_client.dart';
 import 'data/avatar_cache.dart';
 import 'data/models.dart';
@@ -359,7 +357,6 @@ class AppState extends ChangeNotifier {
         await _resetSignaling();
         avatars.clear();
         _music.reset();
-        unawaited(_loadMusicPlugins());
       }
       _error = null;
       _notice = '已连接到 ${info.name}（${parsed.display}）';
@@ -460,7 +457,9 @@ class AppState extends ChangeNotifier {
     _roomRetryRound = 0;
     await refreshRooms();
     await refreshFriends();
-    unawaited(_loadMusicPlugins());
+    // 插件订阅也不在这里同步：QuickJS 首次编译要吃掉一份 577KB 的 bundle，
+    // 而大部分会话根本不听歌。真正要听时由 MusicFreeLibrary._ensurePlugins
+    // 触发（进房 warmUp / 打开点歌台 / 设置页的插件卡片）。
     // 首屏好友偶尔会拿空（刚登录那一下后端还在忙、或者请求抖了一下）：
     // 补两轮，别让用户盯着空列表等 15 秒后的轮询——那之前他也没有刷新入口。
     if (!_disposed && _friends.isEmpty) {
@@ -484,17 +483,18 @@ class AppState extends ChangeNotifier {
   /// 服务器下发的订阅签名（用来判断「URL 是否变过」）。
   String? get musicSubscriptionHash => _musicSubscriptionHash;
 
-  bool get musicSyncing => _music.syncing;
+  /// 装载 / 同步进行中。
+  ///
+  /// 必须把 `_musicPluginsInflight` 也算进去：最慢的一段「把磁盘插件装回 worker」
+  /// 发生在 `MusicFreeLibrary._syncing` 变 true 之前，只看后者的话界面在那几秒里
+  /// 仍然显示可点（用户会以为没反应，反复点）。
+  bool get musicSyncing => _musicPluginsInflight != null || _music.syncing;
 
   /// 手动刷新订阅（设置页「刷新订阅」按钮）。
   ///
-  /// 手动触发时把自动重试的轮次清零：用户刚点的这一下应该从头再试四轮。
+  /// 自动补装已经删掉（见 `_syncMusicPlugins`）：只有用户主动点才会 force 重装，
+  /// 失败就让用户自己决定要不要再来一次。
   Future<void> refreshMusicPlugins({bool force = false}) {
-    if (force) {
-      _musicPluginRetryRound = 0;
-      _musicPluginRetryTimer?.cancel();
-      _musicPluginRetryTimer = null;
-    }
     return _loadMusicPlugins(force: force);
   }
 
@@ -507,6 +507,7 @@ class AppState extends ChangeNotifier {
   Future<void> _loadMusicPlugins({bool force = false}) {
     final inflight = _musicPluginsInflight;
     if (inflight != null) {
+      // 装载中又点了一次按钮：复用同一轮，绝不开第二份安装
       return inflight;
     }
     late final Future<void> future;
@@ -514,8 +515,20 @@ class AppState extends ChangeNotifier {
       if (identical(_musicPluginsInflight, future)) {
         _musicPluginsInflight = null;
       }
+      if (!_disposed) {
+        notifyListeners();
+      }
     });
     _musicPluginsInflight = future;
+    // 立刻通知一次，但延到微任务：最慢的「把磁盘插件装回 worker」发生在
+    // `MusicFreeLibrary._syncing` 变 true 之前，界面只看后者的话那几秒按钮仍可点；
+    // 而调用方（点歌台 initState / _ensurePlugins）可能正在 build 中，同步 notify
+    // 会撞上「setState() called during build」。
+    scheduleMicrotask(() {
+      if (!_disposed) {
+        notifyListeners();
+      }
+    });
     return future;
   }
 
@@ -524,16 +537,8 @@ class AppState extends ChangeNotifier {
     if (api == null || (api.token?.isEmpty ?? true)) {
       return;
     }
-    // 等系统代理探测出结果：插件请求走的就是当时的代理设置。
-    // 手机上没有「系统代理」这回事，而探测要先连本地端口再试能不能出网（最坏
-    // 十几秒），登录后第一次插件同步很容易被它拖住——手机上直接跳过；
-    // 桌面端也最多等 3 秒，探测慢就按直连走，失败了下面会自动补一次重试。
-    if (!isMobilePlatform) {
-      await SystemProxy.resolve().timeout(
-        const Duration(seconds: 3),
-        onTimeout: () {},
-      );
-    }
+    // 不再等系统代理探测：代理交给用户的 TUN/虚拟网卡在系统层接管，
+    // 这里直接进插件装载（以前最坏白等 3 秒）。
     // 先把磁盘上已安装的插件装回 JS 运行时（首次启动时为空）
     try {
       await _pluginStore.loadInstalled();
@@ -561,58 +566,16 @@ class AppState extends ChangeNotifier {
       if (!_disposed) {
         notifyListeners();
       }
-      final missing =
-          subscription.urls.isNotEmpty &&
-          (_music.plugins.isEmpty || _music.syncError != null);
-      if (missing) {
-        _scheduleMusicPluginRetry();
-      } else {
-        _musicPluginRetryRound = 0;
-      }
     } on ApiException catch (error) {
-      // 服务器取不到订阅时**不要**清空本地插件：老订阅还能用
+      // 服务器取不到订阅时**不要**清空本地插件：老订阅还能用。
+      // 也不再自动补装：装不上往往是网络/音源自己的问题，退避重试只是继续烧
+      // 流量与 CPU（还要占 UI 线程去解析 JS）。要重来由用户点「刷新订阅」。
       AppLog.warn('拉取插件订阅失败', error: error);
       if (_disposed) {
         return;
       }
       notifyListeners();
-      _scheduleMusicPluginRetry();
     }
-  }
-
-  /// 插件自动补装的退避间隔：失败一次往后退一档，四轮还不行就不再打扰。
-  static const List<Duration> _musicPluginRetryDelays = <Duration>[
-    Duration(seconds: 3),
-    Duration(seconds: 8),
-    Duration(seconds: 20),
-    Duration(seconds: 45),
-  ];
-
-  int _musicPluginRetryRound = 0;
-  Timer? _musicPluginRetryTimer;
-
-  /// 插件没装齐就退避重试，直到装上或者轮次用完。
-  ///
-  /// 手机上第一次同步几乎总撞在「刚连上网络」那几秒（下载订阅、拉插件脚本、
-  /// 解析 JS 都可能失败），而以前失败一次就再没人管——用户看到的就是
-  /// 「手机上不会自动装插件」。现在补装会自己重试，直到装齐。
-  void _scheduleMusicPluginRetry() {
-    if (_disposed || _musicPluginRetryTimer != null) {
-      return;
-    }
-    if (_musicPluginRetryRound >= _musicPluginRetryDelays.length) {
-      AppLog.warn('插件自动安装重试已用完，仍没装齐（可在设置页点「刷新订阅」）');
-      return;
-    }
-    final delay = _musicPluginRetryDelays[_musicPluginRetryRound];
-    _musicPluginRetryRound += 1;
-    _musicPluginRetryTimer = Timer(delay, () {
-      _musicPluginRetryTimer = null;
-      if (_disposed || _user == null) {
-        return;
-      }
-      unawaited(_loadMusicPlugins());
-    });
   }
 
   void _applyLogin(User user, String token) {
@@ -866,6 +829,13 @@ class AppState extends ChangeNotifier {
     if (publicRooms == null && myRooms == null) {
       return; // 两份都没拿到：保持原样，交给补拉与轮询
     }
+    // 轮询每 5 秒一次：内容没变就**不要**通知。以前无脑 notifyListeners，
+    // 等于每 5 秒把整棵已登录界面（左栏 + 中栏 + 右栏）重建一遍，
+    // 用户在滚动/输入时最容易被这一下打断。
+    final changed =
+        (publicRooms != null &&
+            _roomsSignature(publicRooms) != _roomsSignature(_publicRooms)) ||
+        (myRooms != null && _roomsSignature(myRooms) != _roomsSignature(_myRooms));
     if (publicRooms != null) {
       _publicRooms = publicRooms;
     }
@@ -875,8 +845,20 @@ class AppState extends ChangeNotifier {
     if (_myRooms.isNotEmpty || _publicRooms.isNotEmpty) {
       _roomRetryRound = 0;
     }
-    notifyListeners();
+    if (changed) {
+      notifyListeners();
+    }
   }
+
+  /// 房间列表的轻量签名：只取会影响界面的字段，用来判断「内容真的变了没有」。
+  static String _roomsSignature(List<Room> rooms) => rooms
+      .map(
+        (room) =>
+            '${room.roomId}|${room.name}|${room.ownerId}|${room.memberCount}'
+            '|${room.capacity}|${room.hasPassword}|${room.isPublic}'
+            '|${room.online}|${room.joined}',
+      )
+      .join(',');
 
   /// 拉一份房间列表；失败返回 null，两份互不牵连。
   Future<List<Room>?> _fetchRooms(ApiClient api, RoomScope scope) async {
@@ -1295,8 +1277,6 @@ class AppState extends ChangeNotifier {
     _friendsRetryTimer = null;
     _roomRetryTimer?.cancel();
     _roomRetryTimer = null;
-    _musicPluginRetryTimer?.cancel();
-    _musicPluginRetryTimer = null;
     _disposeSession();
     unawaited(_signaling?.dispose());
     unawaited(_media.dispose());

@@ -434,7 +434,9 @@ class _MemberStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: compact ? 84 : 96,
-      child: ListView(
+      // builder 而不是 children 列表：进/离房、说话状态变化都会重建这一条，
+      // 成员多了（房间上限 8 人）没必要每次把所有成员卡都重新构造一遍。
+      child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.page,
@@ -442,14 +444,17 @@ class _MemberStrip extends StatelessWidget {
           AppSpacing.page,
           6,
         ),
-        children: [
-          for (final view in members)
-            Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: _MemberTile(view: view, session: session),
-            ),
-          _InviteTile(roomId: session.room?.roomId ?? ''),
-        ],
+        // 末尾固定一个「邀请」格，所以是成员数 + 1
+        itemCount: members.length + 1,
+        itemBuilder: (context, index) {
+          if (index == members.length) {
+            return _InviteTile(roomId: session.room?.roomId ?? '');
+          }
+          return Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: _MemberTile(view: members[index], session: session),
+          );
+        },
       ),
     );
   }

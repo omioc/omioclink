@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
@@ -9,7 +10,6 @@ import 'package:quickjs_engine/quickjs_engine.dart';
 
 import '../core/app_log.dart';
 import '../core/app_version.dart';
-import '../core/system_proxy.dart';
 import 'plugin_models.dart';
 import 'plugin_paths.dart';
 
@@ -42,14 +42,16 @@ class _LoadedEntry {
 /// 与 MusicFree 的 `PluginManager` 对齐：**一个 JS 运行时托管多个插件实例**，
 /// 插件通过 `require(...)` 拿到 axios / cheerio / crypto-js 等模块，
 /// 宿主负责把 HTTP、storage、cookie、定时器桥接回 Dart。
-class MusicFreeHost {
-  MusicFreeHost({
+class MusicFreeEngine {
+  MusicFreeEngine({
     http.Client? httpClient,
     PluginPaths? paths,
     String? bundleSource,
     this.appVersion = kAppVersion,
     this.lang = 'zh-CN',
-  }) : _http = httpClient ?? _clientWithProxy(SystemProxy.address),
+    this.httpProxy,
+    this.logSink,
+  }) : _http = httpClient ?? _pluginClient(),
        _paths = paths ?? PluginPaths(),
        _injectedBundle = bundleSource;
 
@@ -59,6 +61,12 @@ class MusicFreeHost {
   final String lang;
 
   final String? _injectedBundle;
+
+  /// 把 HTTP 请求交回主 isolate 发出（worker 里没有可注入的 client）。
+  final Future<http.Response> Function(http.Request, Duration)? httpProxy;
+
+  /// 插件 console 日志的出口（worker 里 AppLog 落不到文件，只能回传主 isolate）。
+  final void Function(String level, String message)? logSink;
   String? _cachedBundle;
 
   JavascriptRuntime? _js;
@@ -112,15 +120,11 @@ class MusicFreeHost {
     }
   }
 
-  /// 与洛雪宿主同一策略：音源接口常被按 SNI 阻断，检测到系统代理就走代理。
-  static http.Client _clientWithProxy(String? proxy) {
-    final client = HttpClient();
-    if (proxy != null && proxy.isNotEmpty) {
-      client.findProxy = (uri) => 'PROXY $proxy';
-      AppLog.info('插件请求走系统代理 $proxy');
-    }
-    return IOClient(client);
-  }
+  /// 插件请求的 HTTP 客户端。
+  ///
+  /// 这里**不设** `findProxy`：Dart 的 HttpClient 默认直连，代理交给用户的
+  /// TUN/虚拟网卡在系统层接管（客户端不再自己探测系统代理）。
+  static http.Client _pluginClient() => IOClient(HttpClient());
 
   static const String bundleAsset = 'assets/musicfree/runtime.bundle.js';
 
@@ -154,7 +158,9 @@ class MusicFreeHost {
       return;
     }
     await _paths.ensureReady();
+    final boot = Stopwatch()..start();
     final js = getJavascriptRuntime(xhr: false);
+    AppLog.timing('插件.JS 运行时创建', boot.elapsed);
     js.onMessage('mf.http', (dynamic args) {
       // 请求自己跑完就行，调用方不需要（也不应该）等它落盘。
       unawaited(_handleHttp(args));
@@ -180,7 +186,13 @@ class MusicFreeHost {
       _handleClearTimer(args);
       return null;
     });
-    final loaded = js.evaluate(await _bundle());
+    final bundleWatch = Stopwatch()..start();
+    final source = await _bundle();
+    AppLog.timing('插件.bundle 读取', bundleWatch.elapsed);
+    final created = Stopwatch()..start();
+    final loaded = js.evaluate(source);
+    // 这是每次进程启动最贵的一步（压缩后仍有 577KB JS 要编译），必须能看到数字
+    AppLog.timing('插件.bundle 编译执行', created.elapsed);
     if (loaded.isError) {
       js.dispose();
       throw MusicFreeException('插件运行时加载失败：${loaded.stringResult}');
@@ -202,7 +214,7 @@ class MusicFreeHost {
 
     final storage = await _readStorage(hash);
     final cookies = await _readCookies(hash);
-    final options = jsonEncode(<String, dynamic>{
+    final options = <String, dynamic>{
       'plugin': hash,
       'path': path,
       'srcUrl': srcUrl,
@@ -210,50 +222,34 @@ class MusicFreeHost {
       'appVersion': appVersion,
       'lang': lang,
       'userVariables': userVariables,
-    });
+    };
 
-    final created = js.evaluate(
-      'globalThis.__mfRequire = __mfRuntime.createRequire('
-      '${jsonEncode(jsonEncode(<String, dynamic>{'plugin': hash, 'storage': storage, 'cookies': cookies}))});',
+    // 源码只转义一次：以前是 `jsonEncode(整个 payload)` 再塞进 evaluate，
+    // JS 侧还要 JSON.parse 一遍 —— 同一份插件源码被解析三次、字面量体积接近翻倍。
+    // 插件越大这笔越贵（实测大插件 5~25s），所以这里把 code 单独当参数传。
+    final storageJson = jsonEncode(storage);
+    final cookiesJson = jsonEncode(cookies);
+    final optionsJson = jsonEncode(options);
+    final installed = js.evaluate(
+      '__mfRuntime.install(${jsonEncode(hash)}, ${jsonEncode(code)}, '
+      '${jsonEncode(optionsJson)}, ${jsonEncode(storageJson)}, '
+      '${jsonEncode(cookiesJson)})',
     );
-    if (created.isError) {
-      throw MusicFreeException('插件依赖初始化失败：${created.stringResult}');
-    }
-
-    final codeResult = js.evaluate('globalThis.__mfPluginCode = ${jsonEncode(code)}');
-    if (codeResult.isError) {
-      throw MusicFreeException('插件源码注入失败：${codeResult.stringResult}');
-    }
-
-    final loaded = js.evaluate(
-      '__mfRuntime.loadPlugin(${jsonEncode(hash)}, globalThis.__mfPluginCode, ${jsonEncode(options)})',
-    );
-    if (loaded.isError) {
+    if (installed.isError) {
       _entries.remove(hash)?.cancelTimers();
       return MusicFreePlugin(
         hash: hash,
         platform: '未知插件',
         path: path,
         srcUrl: srcUrl,
-        loadError: '插件执行出错：${_brief(loaded.stringResult)}',
+        loadError: _brief(installed.stringResult),
       );
     }
 
-    final described = js.evaluate('__mfRuntime.describe(${jsonEncode(hash)})');
-    if (described.isError) {
-      _entries.remove(hash)?.cancelTimers();
-      return MusicFreePlugin(
-        hash: hash,
-        platform: '未知插件',
-        path: path,
-        srcUrl: srcUrl,
-        loadError: '插件信息解析失败：${_brief(described.stringResult)}',
-      );
-    }
     Map<String, dynamic> meta = <String, dynamic>{};
     List<String> supportedMethods = <String>[];
     try {
-      final decoded = jsonDecode(_jsString(described)) as Map<String, dynamic>;
+      final decoded = jsonDecode(_jsString(installed)) as Map<String, dynamic>;
       meta = (decoded['meta'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
       supportedMethods = (decoded['supportedMethod'] as List? ?? const <dynamic>[])
           .map((item) => item.toString())
@@ -415,10 +411,16 @@ class MusicFreeHost {
     final plugin = map['plugin']?.toString() ?? '';
     final level = map['level']?.toString() ?? 'log';
     final message = map['message']?.toString() ?? '';
-    if (level == 'error' || level == 'warn') {
-      AppLog.warn('插件[$plugin] $message');
+    final text = '插件[$plugin] $message';
+    final isWarn = level == 'error' || level == 'warn';
+    final sink = logSink;
+    if (sink != null) {
+      // worker 里 AppLog 落不到文件：转发回主 isolate 再落盘
+      sink(isWarn ? 'WARN' : 'DEBUG', text);
+    } else if (isWarn) {
+      AppLog.warn(text);
     } else {
-      AppLog.debug('插件[$plugin] $message');
+      AppLog.debug(text);
     }
   }
 
@@ -627,8 +629,17 @@ class MusicFreeHost {
     } else if (body != null && method != 'GET' && method != 'HEAD') {
       request.body = body;
     }
-    final streamed = await _http.send(request).timeout(timeout);
-    final response = await http.Response.fromStream(streamed).timeout(timeout);
+    // HTTP 出口：worker isolate 里没有主 isolate 的 client（而且测试要注入
+    // MockClient 观察派发出去的 URL），所以那边通过 [httpProxy] 把请求发回
+    // 主 isolate，由同一个 client 真正发出去。
+    final proxy = httpProxy;
+    final http.Response response;
+    if (proxy != null) {
+      response = await proxy(request, timeout);
+    } else {
+      final streamed = await _http.send(request).timeout(timeout);
+      response = await http.Response.fromStream(streamed).timeout(timeout);
+    }
     if (response.statusCode >= 400) {
       // 插件只会报「Request failed with status code 400」，看不出是哪个请求挂的；
       // 这里把状态码、方法与地址记下来（地址截断，避免把 token 全写进日志）。
@@ -716,4 +727,659 @@ class MusicFreeHost {
     }
     return '${oneLine.substring(0, 200)}…';
   }
+}
+
+// ---------------------------------------------------------------------------
+// 主 isolate 侧的门面：JS 引擎整体跑在 worker isolate
+// ---------------------------------------------------------------------------
+
+/// `MusicFreeHost` 的公开门面：**JS 引擎与插件代码都在 worker isolate 里跑**。
+///
+/// 为什么要有这一层：`quickjs_engine` 的 `evaluate` 是**同步 FFI**，编译 577KB
+/// 的运行时 bundle 和每份插件源码都发生在调用线程上。以前它在主 isolate，打开
+/// 设置页 / 首次打开点歌台就会把整窗冻住几秒（用户看到的是「卡死」）。搬到
+/// worker 之后主 isolate 只收发 JSON，界面不再被 JS 编译打断。
+///
+/// HTTP 仍由主 isolate 发出：插件请求要能被注入的 client（测试里的 MockClient）
+/// 观察，而 client 无法跨 isolate，所以 worker 反过来请主 isolate 代发。
+class MusicFreeHost {
+  MusicFreeHost({
+    http.Client? httpClient,
+    PluginPaths? paths,
+    String? bundleSource,
+    this.appVersion = kAppVersion,
+    this.lang = 'zh-CN',
+    int? poolSize,
+  }) : _http = httpClient ?? MusicFreeEngine._pluginClient(),
+       _paths = paths ?? PluginPaths(),
+       _injectedBundle = bundleSource,
+       _poolSize = poolSize ?? _defaultPoolSize();
+
+  /// 运行时 bundle 的资产路径（构建期产物，见 tool/build_musicfree_runtime.mjs）。
+  static const String bundleAsset = MusicFreeEngine.bundleAsset;
+
+  /// 默认并行度：QuickJS 单线程，想并行编译只能多开运行时；每份都要自己编译
+  /// 一遍 577KB bundle（内存与启动成本都不低），所以默认 2~3 个。
+  static int _defaultPoolSize() => Platform.numberOfProcessors >= 8 ? 3 : 2;
+
+  final http.Client _http;
+  final PluginPaths _paths;
+  final String? _injectedBundle;
+  final String appVersion;
+  final String lang;
+  final int _poolSize;
+
+  final List<_WorkerLink> _links = <_WorkerLink>[];
+  final Map<int, _PendingCall> _pending = <int, _PendingCall>{};
+
+  /// hash → 跑着它的 worker；值为 null 表示「已登记元数据、还没编译」。
+  final Map<String, _WorkerLink?> _owner = <String, _WorkerLink?>{};
+  final Map<String, MusicFreePlugin> _plugins = <String, MusicFreePlugin>{};
+
+  /// 同一个插件被并发调用时只编译一次。
+  final Map<String, Future<void>> _compiling = <String, Future<void>>{};
+  final Map<String, dynamic> _metadata = <String, dynamic>{};
+
+  bool _metadataLoaded = false;
+  bool _disposed = false;
+  int _nextId = 1;
+
+  MusicFreePlugin? byHash(String hash) => _plugins[hash];
+
+  List<MusicFreePlugin> get plugins => _plugins.values.toList(growable: false);
+
+  bool get isReady => _links.any((link) => link.isReady);
+
+  /// 只登记元数据、不编译：启动时用它把插件列表立刻铺出来。
+  void registerMetadata(MusicFreePlugin plugin) =>
+      _plugins[plugin.hash] = plugin;
+
+  /// 把上次落盘的 `describe` 结果登记成「已登记未编译」；源码文件还在才算。
+  Future<int> restoreMetadata() async {
+    await _loadMetadata();
+    var restored = 0;
+    for (final entry in _metadata.entries) {
+      if (_plugins.containsKey(entry.key)) {
+        continue;
+      }
+      final raw = entry.value;
+      if (raw is! Map) {
+        continue;
+      }
+      final path = _paths.pluginFile(entry.key);
+      if (!File(path).existsSync()) {
+        continue;
+      }
+      final map = raw.cast<String, dynamic>();
+      _plugins[entry.key] = MusicFreePlugin.fromJson(
+        map,
+        hash: entry.key,
+        path: path,
+        srcUrl: map['srcUrl']?.toString() ?? '',
+      );
+      restored += 1;
+    }
+    return restored;
+  }
+
+  /// 卸载时抹掉元数据，免得下次启动又「复活」一个已经不存在的插件。
+  Future<void> forgetMetadata(String hash) async {
+    _plugins.remove(hash);
+    _owner.remove(hash);
+    if (_metadata.remove(hash) == null) {
+      return;
+    }
+    await _saveMetadata();
+  }
+
+  /// 后台把「登记了但还没编译」的插件逐个编译好。
+  ///
+  /// 一次只编译一个：并发只会让 worker 排队，还会拖慢用户真正在点的操作。
+  Future<void> prefetch() async {
+    for (final hash in _plugins.keys.toList(growable: false)) {
+      if (_disposed) {
+        return;
+      }
+      if (_owner[hash] != null) {
+        continue;
+      }
+      try {
+        await _ensureCompiled(hash);
+      } on Object catch (error) {
+        AppLog.debug('后台编译插件失败（$hash）：$error');
+      }
+    }
+  }
+
+  Future<MusicFreePlugin> loadPlugin({
+    required String hash,
+    required String code,
+    String srcUrl = '',
+    Map<String, String> userVariables = const <String, String>{},
+    String path = '',
+  }) async {
+    final link = await _pickLink();
+    final reply = await _call(link, <String, dynamic>{
+      'op': 'load',
+      'hash': hash,
+      'code': code,
+      'srcUrl': srcUrl,
+      'userVariables': userVariables,
+      'path': path,
+    }, timeout: const Duration(seconds: 120));
+    final plugin = MusicFreePlugin.fromJson(
+      (reply['plugin'] as Map).cast<String, dynamic>(),
+      hash: hash,
+      path: path,
+      srcUrl: srcUrl,
+    );
+    _plugins[hash] = plugin;
+    _owner[hash] = link;
+    link.hashes.add(hash);
+    await _rememberMetadata(plugin);
+    return plugin;
+  }
+
+  Future<dynamic> invoke(
+    String hash,
+    String method,
+    List<Object?> args, {
+    Duration timeout = const Duration(seconds: 20),
+    bool flushWrites = true,
+  }) async {
+    // 元数据复用之后，插件可能只是「登记过」还没编译：这里补上
+    await _ensureCompiled(hash);
+    final link = _owner[hash];
+    if (link == null) {
+      throw const MusicFreeException('插件还没有装载完成');
+    }
+    final reply = await _call(link, <String, dynamic>{
+      'op': 'invoke',
+      'hash': hash,
+      'method': method,
+      'args': args,
+      'timeoutMs': timeout.inMilliseconds,
+      'flushWrites': flushWrites,
+    }, timeout: timeout + const Duration(seconds: 5));
+    return reply['value'];
+  }
+
+  void unload(String hash) {
+    final link = _owner.remove(hash);
+    _plugins.remove(hash);
+    link?.hashes.remove(hash);
+    link?.to?.send(<String, dynamic>{'id': 0, 'op': 'unload', 'hash': hash});
+  }
+
+  Future<void> flushPending({
+    Duration timeout = const Duration(seconds: 2),
+  }) async {
+    final ready = _links.where((link) => link.isReady).toList(growable: false);
+    if (ready.isEmpty) {
+      return;
+    }
+    await Future.wait<void>(<Future<void>>[
+      for (final link in ready)
+        _call(link, <String, dynamic>{
+          'op': 'flush',
+          'timeoutMs': timeout.inMilliseconds,
+        }, timeout: timeout + const Duration(seconds: 2)).then<void>(
+          (_) {},
+          onError: (Object _) {},
+        ),
+    ]);
+  }
+
+  void dispose() {
+    _disposed = true;
+    for (final link in _links) {
+      link.to?.send(<String, dynamic>{'id': 0, 'op': 'dispose'});
+      link.from?.close();
+      link.isolate?.kill(priority: Isolate.immediate);
+    }
+    _links.clear();
+    _owner.clear();
+    _plugins.clear();
+    for (final call in _pending.values) {
+      if (!call.completer.isCompleted) {
+        call.completer.completeError(const MusicFreeException('插件宿主已释放'));
+      }
+    }
+    _pending.clear();
+  }
+
+  // ------------------------------------------------------------------ 内部
+
+  /// 第一次调用某个音源时才读盘 + 编译（元数据复用的关键一步）。
+  Future<void> _ensureCompiled(String hash) {
+    if (_owner[hash] != null) {
+      return Future<void>.value();
+    }
+    final inflight = _compiling[hash];
+    if (inflight != null) {
+      return inflight;
+    }
+    final future = _compileFromDisk(hash);
+    _compiling[hash] = future.whenComplete(() => _compiling.remove(hash));
+    return _compiling[hash]!;
+  }
+
+  Future<void> _compileFromDisk(String hash) async {
+    final path = _paths.pluginFile(hash);
+    final file = File(path);
+    if (!file.existsSync()) {
+      throw MusicFreeException('插件源码不存在（$hash），请重新拉取订阅');
+    }
+    final code = await file.readAsString();
+    final watch = Stopwatch()..start();
+    final plugin = await loadPlugin(hash: hash, code: code, path: path);
+    AppLog.timing('插件.按需编译 ${plugin.platform}', watch.elapsed);
+  }
+
+  Future<void> _rememberMetadata(MusicFreePlugin plugin) async {
+    await _loadMetadata();
+    _metadata[plugin.hash] = plugin.toJson();
+    await _saveMetadata();
+  }
+
+  Future<void> _loadMetadata() async {
+    if (_metadataLoaded) {
+      return;
+    }
+    _metadataLoaded = true;
+    final file = File(_paths.metadataFile);
+    if (!file.existsSync()) {
+      return;
+    }
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is Map) {
+        _metadata.addAll(decoded.cast<String, dynamic>());
+      }
+    } on Object catch (error) {
+      AppLog.warn('读取插件元数据缓存失败', error: error);
+    }
+  }
+
+  Future<void> _saveMetadata() async {
+    try {
+      final file = File(_paths.metadataFile);
+      final dir = file.parent;
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+      await file.writeAsString(jsonEncode(_metadata));
+    } on Object catch (error) {
+      AppLog.debug('写插件元数据缓存失败：$error');
+    }
+  }
+
+  /// 挑一个 worker：优先空闲的；不够就按需扩充，最多 [_poolSize] 个。
+  Future<_WorkerLink> _pickLink() async {
+    for (final link in _links) {
+      if (link.isReady && link.inFlight == 0) {
+        return link;
+      }
+    }
+    if (_links.length < _poolSize) {
+      final link = _WorkerLink(_links.length);
+      _links.add(link);
+      await _start(link);
+      return link;
+    }
+    final ready = _links.where((link) => link.isReady).toList(growable: false);
+    if (ready.isEmpty) {
+      await _start(_links.first);
+      return _links.first;
+    }
+    ready.sort((a, b) => a.inFlight.compareTo(b.inFlight));
+    return ready.first;
+  }
+
+  Future<void> _start(_WorkerLink link) async {
+    if (link.isReady) {
+      return;
+    }
+    final starting = link.starting;
+    if (starting != null) {
+      await starting.future;
+      return;
+    }
+    final completer = Completer<void>();
+    link.starting = completer;
+    final watch = Stopwatch()..start();
+    try {
+      // bundle 在 spawn 前读好：worker 里没有 rootBundle / AppPaths
+      final source = _injectedBundle ?? await rootBundle.loadString(bundleAsset);
+      final from = ReceivePort();
+      link.from = from;
+      from.listen(
+        (dynamic message) => _onMessage(link, message),
+        onDone: () => _onWorkerGone(link),
+      );
+      link.isolate = await Isolate.spawn(
+        musicFreeWorkerMain,
+        <Object?>[
+          from.sendPort,
+          <String, dynamic>{
+            'bundle': source,
+            'root': _paths.root,
+            'appVersion': appVersion,
+            'lang': lang,
+          },
+        ],
+        debugName: 'musicfree-worker-${link.index}',
+      );
+      await completer.future;
+      AppLog.timing('插件.worker#${link.index} 就绪（含 bundle 编译）', watch.elapsed);
+    } on Object {
+      link.starting = null;
+      rethrow;
+    }
+  }
+
+  void _onMessage(_WorkerLink link, dynamic message) {
+    if (message is SendPort) {
+      link.to = message;
+      final starting = link.starting;
+      link.starting = null;
+      if (starting != null && !starting.isCompleted) {
+        starting.complete();
+      }
+      return;
+    }
+    if (message is! Map) {
+      return;
+    }
+    final map = message.cast<String, dynamic>();
+    final logLevel = map['log'];
+    if (logLevel is String) {
+      final text = '${map['message'] ?? ''}';
+      if (logLevel == 'WARN') {
+        AppLog.warn(text);
+      } else {
+        AppLog.debug(text);
+      }
+      return;
+    }
+    if (map['http'] == true) {
+      unawaited(_serveHttp(map));
+      return;
+    }
+    final id = map['id'];
+    if (id is! int) {
+      return;
+    }
+    final call = _pending.remove(id);
+    if (call == null || call.completer.isCompleted) {
+      return;
+    }
+    call.link.inFlight -= 1;
+    if (map['ok'] == true) {
+      call.completer.complete(map);
+    } else {
+      call.completer.completeError(
+        MusicFreeException(map['error']?.toString() ?? '插件调用失败'),
+      );
+    }
+  }
+
+  /// worker 挂了：把它的插件标成「未编译」，下次调用会从磁盘重新装。
+  void _onWorkerGone(_WorkerLink link) {
+    link.to = null;
+    final starting = link.starting;
+    link.starting = null;
+    if (starting != null && !starting.isCompleted) {
+      starting.completeError(const MusicFreeException('插件 worker 启动失败'));
+    }
+    for (final hash in link.hashes.toList(growable: false)) {
+      if (identical(_owner[hash], link)) {
+        _owner[hash] = null;
+      }
+    }
+    link.hashes.clear();
+  }
+
+  /// 发一条请求并等 JSON 回复；worker 死亡/超时都抛 [MusicFreeException]。
+  Future<Map<String, dynamic>> _call(
+    _WorkerLink link,
+    Map<String, dynamic> request, {
+    required Duration timeout,
+  }) async {
+    if (_disposed) {
+      throw const MusicFreeException('插件宿主已释放');
+    }
+    if (!link.isReady) {
+      await _start(link);
+    }
+    final id = _nextId;
+    _nextId += 1;
+    final completer = Completer<Map<String, dynamic>>();
+    _pending[id] = _PendingCall(link, completer);
+    link.inFlight += 1;
+    link.to!.send(<String, dynamic>{'id': id, ...request});
+    try {
+      return await completer.future.timeout(timeout);
+    } on TimeoutException {
+      _pending.remove(id);
+      link.inFlight -= 1;
+      throw const MusicFreeException('插件宿主没有响应（worker 超时）');
+    }
+  }
+
+  /// 替 worker 发一次插件请求（注入的 client 仍然有效）。
+  Future<void> _serveHttp(Map<String, dynamic> map) async {
+    final port = map['port'];
+    if (port is! SendPort) {
+      return;
+    }
+    try {
+      final request = http.Request(
+        map['method']?.toString() ?? 'GET',
+        Uri.parse(map['url'].toString()),
+      );
+      final rawHeaders = map['headers'];
+      if (rawHeaders is Map) {
+        rawHeaders.forEach((key, value) {
+          request.headers[key.toString()] = '$value';
+        });
+      }
+      final bodyBase64 = map['bodyBase64']?.toString();
+      if (bodyBase64 != null && bodyBase64.isNotEmpty) {
+        request.bodyBytes = base64Decode(bodyBase64);
+      }
+      final timeout = Duration(
+        milliseconds: (map['timeout'] as num?)?.toInt() ?? 15000,
+      );
+      final streamed = await _http.send(request).timeout(timeout);
+      final response = await http.Response.fromStream(
+        streamed,
+      ).timeout(timeout);
+      final headers = <String, String>{};
+      response.headers.forEach((key, value) => headers[key] = value);
+      port.send(<String, dynamic>{
+        'status': response.statusCode,
+        'reason': response.reasonPhrase ?? '',
+        'headers': headers,
+        'bodyBase64': base64Encode(response.bodyBytes),
+      });
+    } on Object catch (error) {
+      port.send(<String, dynamic>{'error': '$error'});
+    }
+  }
+}
+
+/// 一条 worker 连接（池子里的一格）。
+class _WorkerLink {
+  _WorkerLink(this.index);
+
+  final int index;
+  Isolate? isolate;
+  ReceivePort? from;
+  SendPort? to;
+  Completer<void>? starting;
+
+  /// 正在跑的请求数：挑 worker 时按它做负载均衡。
+  int inFlight = 0;
+  final Set<String> hashes = <String>{};
+
+  bool get isReady => to != null;
+}
+
+/// 一次还没回来的 RPC。
+class _PendingCall {
+  _PendingCall(this.link, this.completer);
+
+  final _WorkerLink link;
+  final Completer<Map<String, dynamic>> completer;
+}
+
+/// worker isolate 入口：托管整份 [MusicFreeEngine]（JS 运行时 + 桥 + 插件实例）。
+///
+/// 这里碰不到 UI：没有 rootBundle、没有 AppPaths，所以 bundle 源码、数据目录、
+/// 版本号都由主 isolate 在 spawn 时传进来；日志与 HTTP 都通过端口回主 isolate。
+void musicFreeWorkerMain(List<Object?> args) {
+  // 插件代码里什么都能发生：未捕获的异步异常以前会直接把 worker 弄死，
+  // 界面表现就是「插件突然全没了，然后从头再装一遍」。用 zone 拦住它，
+  // 只记一条日志继续服务（原生栈溢出 `0xc00000fd` 这一层拦不住，另说）。
+  runZonedGuarded(
+    () => _musicFreeWorkerBody(args),
+    (error, stack) {
+      final toMain = args.isNotEmpty ? args[0] : null;
+      if (toMain is SendPort) {
+        toMain.send(<String, dynamic>{
+          'log': 'WARN',
+          'message': '插件 worker 未捕获异常（已忽略，继续服务）：$error',
+        });
+      }
+    },
+  );
+}
+
+/// worker 的真实主体（被 [musicFreeWorkerMain] 的 zone 包住）。
+void _musicFreeWorkerBody(List<Object?> args) {
+  final toMain = args[0] as SendPort;
+  final config = (args[1] as Map).cast<String, dynamic>();
+  final engine = MusicFreeEngine(
+    paths: PluginPaths(root: config['root']?.toString() ?? ''),
+    bundleSource: config['bundle']?.toString() ?? '',
+    appVersion: config['appVersion']?.toString() ?? kAppVersion,
+    lang: config['lang']?.toString() ?? 'zh-CN',
+    logSink: (level, message) =>
+        toMain.send(<String, dynamic>{'log': level, 'message': message}),
+    httpProxy: (request, timeout) => _workerHttp(toMain, request, timeout),
+  );
+  final requests = ReceivePort();
+  toMain.send(requests.sendPort);
+  requests.listen((message) async {
+    if (message is! Map) {
+      return;
+    }
+    final map = message.cast<String, dynamic>();
+    final id = map['id'];
+    if (id is! int || id == 0) {
+      // id=0 是不需要回复的收尾指令
+      if (map['op'] == 'unload') {
+        engine.unload('${map['hash'] ?? ''}');
+      } else if (map['op'] == 'dispose') {
+        engine.dispose();
+      }
+      return;
+    }
+    try {
+      switch (map['op']) {
+        case 'load':
+          final plugin = await engine.loadPlugin(
+            hash: '${map['hash']}',
+            code: '${map['code']}',
+            srcUrl: map['srcUrl']?.toString() ?? '',
+            userVariables:
+                (map['userVariables'] as Map?)?.map(
+                  (key, value) => MapEntry('$key', '$value'),
+                ) ??
+                const <String, String>{},
+            path: map['path']?.toString() ?? '',
+          );
+          toMain.send(<String, dynamic>{
+            'id': id,
+            'ok': true,
+            'plugin': plugin.toJson(),
+          });
+        case 'invoke':
+          final value = await engine.invoke(
+            '${map['hash']}',
+            '${map['method']}',
+            (map['args'] as List?)?.cast<Object?>() ?? const <Object?>[],
+            timeout: Duration(
+              milliseconds: (map['timeoutMs'] as num?)?.toInt() ?? 20000,
+            ),
+            flushWrites: map['flushWrites'] != false,
+          );
+          toMain.send(<String, dynamic>{'id': id, 'ok': true, 'value': value});
+        case 'flush':
+          await engine.flushPending(
+            timeout: Duration(
+              milliseconds: (map['timeoutMs'] as num?)?.toInt() ?? 2000,
+            ),
+          );
+          toMain.send(<String, dynamic>{'id': id, 'ok': true});
+        case 'unload':
+          engine.unload('${map['hash']}');
+          toMain.send(<String, dynamic>{'id': id, 'ok': true});
+        case 'dispose':
+          engine.dispose();
+          toMain.send(<String, dynamic>{'id': id, 'ok': true});
+        default:
+          toMain.send(<String, dynamic>{
+            'id': id,
+            'ok': false,
+            'error': '未知操作 ${map['op']}',
+          });
+      }
+    } on Object catch (error) {
+      toMain.send(<String, dynamic>{
+        'id': id,
+        'ok': false,
+        'error': error is MusicFreeException ? error.message : '$error',
+      });
+    }
+  });
+}
+
+/// worker → 主 isolate 的 HTTP 代发（请求体/响应体都用 base64，二进制也安全）。
+Future<http.Response> _workerHttp(
+  SendPort toMain,
+  http.Request request,
+  Duration timeout,
+) async {
+  final reply = ReceivePort();
+  toMain.send(<String, dynamic>{
+    'http': true,
+    'port': reply.sendPort,
+    'method': request.method,
+    'url': request.url.toString(),
+    'headers': request.headers,
+    'bodyBase64': base64Encode(request.bodyBytes),
+    'timeout': timeout.inMilliseconds,
+  });
+  final raw = await reply.first.timeout(
+    timeout + const Duration(seconds: 5),
+  );
+  reply.close();
+  final map = (raw as Map).cast<String, dynamic>();
+  final error = map['error'];
+  if (error != null) {
+    throw MusicFreeException('插件请求失败：$error');
+  }
+  final headers = <String, String>{};
+  final rawHeaders = map['headers'];
+  if (rawHeaders is Map) {
+    rawHeaders.forEach((key, value) => headers['$key'] = '$value');
+  }
+  return http.Response.bytes(
+    base64Decode('${map['bodyBase64']}'),
+    (map['status'] as num?)?.toInt() ?? 0,
+    headers: headers,
+    reasonPhrase: map['reason']?.toString(),
+  );
 }

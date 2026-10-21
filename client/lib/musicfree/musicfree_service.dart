@@ -56,6 +56,18 @@ class MusicFreeSheet {
     this.raw = const <String, dynamic>{},
   });
 
+  /// 从缓存回读。字段与 [toJson] 一一对应。
+  factory MusicFreeSheet.fromJson(Map<String, dynamic> json) => MusicFreeSheet(
+    platform: json['platform'] as String? ?? '',
+    id: json['id'] as String? ?? '',
+    title: json['title'] as String? ?? '',
+    coverUrl: json['coverUrl'] as String?,
+    creator: json['creator'] as String?,
+    description: json['description'] as String?,
+    // raw 是插件原始对象：翻页 / 取详情要原样传回，缓存里必须留着
+    raw: (json['raw'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{},
+  );
+
   final String platform;
   final String id;
   final String title;
@@ -67,39 +79,118 @@ class MusicFreeSheet {
   final Map<String, dynamic> raw;
 
   String get key => '$platform:$id';
+
+  /// 落缓存用（榜单 / 热门歌单都要跨进程复用，重启后不必再问一遍插件）。
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'platform': platform,
+    'id': id,
+    'title': title,
+    'coverUrl': coverUrl,
+    'creator': creator,
+    'description': description,
+    'raw': raw,
+  };
 }
 
 class MusicFreeTopListGroup {
   const MusicFreeTopListGroup({required this.platform, required this.title, required this.items});
 
+  /// 从缓存回读。
+  factory MusicFreeTopListGroup.fromJson(Map<String, dynamic> json) =>
+      MusicFreeTopListGroup(
+        platform: json['platform'] as String? ?? '',
+        title: json['title'] as String? ?? '',
+        items: (json['items'] as List? ?? const <Object?>[])
+            .whereType<Map>()
+            .map((item) => MusicFreeSheet.fromJson(item.cast<String, dynamic>()))
+            .toList(growable: false),
+      );
+
   final String platform;
   final String title;
   final List<MusicFreeSheet> items;
+
+  /// 落缓存用。
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'platform': platform,
+    'title': title,
+    'items': items.map((item) => item.toJson()).toList(growable: false),
+  };
 }
 
 class MusicFreeTag {
   const MusicFreeTag({required this.platform, required this.id, required this.title, this.raw});
 
+  /// 从缓存回读。[raw] 原样带回：插件拿它当参数，缺了标签就用不了。
+  factory MusicFreeTag.fromJson(Map<String, dynamic> json) => MusicFreeTag(
+    platform: json['platform'] as String? ?? '',
+    id: json['id'] as String? ?? '',
+    title: json['title'] as String? ?? '',
+    raw: (json['raw'] as Map?)?.cast<String, dynamic>(),
+  );
+
   final String platform;
   final String id;
   final String title;
   final Map<String, dynamic>? raw;
+
+  /// 落缓存用。
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'platform': platform,
+    'id': id,
+    'title': title,
+    'raw': raw,
+  };
 }
 
 class MusicFreeTagGroup {
   const MusicFreeTagGroup({required this.title, required this.tags});
 
+  /// 从缓存回读。
+  factory MusicFreeTagGroup.fromJson(Map<String, dynamic> json) =>
+      MusicFreeTagGroup(
+        title: json['title'] as String? ?? '',
+        tags: (json['tags'] as List? ?? const <Object?>[])
+            .whereType<Map>()
+            .map((item) => MusicFreeTag.fromJson(item.cast<String, dynamic>()))
+            .toList(growable: false),
+      );
+
   final String title;
   final List<MusicFreeTag> tags;
+
+  /// 落缓存用。
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'title': title,
+    'tags': tags.map((item) => item.toJson()).toList(growable: false),
+  };
 }
 
 class MusicFreeTags {
   const MusicFreeTags({this.pinned = const <MusicFreeTag>[], this.groups = const <MusicFreeTagGroup>[]});
 
+  /// 从缓存回读（结构就是 [toJson] 写出去的那份）。
+  factory MusicFreeTags.fromJson(Map<String, dynamic> json) => MusicFreeTags(
+    pinned: (json['pinned'] as List? ?? const <Object?>[])
+        .whereType<Map>()
+        .map((item) => MusicFreeTag.fromJson(item.cast<String, dynamic>()))
+        .toList(growable: false),
+    groups: (json['groups'] as List? ?? const <Object?>[])
+        .whereType<Map>()
+        .map((item) => MusicFreeTagGroup.fromJson(item.cast<String, dynamic>()))
+        .toList(growable: false),
+  );
+
   final List<MusicFreeTag> pinned;
   final List<MusicFreeTagGroup> groups;
 
   bool get isEmpty => pinned.isEmpty && groups.isEmpty;
+
+  /// 落缓存用：标签是「进页面就要」的数据，冷启动也要能直接铺出来。
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'pinned': pinned.map((item) => item.toJson()).toList(growable: false),
+    'groups': groups.map((item) => item.toJson()).toList(growable: false),
+  };
 }
 
 class MusicFreeTrackPage {
@@ -459,6 +550,69 @@ class MusicFreeService {
     }));
   }
 
+  /// 榜单 / 标签 / 歌单这类「单个插件那一份」结果的缓存 key。
+  ///
+  /// 三段都不能省：`method` 区分同一插件的不同数据；`plugin.hash` 区分音源
+  /// （也顺带管住插件更新——源码变了 hash 就变，旧结果自然不再命中）；`extra`
+  /// 装标签 id、页码这些参数，不同标签、不同页不能互相覆盖。
+  String _listCacheKey(String method, MusicFreePlugin plugin, [String extra = '']) =>
+      '$method|${plugin.hash}${extra.isEmpty ? '' : '|$extra'}';
+
+  /// 等落盘的写入。
+  ///
+  /// 搜索那条路径是「每敲一个字一次」，那边写缓存不等（见 [_writeCache]）；
+  /// 榜单 / 标签 / 歌单是一页一次，等这几毫秒换「刚拿到就重启也不丢」值得。
+  Future<void> _writeCacheNow(String key, Map<String, dynamic> value) async {
+    try {
+      await cache.write(key, value);
+    } on Object catch (error) {
+      AppLog.debug('写缓存失败 $key：$error');
+    }
+  }
+
+  /// 读某个插件那一份榜单；没有缓存（或文件坏了）返回 `null`。
+  Future<List<MusicFreeTopListGroup>?> _readTopListGroups(String key) async {
+    final cached = await _readCache(key);
+    final raw = cached?['groups'];
+    if (raw is! List) {
+      return null;
+    }
+    final groups = <MusicFreeTopListGroup>[
+      for (final item in raw)
+        if (item is Map) MusicFreeTopListGroup.fromJson(item.cast<String, dynamic>()),
+    ];
+    // 空表当没有缓存：我们从不写空结果，出现空表只可能是文件坏了。
+    return groups.isEmpty ? null : groups;
+  }
+
+  /// 读某个插件那一份标签；没有缓存（或文件坏了）返回 `null`。
+  Future<MusicFreeTags?> _readTags(String key) async {
+    final cached = await _readCache(key);
+    if (cached == null) {
+      return null;
+    }
+    // 两个键都不在，说明这文件不是我们写的（或写坏了），当没有缓存重来一遍。
+    if (!cached.containsKey('pinned') && !cached.containsKey('groups')) {
+      return null;
+    }
+    final tags = MusicFreeTags.fromJson(cached);
+    return tags.isEmpty ? null : tags;
+  }
+
+  /// 读某个标签下的歌单页；没有缓存（或文件坏了）返回 `null`。
+  Future<List<MusicFreeSheet>?> _readSheets(String key) async {
+    final cached = await _readCache(key);
+    final raw = cached?['sheets'];
+    if (raw is! List) {
+      return null;
+    }
+    final sheets = <MusicFreeSheet>[
+      for (final item in raw)
+        if (item is Map) MusicFreeSheet.fromJson(item.cast<String, dynamic>()),
+    ];
+    return sheets.isEmpty ? null : sheets;
+  }
+
   static String _shortReason(String message) {
     final oneLine = message.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (oneLine.length <= 120) {
@@ -471,8 +625,9 @@ class MusicFreeService {
   /// 各插件提供的榜单分组。
   ///
   /// 以前是一个插件一个插件地 `await`，几十个插件排队加载光等就得好几秒；
-  /// 现在并发跑 + [detailTimeout] 截止，再叠 10 分钟内存缓存（进进出出点歌台
-  /// 不必重拉）。结果按插件顺序重排，界面的 tab 不会因为谁先回来而乱跳。
+  /// 现在并发跑 + [listTimeout] 截止，再叠两层缓存：内存 10 分钟（进进出出点歌台
+  /// 不必重拉）、磁盘 6 小时（冷启动不必把每个音源的榜单方法再打一遍）。
+  /// 结果按插件顺序重排，界面的 tab 不会因为谁先回来而乱跳。
   Future<List<MusicFreeTopListGroup>> topLists({bool refresh = false}) async {
     const key = 'toplists';
     if (!refresh) {
@@ -490,6 +645,14 @@ class MusicFreeService {
       for (var index = 0; index < targets.length; index += 1)
         () async {
           final plugin = targets[index];
+          final cacheKey = _listCacheKey(MusicFreeCapabilities.getTopLists, plugin);
+          if (!refresh) {
+            final cached = await _readTopListGroups(cacheKey);
+            if (cached != null) {
+              perPlugin[index] = cached;
+              return;
+            }
+          }
           try {
             final raw = await plugins.host.invoke(
               plugin.hash,
@@ -528,6 +691,12 @@ class MusicFreeService {
               }
             }
             perPlugin[index] = groups;
+            // 空结果不落盘：这一秒插件抽风，写进去接下来 6 小时都会显示「插件没有排行榜」。
+            if (groups.isNotEmpty) {
+              await _writeCacheNow(cacheKey, <String, dynamic>{
+                'groups': groups.map((item) => item.toJson()).toList(growable: false),
+              });
+            }
           } on Object catch (error) {
             // 榜单失败不记账到搜索熔断里：两个方法族互不连坐。
             AppLog.warn('获取榜单失败 ${plugin.platform}', error: error);
@@ -555,7 +724,7 @@ class MusicFreeService {
   }
 
   // ------------------------------------------------------------ 热门歌单
-  /// 歌单标签（同样并发 + 缓存，理由同 [topLists]）。
+  /// 歌单标签（同样并发 + 内存 / 磁盘两层缓存，理由同 [topLists]）。
   Future<MusicFreeTags> recommendTags({bool refresh = false}) async {
     const key = 'tags';
     if (!refresh) {
@@ -573,6 +742,14 @@ class MusicFreeService {
       for (var index = 0; index < targets.length; index += 1)
         () async {
           final plugin = targets[index];
+          final cacheKey = _listCacheKey(MusicFreeCapabilities.getRecommendSheetTags, plugin);
+          if (!refresh) {
+            final cached = await _readTags(cacheKey);
+            if (cached != null) {
+              perPlugin[index] = cached;
+              return;
+            }
+          }
           try {
             final raw = await plugins.host.invoke(
               plugin.hash,
@@ -621,7 +798,12 @@ class MusicFreeService {
                 }
               }
             }
-            perPlugin[index] = MusicFreeTags(pinned: pinned, groups: groups);
+            final pluginTags = MusicFreeTags(pinned: pinned, groups: groups);
+            perPlugin[index] = pluginTags;
+            // 空结果不落盘：这一秒插件抽风，写进去接下来 6 小时都会显示「没有热门歌单」。
+            if (!pluginTags.isEmpty) {
+              await _writeCacheNow(cacheKey, pluginTags.toJson());
+            }
           } on Object catch (error) {
             AppLog.warn('获取歌单标签失败 ${plugin.platform}', error: error);
           }
@@ -652,10 +834,30 @@ class MusicFreeService {
   }
 
   /// 热门歌单里的歌单条目（`getRecommendSheetsByTag` 返回的是歌单而不是歌曲）。
+  ///
+  /// 顺序是「内存 → 磁盘 → 插件」：列表页来回切标签很频繁，不该每次都问插件。
+  /// 这里没有 refresh 开关（调用方只按标签取第一页 / 下一页）；真要作废，
+  /// 走 [clearCache] 清磁盘。
   Future<List<MusicFreeSheet>> sheetsByTag(MusicFreeTag tag, {int page = 1}) async {
     final plugin = _pluginOf(tag.platform);
     if (plugin == null || !plugin.supports(MusicFreeCapabilities.getRecommendSheetsByTag)) {
       return const <MusicFreeSheet>[];
+    }
+    // key 里必须带上标签 id 与页码：不同标签、不同页返回的是不同的一批歌单；
+    // 平台维度由 [_listCacheKey] 里的插件 hash 负责，不同音源不会串味。
+    final cacheKey = _listCacheKey(
+      MusicFreeCapabilities.getRecommendSheetsByTag,
+      plugin,
+      '${tag.id}|$page',
+    );
+    final cached = _memory.read(cacheKey);
+    if (cached is List<MusicFreeSheet>) {
+      return cached;
+    }
+    final onDisk = await _readSheets(cacheKey);
+    if (onDisk != null) {
+      _memory.write(cacheKey, onDisk, _listTtl);
+      return onDisk;
     }
     try {
       final raw = await plugins.host.invoke(
@@ -678,6 +880,13 @@ class MusicFreeService {
         if (sheet != null) {
           sheets.add(sheet);
         }
+      }
+      if (sheets.isNotEmpty) {
+        // 空页不写缓存：翻到底时插件偶尔会抖一下，写进去要错 6 小时。
+        _memory.write(cacheKey, sheets, _listTtl);
+        await _writeCacheNow(cacheKey, <String, dynamic>{
+          'sheets': sheets.map((item) => item.toJson()).toList(growable: false),
+        });
       }
       return sheets;
     } on Object catch (error) {
@@ -977,6 +1186,12 @@ class MusicFreeService {
 ///
 /// 只活在这次运行里：插件换了会 [MusicFreeService.clearCache] 清掉。
 class _MemoryCache {
+  /// 条目上限。
+  ///
+  /// 标签下的歌单是按「标签 + 页码」逐条缓存的，不像榜单 / 标签那样只有两三条，
+  /// 不设上限的话一个晚上翻下来能攒出几百份歌单占着内存。
+  static const int _maxEntries = 200;
+
   final Map<String, ({Object value, DateTime expiresAt})> _entries =
       <String, ({Object value, DateTime expiresAt})>{};
 
@@ -993,6 +1208,13 @@ class _MemoryCache {
   }
 
   void write(String key, Object value, Duration ttl) {
+    if (_entries.length >= _maxEntries && !_entries.containsKey(key)) {
+      // 简单粗暴：丢掉最早插入的那几个（Map 保持插入顺序）
+      final oldest = _entries.keys.take(_entries.length - _maxEntries + 1).toList();
+      for (final item in oldest) {
+        _entries.remove(item);
+      }
+    }
     _entries[key] = (value: value, expiresAt: DateTime.now().add(ttl));
   }
 

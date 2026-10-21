@@ -13,22 +13,28 @@ import 'core/app_paths.dart';
 import 'core/app_theme.dart';
 import 'core/log_file.dart';
 import 'core/platform.dart';
-import 'core/system_proxy.dart';
+
 import 'data/theme_store.dart';
 import 'features/connect_page.dart';
 import 'features/home_shell.dart';
-import 'music/music_player.dart';
+
 import 'signaling/signaling_client.dart';
 import 'widgets/common.dart';
 
 Future<void> main() async {
+  // 启动时间线：每一段都打点，出问题时日志里 grep `ms` 就能定位是哪一段慢
+  final boot = Stopwatch()..start();
   WidgetsFlutterBinding.ensureInitialized();
 
   // 手机上的数据目录要先定下来（应用私有目录），日志才有地方落盘
   await AppPaths.init();
 
-  // 日志要最早挂上：后面每一步（窗口、插件、进房）都可能是出问题的地方
-  AppLog.attachFile(LogFile.open());
+  // 日志要最早挂上：后面每一步（窗口、插件、进房）都可能是出问题的地方。
+  // 过期日志清理推迟到首帧之后（pruneExpired: false），别占启动路径。
+  // 注意顺序：attachFile 之前的 timing 只会进 developer.log，**不会落盘**，
+  // 所以 AppPaths 这一段要等文件挂上之后再补记（实测第一次启动日志里就缺了它）。
+  AppLog.attachFile(LogFile.open(pruneExpired: false));
+  AppLog.timing('启动.AppPaths', boot.elapsed);
   _installErrorHandlers();
   AppLog.info('启动 ${Platform.resolvedExecutable}');
   AppLog.info('系统 ${Platform.operatingSystemVersion}；pid=$pid');
@@ -36,13 +42,15 @@ Future<void> main() async {
   AppLog.memory('启动');
 
   if (isDesktopPlatform) {
+    final windowWatch = Stopwatch()..start();
     await _initDesktopWindow();
+    AppLog.timing('启动.窗口就绪', windowWatch.elapsed);
     // 系统会在窗口最外圈描一道 1px 边框（DWM 画的，Dart 侧改不了），
     // 无边框窗口贴着它看就像「套了个相框」：交给 runner 关掉
     await _trimWindowBorder();
   } else {
-    // 手机没有窗口：标题栏交给系统状态栏，内容顶到安全区里；
-    // 状态栏与手势条设成透明，壁纸才能一直铺到屏幕边缘
+    // 手机没有窗口：标题栏交给系统状态栏，内容顶到安全区里；状态栏与手势条
+    // 设成透明，壁纸才能一直铺到窗口边缘
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
@@ -52,12 +60,21 @@ Future<void> main() async {
     );
   }
 
-  MusicPlayer.ensureMediaKitInitialized();
+  // libmpv（14.8MB）不在这里同步加载：它要几十到几百毫秒，而用户很可能整个
+  // 会话都不点歌。改成第一次真的要播时再加载，见 MusicPlayer.ensureMediaKitInitialized。
+  // 系统代理也不再探测：代理交给用户的 TUN/虚拟网卡在系统层接管（设置页那块已删）。
 
-  // 音源接口常被按 SNI 阻断：先读一次系统代理，后面所有音源请求都走它
-  await SystemProxy.load();
-
+  AppLog.timing('启动.runApp 前', boot.elapsed);
   runApp(const OmiocLinkApp());
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    AppLog.timing('启动.首帧', boot.elapsed);
+    AppLog.memory('首帧');
+    // 首帧之后再清 7 天前的旧日志（目录遍历 + 逐个 stat，属于同步 IO）
+    Timer(const Duration(seconds: 3), () {
+      LogFile.prune(Directory(LogFile.defaultDirectory()));
+    });
+  });
 }
 
 /// 桌面窗口：无边框 + 固定初始尺寸。手机上没有窗口，整段跳过。
@@ -221,9 +238,36 @@ class _RootState extends State<_Root> with WindowListener {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final loggedIn = state.isLoggedIn;
-    final signaling = state.signaling;
+    // 只盯这几个字段：AppState 是个大 ChangeNotifier，房间轮询、码率统计、麦克风
+    // 电平都会 notify；用 watch 就是「任何一处变化 → 整棵树重建」。select 用 record
+    // 的按值比较，只有真正影响这一层的字段变了才重建。
+    final (loggedIn, error, signaling, connected, roomName, sessionActive) =
+        context.select<
+          AppState,
+          (bool, String?, SignalingClient?, bool, String?, bool)
+        >(
+          (state) => (
+            state.isLoggedIn,
+            state.error,
+            state.signaling,
+            state.isConnectedToServer,
+            state.session?.room?.name,
+            state.session?.phase.isActive ?? false,
+          ),
+        );
+    final statusText = !connected
+        ? '未连接服务器'
+        : sessionActive
+        ? '房间内 · ${roomName ?? ''}'
+        : '已连接到服务器';
+    final statusColor = !connected
+        ? context.palette.textMuted
+        : sessionActive
+        ? context.palette.accent
+        : context.palette.success;
+    final phase = signaling?.phase.value;
+    final showReconnect =
+        phase == SignalingPhase.reconnecting || phase == SignalingPhase.failed;
 
     final content = Column(
       children: [
@@ -231,18 +275,18 @@ class _RootState extends State<_Root> with WindowListener {
         // 再画一遍会多出一条「假标题栏」
         if (isDesktopPlatform)
           _TitleBar(
-            statusText: _statusText(state),
-            statusColor: _statusColor(state),
+            statusText: statusText,
+            statusColor: statusColor,
           ),
         // 房间内发生的错误（房间被解散、账号被禁用、被管理员踢出…）之前只写进了
         // 状态里没人显示，用户会莫名其妙回到房间列表——这里统一提示出来
-        if (state.error != null)
+        if (error != null)
           _ErrorBanner(
-            text: state.error!,
+            text: error,
             onDismiss: context.read<AppState>().clearMessages,
           ),
         Expanded(child: loggedIn ? const HomeShell() : const ConnectPage()),
-        if (signaling != null && _showReconnectBar(state))
+        if (showReconnect && signaling != null)
           ValueListenableBuilder<SignalingPhase>(
             valueListenable: signaling.phase,
             builder: (context, phase, _) => _ReconnectBar(
@@ -269,33 +313,6 @@ class _RootState extends State<_Root> with WindowListener {
     );
   }
 
-  String? _statusText(AppState state) {
-    if (!state.isConnectedToServer) {
-      return '未连接服务器';
-    }
-    final session = state.session;
-    if (session != null && session.phase.isActive) {
-      return '房间内 · ${session.room?.name ?? ''}';
-    }
-    return '已连接到服务器';
-  }
-
-  Color _statusColor(AppState state) {
-    if (!state.isConnectedToServer) {
-      return context.palette.textMuted;
-    }
-    final session = state.session;
-    if (session != null && session.phase.isActive) {
-      return context.palette.accent;
-    }
-    return context.palette.success;
-  }
-
-  bool _showReconnectBar(AppState state) {
-    final phase = state.signaling?.phase.value;
-    return phase == SignalingPhase.reconnecting ||
-        phase == SignalingPhase.failed;
-  }
 }
 
 class _TitleBar extends StatelessWidget {
@@ -419,6 +436,12 @@ class _AppWallpaper extends StatelessWidget {
     if (path == null) {
       return ColoredBox(color: stage);
     }
+    // 按窗口尺寸解码：壁纸原图可能长边 2400px，以前是「原图解码 + 每帧缩放到窗口」，
+    // 这是 Windows 上最贵的合成路径之一。解码时就缩到目标像素，后续帧只做贴图。
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final size = MediaQuery.sizeOf(context);
+    final targetWidth = (size.width * dpr).round();
+    final targetHeight = (size.height * dpr).round();
     return ColoredBox(
       color: stage,
       // 换图走同一个文件路径，DecorationImage 又按值比较：不换 key 的话
@@ -428,7 +451,13 @@ class _AppWallpaper extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             image: DecorationImage(
-              image: FileImage(File(path)),
+              image: ResizeImage(
+                FileImage(File(path)),
+                width: targetWidth,
+                height: targetHeight,
+                allowUpscaling: false,
+                policy: ResizeImagePolicy.fit,
+              ),
               fit: BoxFit.cover,
               // 蒙版：深浅主题各压一层，正文落在花哨的图上才读得出来
               colorFilter: ColorFilter.mode(

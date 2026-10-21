@@ -57,6 +57,10 @@ async function main() {
     platform: 'browser',
     target: ['es2020'],
     charset: 'utf8',
+    // 产物是每次进程启动都要在 QuickJS 里编译一遍的（引擎没有字节码缓存），
+    // 1.12MB 未压缩源码压到约 400KB，编译时间近似按体积下降。
+    // 不 drop console：插件调试信息走宿主转发的 console，不能丢。
+    minify: true,
     legalComments: 'none',
     logLevel: 'warning',
     alias: {

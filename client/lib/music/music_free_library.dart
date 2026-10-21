@@ -102,17 +102,14 @@ class MusicFreeLibrary extends ChangeNotifier {
     }
   }
 
-  /// 进房后立刻在后台把点歌台要用的数据备好（只做一次性的「预热」，不阻塞任何人）。
+  /// 进房后的轻量预热：只读音质偏好（纯本地 SharedPreferences）。
   ///
-  /// 点歌台挂载时会依次读音质偏好、排行榜（默认落在这一屏）、热门歌单标签；
-  /// 全部提前跑掉，用户切过去时这几个方法都已经有结果 / 正在跑，界面直接出内容，
-  /// 不必先看一轮转圈。四个方法自身都是幂等的（已加载、正在加载会直接返回），
-  /// 所以点歌台再调一次也不会重复发请求。
+  /// **不碰插件、不拉榜单**：插件装载要先在 QuickJS 里编译 577KB 的运行时 bundle，
+  /// 那是**同步**执行、会把整窗冻住几秒；榜单则要对 N 个音源并发打插件方法。
+  /// 进房时付这两笔会直接表现为「一进房就卡」——改成用户真的点开点歌台时再做，
+  /// 那时界面上有骨架屏，卡一下也能解释得清。
   void warmUp() {
-    _ensurePlugins();
     unawaited(loadPreferences());
-    unawaited(loadCharts());
-    unawaited(loadTagSections());
   }
 
   /// 从服务器取订阅 URL 并同步插件（首次启动 / 连上服务器时调用）。
@@ -123,6 +120,11 @@ class MusicFreeLibrary extends ChangeNotifier {
     String? hash,
     bool force = false,
   }) async {
+    // 重复触发直接忽略：按钮连点、进房预热与手动刷新撞在一起时，
+    // 再来一轮只会让 worker 的队列更长、更难收场。
+    if (_syncing) {
+      return;
+    }
     _syncing = true;
     _syncError = null;
     _syncMessage = null;
@@ -133,6 +135,12 @@ class MusicFreeLibrary extends ChangeNotifier {
         urls: urls,
         signature: hash,
         force: force,
+        // 每装上一个就刷一次界面：插件多的时候用户能看到「已装载 3 个」，
+        // 而不是盯着一个不动的转圈等整轮结束（以前是全部装完才通知）。
+        onProgress: (message) {
+          _syncMessage = message;
+          notifyListeners();
+        },
       );
       if (result.hasFailures) {
         _syncError = result.failures.join('；');
@@ -156,6 +164,10 @@ class MusicFreeLibrary extends ChangeNotifier {
   }
 
   Future<void> updateAllPlugins() async {
+    // 同 syncSubscription：装载期间的重复点击不再开第二轮
+    if (_syncing) {
+      return;
+    }
     _syncing = true;
     _syncError = null;
     notifyListeners();

@@ -157,6 +157,47 @@ class MusicFreePlugin {
     'enabled': enabled,
     if (loadError != null) 'loadError': loadError,
   };
+
+  /// worker isolate 回传的元数据还原（字段与 [toJson] 一一对应）。
+  ///
+  /// `hash` / `path` / `srcUrl` 以调用方为准：worker 里的插件本来就是按主 isolate
+  /// 给的 hash 装的，用回传值只会多一次「两边不一致就出鬼」的机会。
+  factory MusicFreePlugin.fromJson(
+    Map<String, dynamic> json, {
+    required String hash,
+    required String path,
+    required String srcUrl,
+  }) => MusicFreePlugin(
+    hash: hash,
+    platform: json['platform']?.toString() ?? '',
+    path: path,
+    version: json['version']?.toString() ?? '',
+    author: json['author']?.toString() ?? '',
+    description: json['description']?.toString() ?? '',
+    homepage: json['homepage']?.toString() ?? '',
+    srcUrl: srcUrl,
+    appVersion: json['appVersion']?.toString() ?? '',
+    supportedMethods: (json['supportedMethods'] as List? ?? const <dynamic>[])
+        .map((item) => item.toString())
+        .toList(growable: false),
+    userVariables: (json['userVariables'] as List? ?? const <dynamic>[])
+        .map(PluginUserVariable.tryParse)
+        .whereType<PluginUserVariable>()
+        .toList(growable: false),
+    hints:
+        (json['hints'] as Map?)?.cast<String, dynamic>() ??
+        const <String, dynamic>{},
+    primaryKey: (json['primaryKey'] as List? ?? const <dynamic>[])
+        .map((item) => item.toString())
+        .toList(growable: false),
+    defaultSearchType: json['defaultSearchType']?.toString() ?? 'music',
+    supportedSearchType:
+        (json['supportedSearchType'] as List? ?? const <dynamic>[])
+            .map((item) => item.toString())
+            .toList(growable: false),
+    cacheControl: json['cacheControl']?.toString() ?? 'cache',
+    loadError: json['loadError']?.toString(),
+  );
 }
 
 /// 插件能力声明（App 里各处的「有没有这个能力」判断都走它）。

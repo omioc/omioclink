@@ -157,7 +157,9 @@ void main() {
         expect(saved, <double>[40], reason: '失败也要持久化用户的选择');
       } finally {
         AppLog.attachFile(null);
-        logText = File(logFile!.path).readAsStringSync();
+        // 日志是缓冲写入的（启动路径上不再同步刷盘），读文件前要显式刷一次
+        logFile!.flush();
+        logText = File(logFile.path).readAsStringSync();
         logFile.close();
         directory.deleteSync(recursive: true);
       }

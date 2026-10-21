@@ -354,6 +354,35 @@ globalThis.__mfRuntime = {
     return JSON.stringify({ supportedMethod, meta });
   },
 
+  /**
+   * 一次性装载插件：createRequire → 执行源码 → describe。
+   *
+   * 以前这三步在 Dart 侧各是一次 evaluate（外加一次注入源码），装 N 个插件就是
+   * 4N 次跨桥往返——每次都要切一次 JS 引擎，UI 线程被切得稀碎。合成一次只多带
+   * 一段源码字符串，返回值就是 describe 的 JSON。
+   */
+  install(pluginKey, code, optionsJson, storageJson, cookiesJson) {
+    // 源码走单独参数：调用方只转义一次，这里也不再 JSON.parse 整个 payload。
+    // 以前同一份插件源码要被解析三次（外文字面量 → JSON.parse → Function 编译），
+    // 大插件光这一项就要几秒。
+    const options = parseOptions(optionsJson);
+    let stage = '插件依赖初始化';
+    try {
+      this.createRequire({
+        plugin: pluginKey,
+        storage: parseOptions(storageJson) || {},
+        cookies: parseOptions(cookiesJson) || [],
+      });
+      stage = '插件源码执行';
+      this.loadPlugin(pluginKey, code, options);
+      stage = '插件信息解析';
+      return this.describe(pluginKey);
+    } catch (error) {
+      const detail = error && error.message ? error.message : String(error);
+      throw new Error(`${stage}失败：${detail}`);
+    }
+  },
+
   /** 调用插件方法：payload 是参数数组（JSON 字符串）。 */
   invoke(pluginKey, method, payloadJson) {
     const instance = globalThis.__mfInstances[pluginKey];

@@ -68,6 +68,28 @@ class _MusicKioskState extends State<MusicKiosk> {
   /// 「我喜欢」：本机收藏（`AppState` 注入），只有它这份数据不来自插件。
   MusicFavorites get favorites => widget.favorites;
 
+  /// 每个区域只订阅自己需要的源。
+  ///
+  /// 以前整个点歌台包在一个 `AnimatedBuilder(Listenable.merge([library, queue,
+  /// player, favorites]))` 里：播放进度一跳、队列一变，搜索框、左导航、内容区、
+  /// 队列栏、播放条全部重建。而且那个 merge 是在 build 里现造的，每次重建都要
+  /// 把四个 listener 摘掉再挂回去。这里改成 State 里的常量字段 + 分区订阅。
+  late final Listenable _contentSources = Listenable.merge(<Listenable>[
+    library,
+    queue,
+    player,
+    favorites,
+  ]);
+  late final Listenable _queueSources = Listenable.merge(<Listenable>[
+    queue,
+    player,
+  ]);
+  late final Listenable _nowPlayingSources = Listenable.merge(<Listenable>[
+    queue,
+    player,
+    favorites,
+  ]);
+
   @override
   void initState() {
     super.initState();
@@ -285,20 +307,17 @@ class _MusicKioskState extends State<MusicKiosk> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
     return ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-      child: AnimatedBuilder(
-        animation: Listenable.merge(<Listenable>[
-          library,
-          queue,
-          player,
-          favorites,
-        ]),
-        builder: (context, _) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _SearchBar(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 搜索框只关心「搜索中 / 告警数量」，不该跟着播放进度重建
+          AnimatedBuilder(
+            animation: library,
+            builder: (context, _) => _SearchBar(
               controller: _searchController,
               searching: library.searching,
               onSubmit: _submitSearch,
@@ -315,52 +334,64 @@ class _MusicKioskState extends State<MusicKiosk> {
                   : 0,
               onShowIssues: () => unawaited(_showSearchIssues()),
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  0,
-                  AppSpacing.lg,
-                  AppSpacing.sm,
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _NavRail(
-                      section: _section,
-                      onChanged: _openSection,
-                      collapsed: _navCollapsed,
-                      onToggleCollapse: () =>
-                          setState(() => _navCollapsed = !_navCollapsed),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                0,
+                AppSpacing.lg,
+                AppSpacing.sm,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 左导航只读本地状态（当前分区 / 是否折叠），不需要订阅数据源
+                  _NavRail(
+                    section: _section,
+                    onChanged: _openSection,
+                    collapsed: _navCollapsed,
+                    onToggleCollapse: () =>
+                        setState(() => _navCollapsed = !_navCollapsed),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: AnimatedBuilder(
+                      animation: _contentSources,
+                      builder: (context, _) => _content(),
                     ),
+                  ),
+                  // 手机上 210dp 的队列侧栏是从内容里硬扣出来的（393dp 屏只剩
+                  // 150dp 给歌单）：窄屏改成底部播放条上的「队列」按钮弹出
+                  if (!useCompactLayout(context)) ...[
                     const SizedBox(width: AppSpacing.md),
-                    Expanded(child: _content()),
-                    // 手机上 210dp 的队列侧栏是从内容里硬扣出来的（393dp 屏只剩
-                    // 150dp 给歌单）：窄屏改成底部播放条上的「队列」按钮弹出
-                    if (!useCompactLayout(context)) ...[
-                      const SizedBox(width: AppSpacing.md),
-                      SizedBox(
-                        width: 210,
-                        child: _QueuePanel(
+                    SizedBox(
+                      width: 210,
+                      child: AnimatedBuilder(
+                        animation: _queueSources,
+                        builder: (context, _) => _QueuePanel(
                           queue: queue,
                           player: player,
                           onRemove: (track) => queue.remove(track),
                           onClear: queue.clear,
                         ),
                       ),
-                    ],
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
-            _KioskNowPlayingBar(
+          ),
+          AnimatedBuilder(
+            animation: _nowPlayingSources,
+            builder: (context, _) => _KioskNowPlayingBar(
               queue: queue,
               player: player,
               favorites: favorites,
               compact: useCompactLayout(context),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -717,7 +748,11 @@ class _SearchPane extends StatelessWidget {
           ),
         if (platforms.length > 1) const SizedBox(height: AppSpacing.sm),
         Expanded(
-          child: ListView(
+          // 以前是 ListView(children: [...for 每个 track])：一次搜索回来几百条结果，
+          // 每条 tile 都会立刻建出来（含封面解码），而且一次搜索有 N 个音源回调 =
+          // N 次整块重建 = N × 几百次构造。改成 builder 只建可见的那几条。
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // 音源报错挪到搜索框右边的小入口里（点开才有弹窗），
               // 这里只留一行「还在等几个音源」的轻提示，结果照常往下排。
@@ -740,24 +775,32 @@ class _SearchPane extends StatelessWidget {
                       '切到「音乐」再点',
                 ),
               const SizedBox(height: AppSpacing.sm),
-              if (library.searching && tracks.isEmpty)
-                const MusicLoading(label: '搜索结果')
-              else if (tracks.isEmpty)
-                MusicEmptyHint(
-                  icon: Icons.search_off,
-                  text: '没有找到相关歌曲',
-                  hint: library.searchWarnings.isEmpty && library.searchSkipped.isEmpty
-                      ? '换个关键词，或换一个音源再试'
-                      : '有些音源没返回结果，点右上角看原因',
-                )
-              else
-                for (final track in tracks)
-                  MusicSongTile(
-                    key: ValueKey<String>('search:${track.key}'),
-                    track: track,
-                    onTap: isMusic ? () => onEnqueue(track) : null,
-                    trailing: isMusic ? trackActions(track) : null,
-                  ),
+              Expanded(
+                child: library.searching && tracks.isEmpty
+                    ? const MusicLoading(label: '搜索结果')
+                    : tracks.isEmpty
+                    ? MusicEmptyHint(
+                        icon: Icons.search_off,
+                        text: '没有找到相关歌曲',
+                        hint:
+                            library.searchWarnings.isEmpty &&
+                                library.searchSkipped.isEmpty
+                            ? '换个关键词，或换一个音源再试'
+                            : '有些音源没返回结果，点右上角看原因',
+                      )
+                    : ListView.builder(
+                        itemCount: tracks.length,
+                        itemBuilder: (context, index) {
+                          final track = tracks[index];
+                          return MusicSongTile(
+                            key: ValueKey<String>('search:${track.key}'),
+                            track: track,
+                            onTap: isMusic ? () => onEnqueue(track) : null,
+                            trailing: isMusic ? trackActions(track) : null,
+                          );
+                        },
+                      ),
+              ),
             ],
           ),
         ),

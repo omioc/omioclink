@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'app_paths.dart';
 
@@ -73,6 +74,12 @@ class LogFile {
   final RandomAccessFile _handle;
   bool _closed = false;
 
+  /// 未落盘的日志文本（见 [write]）。
+  final StringBuffer _pending = StringBuffer();
+  Timer? _flushTimer;
+  static const Duration _flushDelay = Duration(milliseconds: 120);
+  static const int _flushBytes = 32 * 1024;
+
   /// 日志文件名的前缀，`prune` 按它识别「我们的日志」。
   static const String filePrefix = 'client-';
 
@@ -88,12 +95,17 @@ class LogFile {
     String? directory,
     Duration keep = const Duration(days: 7),
     DateTime? now,
+    bool pruneExpired = true,
   }) {
     try {
       final stamp = now ?? DateTime.now();
       final target = Directory(directory ?? defaultDirectory());
       target.createSync(recursive: true);
-      prune(target, keep: keep, now: stamp);
+      // 清理过期文件是同步目录遍历 + 逐个 stat：启动路径上没必要付这笔，
+      // 主程序传 pruneExpired: false，等首帧后再清（见 main.dart）。
+      if (pruneExpired) {
+        prune(target, keep: keep, now: stamp);
+      }
       final file = File(
         '${target.path}${Platform.pathSeparator}$filePrefix${fileStamp(stamp)}.log',
       );
@@ -141,12 +153,38 @@ class LogFile {
   }
 
   /// 追加一行。写失败只吞掉：日志坏了不能把业务带崩。
+  ///
+  /// 走内存缓冲 + 定时刷盘：以前是每行一次 `writeStringSync`，那是同步磁盘 IO，
+  /// 启动期几十行日志就能把首帧顶掉（Windows 上更明显）。现在攒够
+  /// [_flushBytes] 或过了 [_flushDelay] 才落一次盘；退出/崩溃兜底用手动 [flush]。
   void write(String text) {
     if (_closed) {
       return;
     }
+    _pending
+      ..write(text)
+      ..write('\n');
+    if (_pending.length >= _flushBytes) {
+      flush();
+      return;
+    }
+    _flushTimer ??= Timer(_flushDelay, () {
+      _flushTimer = null;
+      flush();
+    });
+  }
+
+  /// 立刻把缓冲区写进文件（测试、退出、写崩溃报告前显式调用）。
+  void flush() {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    if (_closed || _pending.isEmpty) {
+      return;
+    }
+    final text = _pending.toString();
+    _pending.clear();
     try {
-      _handle.writeStringSync('$text\n');
+      _handle.writeStringSync(text);
     } on Object {
       // 磁盘满 / 句柄失效：忽略
     }
@@ -156,6 +194,7 @@ class LogFile {
     if (_closed) {
       return;
     }
+    flush();
     _closed = true;
     try {
       _handle.closeSync();

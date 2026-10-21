@@ -30,6 +30,11 @@ class PluginPaths {
   String get preferenceFile =>
       '$root${Platform.pathSeparator}musicfree-preferences.json';
 
+  /// 插件的 `describe` 结果缓存：启动时据此把列表铺出来，**不**编译 JS。
+  /// key 是插件源码的 hash，插件一更新自然失效。
+  String get metadataFile =>
+      '$root${Platform.pathSeparator}musicfree-metadata.json';
+
   String pluginFile(String hash) => '$pluginDir${Platform.pathSeparator}$hash.js';
 
   String storageFile(String hash) => '$storageDir${Platform.pathSeparator}$hash.json';

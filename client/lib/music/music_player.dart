@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
 
 import '../core/app_log.dart';
-import '../core/system_proxy.dart';
 import '../data/music_models.dart';
 import '../data/music_store.dart';
 import '../musicfree/musicfree_service.dart';
@@ -73,6 +72,8 @@ class MusicPlayer extends ChangeNotifier {
   Player get _player => _audio ??= _createPlayer();
 
   Player _createPlayer() {
+    // libmpv 到这里才加载：14.8MB 的 DLL，启动时同步 open 会白占首帧
+    ensureMediaKitInitialized();
     final player = Player();
     player.stream.completed.listen((completed) {
       if (!completed) {
@@ -559,10 +560,10 @@ class MusicPlayer extends ChangeNotifier {
         text.contains('Connection reset')) {
       final host = RegExp(r'连接 ([^\s（()]+) 失败').firstMatch(text)?.group(1);
       final target = host == null ? '音源服务器' : '音源服务器 $host';
-      // 已经走了代理还断，多半是代理规则把它直连了（Clash 的 GEOIP,CN 规则很常见）
-      return SystemProxy.address == null
-          ? '连不上 $target（连接被中断）：该音源可能被网络阻断，可在设置页配置音源代理'
-          : '连不上 $target（连接被中断）：代理可能把它直连了，请在代理里放行该域名或改全局模式';
+      // 客户端不再自己探测/配置代理（代理交给系统的 TUN/虚拟网卡接管），
+      // 所以这里只提示「被网络阻断」，不再区分走没走代理
+      return '连不上 $target（连接被中断）：该音源可能被你的网络阻断，'
+          '换个网络，或让代理软件以 TUN 模式接管本应用流量再试';
     }
     if (text.contains('SocketException') ||
         text.contains('TimeoutException') ||

@@ -58,6 +58,17 @@ abstract final class AppLog {
   static void memory(String scene) =>
       info('$scene：内存 ${(ProcessInfo.currentRss / (1024 * 1024)).round()}MB');
 
+
+  /// 记一条耗时打点：`启动.窗口就绪：123ms`。
+  ///
+  /// 启动链路优化只能靠数据说话（仓库里不引性能分析包），统一走这里，
+  /// 排查时 grep 日志里的 `ms` 就能拼出时间线。正式发布也保留：日志量很小。
+  static void timing(String scene, Duration elapsed) {
+    info('$scene：${elapsed.inMilliseconds}ms');
+    // 打点立刻落盘：这些行是事后复盘唯一的依据，不能留在缓冲区里
+    _file?.flush();
+  }
+
   static void _log(
     String level,
     String message, {
@@ -83,5 +94,10 @@ abstract final class AppLog {
         stackTrace: stackTrace,
       ),
     );
+    // WARN/ERROR 立刻刷盘：其它级别是缓冲写的，万一后面界面卡死或进程被带走，
+    // 缓冲区里的行就永远丢了 —— 出问题的那几行恰恰最需要留下。
+    if (severity >= 900) {
+      _file?.flush();
+    }
   }
 }

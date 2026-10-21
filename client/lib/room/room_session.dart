@@ -45,7 +45,9 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
     VolumeStore? volumeStore,
     this.clock,
     this.onMusicError,
-    this.statsInterval = const Duration(seconds: 2),
+    // 统计要点在 UI 上（码率/质量），2 秒一次会让「人数 × getStats + 整树重建」
+    // 一直压在 16ms 预算里；3 秒是观感与开销的折中
+    this.statsInterval = const Duration(seconds: 3),
   }) : music = music ?? RoomMusicQueue(),
        _ownsMusic = music == null {
     // 点歌队列的意图从会话发出去（队列自己不认识 WebSocket）

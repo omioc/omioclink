@@ -16,7 +16,9 @@ import 'media_models.dart';
 class MicLevelMeter extends ValueNotifier<MicLevel> {
   MicLevelMeter({
     required this.sampler,
-    this.interval = const Duration(milliseconds: 100),
+    // 采样周期：200ms 足够跟得上说话起伏，而 100ms 时代每次都要 getStats + 通知，
+    // 电平条动画几乎全天在跑（应用回不到空闲帧）。
+    this.interval = const Duration(milliseconds: 200),
     this.speechThreshold = 0.02,
     this.releaseThreshold = 0.008,
     this.holdDuration = const Duration(milliseconds: 400),
