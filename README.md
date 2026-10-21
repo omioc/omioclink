@@ -14,9 +14,9 @@
 
 
 <p align="center">
-  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-win-x64-1.0.4.zip">Windows 免安装版下载</a>
+  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-win-x64-1.0.5.zip">Windows 免安装版下载</a>
   &nbsp;|&nbsp;
-  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-android-1.0.4-arm64-v8a.apk">Android APK 下载</a>
+  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-android-1.0.5-arm64-v8a.apk">Android APK 下载</a>
   &nbsp;|&nbsp;
   <a href="https://hub.docker.com/r/omioc/omioclink">服务端镜像（Docker Hub）</a>
   <br>
