@@ -18,11 +18,11 @@
   &nbsp;|&nbsp;
   <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-android-1.0.4-arm64-v8a.apk">Android APK 下载</a>
   &nbsp;|&nbsp;
-  <a href="https://hub.docker.com/r/omioc/omioclink" target="_blank" rel="noopener">服务端镜像（Docker Hub）</a>
+  <a href="https://hub.docker.com/r/omioc/omioclink">服务端镜像（Docker Hub）</a>
   <br>
-  <a href="server/README.md" target="_blank" rel="noopener">服务端部署</a>
+  <a href="server/README.md">服务端部署</a>
   &nbsp;|&nbsp;
-  <a href="client/README.md" target="_blank" rel="noopener">移动端编译、调试、打包</a>
+  <a href="client/README.md">移动端编译、调试、打包</a>
 </p>
 
 ---
