@@ -53,9 +53,13 @@ OmiocLink 是一个**给自己和固定好友使用**的桌面通讯工具，你
 
 桌面端截图取自 **夜航**（深蓝）主题，涉及手机端演示则使用移动端默认的 **青竹**（绿白）主题
 
-| 主界面（房间列表） | 房间内 · 屏幕共享 | 点歌台 |
+| 房间内 · 屏幕共享 | 点歌台 · 排行榜 | 点歌台 · 热门歌单 |
 | :---: | :---: | :---: |
-| ![主界面](assets/readme/ui-desktop-rooms.png) | ![房间内](assets/readme/ui-desktop-room.png) | ![点歌台](assets/readme/ui-desktop-music.png) |
+| ![房间内 · 屏幕共享](assets/readme/共享屏幕.png) | ![点歌台 · 排行榜](assets/readme/排行榜.png) | ![点歌台 · 热门歌单](assets/readme/热门歌单.png) |
+
+| 点歌台 · 歌榜 | 点歌台 · 我喜欢 | 主题与外观 |
+| :---: | :---: | :---: |
+| ![点歌台 · 歌榜](assets/readme/歌榜.png) | ![点歌台 · 我喜欢](assets/readme/我喜欢.png) | ![主题与外观](assets/readme/主题.png) |
 
 ### 2.1 点对点通讯：媒体不经过服务器，也没有任何代理/中继
 
