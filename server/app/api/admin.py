@@ -1,45 +1,78 @@
-"""Web 管理页与 ``/api/v1/admin/*`` 接口。
+"""Web 管理台与 ``/api/v1/admin/*`` 接口。
 
-**只有配置了 ``OMIOCLINK_ADMIN_TOKEN`` 时这些路由才会被注册**（见 ``app.main``）：
-未配置时 ``/admin`` 与 ``/api/v1/admin/*`` 对外是 404，连路由都不存在，
-不会留下任何可探测的攻击面。
+**管理台永远存在**：不再靠环境变量开关（以前没配 ``OMIOCLINK_ADMIN_TOKEN`` 时
+连路由都不注册，配了还得让用户去 .env 里翻那个令牌）。第一次打开 ``/admin``
+时页面要求设置管理员密码，之后用这个密码登录——哈希存在库里
+（``admin_account`` 表，见 ``app.services.admin_account``）。
 
-鉴权用独立的 ``X-Admin-Token`` 头（与用户 JWT 的 ``Authorization`` 分开，避免混淆），
-比较时用 ``hmac.compare_digest`` 做定长比较，避免时序侧信道。
+两种凭证都走 ``Authorization: Bearer``：
+
+* 管理台登录态：``app.core.security.create_admin_token`` 签的 JWT，``scope=admin``，
+  有效期 ``OMIOCLINK_ADMIN_SESSION_TTL_SECONDS``（默认 12 小时）；
+* 旧版 ``X-Admin-Token``：``OMIOCLINK_ADMIN_TOKEN`` 已废弃，只在**还没设置管理员
+  密码**时被接受，设置完立即失效——老部署照原样启动也能平滑迁移过来。
 """
 
 from __future__ import annotations
 
 import hmac
+import logging
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Response, status
 from fastapi.responses import HTMLResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import HubDep, PluginSubscriptionStoreDep, SessionDep, SettingsDep
+from app.api.deps import (
+    CredentialsDep,
+    HubDep,
+    PluginSubscriptionStoreDep,
+    SessionDep,
+    SettingsDep,
+)
 from app.api.serializers import room_response
 from app.core.config import Settings
-from app.core.errors import ConflictError, NotFoundError, UnauthorizedError, ValidationError
-from app.db.models import User
+from app.core.errors import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    UnauthorizedError,
+    ValidationError,
+)
+from app.core.security import (
+    ADMIN_SCOPE,
+    BCRYPT_MAX_BYTES,
+    create_admin_token,
+    decode_access_token,
+    password_fingerprint,
+    verify_password,
+)
+from app.db.models import AdminAccount, User
 from app.schemas import (
     AdminActionResult,
     AdminKickRequest,
+    AdminLoginResponse,
     AdminOverview,
+    AdminPasswordRequest,
     AdminPluginSubscription,
     AdminPluginSubscriptionUpdate,
     AdminRegistrationToggle,
+    AdminSessionStatus,
     AdminUserListResponse,
     AdminUserResponse,
     AdminUserUpdate,
     MemberListResponse,
+    PasswordChangeRequest,
     RegisterRequest,
     RoomListResponse,
 )
-from app.services import accounts
+from app.services import accounts, admin_account
 from app.services import rooms as room_service
 from app.signaling.hub import SignalingHub
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["管理"])
 
@@ -50,19 +83,161 @@ ADMIN_PAGE_PATH = Path(__file__).resolve().parent.parent / "web" / "admin.html"
 ADMIN_LOGO_PATH = Path(__file__).resolve().parent.parent / "web" / "logo.png"
 
 
-async def require_admin_token(
+async def _verify_admin_token(
+    session: AsyncSession, settings: Settings, token: str | None
+) -> bool:
+    """校验管理台登录态令牌：签名 → scope → 口令指纹（改密码即全部失效）。"""
+    if not token:
+        return False
+    payload = decode_access_token(
+        token, secret=settings.jwt_secret, algorithm=settings.jwt_algorithm
+    )
+    if payload is None or payload.get("scope") != ADMIN_SCOPE:
+        return False
+    admin = await admin_account.get_admin(session)
+    if admin is None:
+        return False
+    expected = password_fingerprint(
+        secret=settings.jwt_secret, password_hash=admin.password_hash
+    )
+    return payload.get("pwf") == expected
+
+
+async def require_admin(
+    session: SessionDep,
     settings: SettingsDep,
+    credentials: CredentialsDep = None,
     x_admin_token: Annotated[str | None, Header()] = None,
 ) -> None:
-    expected = (settings.admin_token or "").strip()
-    if not expected:
-        # 正常不会走到这里：未配置令牌时整个 router 都不会注册
-        raise NotFoundError("管理接口未启用", code="admin_disabled")
-    if x_admin_token is None or not hmac.compare_digest(x_admin_token, expected):
+    token = credentials.credentials if credentials is not None else None
+    if await _verify_admin_token(session, settings, token):
+        return
+
+    legacy = (x_admin_token or "").strip()
+    if not legacy:
+        # 没带令牌或令牌过期：前端据此弹「密码登录」框
+        raise UnauthorizedError("请先登录管理台", code="admin_session_invalid")
+
+    expected = settings.legacy_admin_token
+    if expected is None or not hmac.compare_digest(legacy, expected):
         raise UnauthorizedError("管理令牌不正确", code="bad_admin_token")
+    if await admin_account.has_admin(session):
+        # 迁移已经完成：旧钥匙立刻作废（只作过渡用，不长期养两套凭证）
+        raise UnauthorizedError(
+            "旧的管理令牌已停用，请用管理员密码登录", code="admin_token_retired"
+        )
 
 
-AdminDep = Annotated[None, Depends(require_admin_token)]
+AdminDep = Annotated[None, Depends(require_admin)]
+
+def _issue_admin_token(admin: AdminAccount, settings: Settings) -> AdminLoginResponse:
+    secret = settings.jwt_secret
+    token = create_admin_token(
+        secret=secret,
+        algorithm=settings.jwt_algorithm,
+        ttl_seconds=settings.admin_session_ttl_seconds,
+        password_fingerprint=password_fingerprint(
+            secret=secret, password_hash=admin.password_hash
+        ),
+    )
+    return AdminLoginResponse(
+        access_token=token,
+        expires_in=settings.admin_session_ttl_seconds,
+        username=admin_account.ADMIN_NAME,
+    )
+
+
+def _check_password_strength(password: str, settings: Settings) -> None:
+    minimum = settings.password_min_length
+    if len(password) < minimum:
+        raise ValidationError(f"密码至少 {minimum} 位", code="weak_password")
+    # bcrypt 只处理前 72 字节：宁可明确报错，也不静默截断（见 BCRYPT_MAX_BYTES）
+    if len(password.encode("utf-8")) > BCRYPT_MAX_BYTES:
+        raise ValidationError("密码过长（最多 72 字节）", code="password_too_long")
+
+
+@router.get(
+    "/session",
+    response_model=AdminSessionStatus,
+    summary="管理台状态（要不要设置密码 / 要不要登录）",
+)
+async def session_status(
+    session: SessionDep, settings: SettingsDep, credentials: CredentialsDep = None
+) -> AdminSessionStatus:
+    initialized = await admin_account.has_admin(session)
+    token = credentials.credentials if credentials is not None else None
+    authenticated = initialized and await _verify_admin_token(session, settings, token)
+    return AdminSessionStatus(
+        initialized=initialized,
+        authenticated=authenticated,
+        legacy_token_configured=settings.legacy_admin_token is not None,
+        password_min_length=settings.password_min_length,
+        username=admin_account.ADMIN_NAME if authenticated else None,
+    )
+
+
+@router.post(
+    "/setup",
+    response_model=AdminLoginResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="首次设置管理员密码（只在还没设置时可用）",
+)
+async def setup_admin(
+    payload: AdminPasswordRequest, session: SessionDep, settings: SettingsDep
+) -> AdminLoginResponse:
+    if await admin_account.has_admin(session):
+        raise ConflictError("管理员密码已经设置过了，请直接登录", code="admin_already_initialized")
+    _check_password_strength(payload.password, settings)
+    try:
+        admin = await admin_account.set_password(session, payload.password)
+    except IntegrityError as exc:
+        # 两个人同时点「设置」：主键冲突的那一方落到这里，结果是一致的
+        raise ConflictError(
+            "管理员密码已经设置过了，请直接登录", code="admin_already_initialized"
+        ) from exc
+    logger.warning("管理台管理员密码已设置（哈希存进 admin_account 表）")
+    if settings.legacy_admin_token is not None:
+        logger.warning("OMIOCLINK_ADMIN_TOKEN 从现在起不再被接受，建议从 .env 里删掉")
+    return _issue_admin_token(admin, settings)
+
+
+@router.post("/login", response_model=AdminLoginResponse, summary="管理员登录")
+async def login(
+    payload: AdminPasswordRequest, session: SessionDep, settings: SettingsDep
+) -> AdminLoginResponse:
+    if not await admin_account.has_admin(session):
+        raise ConflictError("还没有设置管理员密码，请先设置", code="admin_not_initialized")
+    admin = await admin_account.authenticate(session, payload.password)
+    if admin is None:
+        raise UnauthorizedError("管理员密码不正确", code="bad_admin_password")
+    return _issue_admin_token(admin, settings)
+
+
+@router.post(
+    "/password",
+    response_model=AdminLoginResponse,
+    summary="修改管理员密码（其他设备的登录态立即失效）",
+)
+async def change_password(
+    payload: PasswordChangeRequest,
+    session: SessionDep,
+    settings: SettingsDep,
+    _: AdminDep,
+) -> AdminLoginResponse:
+    admin = await admin_account.get_admin(session)
+    if admin is None:  # pragma: no cover - require_admin 已经确认管理员存在
+        raise UnauthorizedError("请先设置管理员密码", code="admin_not_initialized")
+    # 用 403 而不是 401：401 会被前端当作「登录态失效」直接弹回登录框，
+    # 而这里只是表单里的当前密码填错了
+    if not verify_password(payload.current_password, admin.password_hash):
+        raise ForbiddenError("当前密码不正确", code="bad_current_password")
+    if payload.new_password == payload.current_password:
+        raise ValidationError("新密码不能与当前密码相同", code="password_unchanged")
+    _check_password_strength(payload.new_password, settings)
+    admin = await admin_account.set_password(session, payload.new_password)
+    logger.warning("管理台管理员密码已修改：此前签发的管理台令牌全部失效")
+    # 口令指纹变了 → 别的设备立刻掉线；这台设备换一张新令牌，不用重新登录
+    return _issue_admin_token(admin, settings)
 
 
 async def _build_overview(

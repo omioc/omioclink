@@ -1,7 +1,7 @@
 # 部署用：只拉 Docker Hub 上的镜像，不构建，也不需要本机装 Python 依赖。
 #
 #   cd deploy
-#   cp .env.example .env                  # 至少填 OMIOCLINK_JWT_SECRET（openssl rand -hex 32）
+#   cp .env.example .env                  # 都能不填：JWT 密钥由服务端自动生成并持久化
 #   docker compose up -d                  # 本地没有镜像时会自动 pull
 #   docker compose --profile stun up -d   # 连自建 STUN 一起起（Linux 专用，host 网络）
 #   docker compose pull && docker compose up -d   # 升级到最新的 latest
@@ -22,8 +22,9 @@ services:
     image: ${OMIOCLINK_IMAGE:-omioc/omioclink:latest}
     restart: unless-stopped
     environment:
-      # 必填：至少 32 字节（HS256 的最低密钥长度），用 openssl rand -hex 32 生成
-      OMIOCLINK_JWT_SECRET: ${OMIOCLINK_JWT_SECRET:?请在 .env 里设置 OMIOCLINK_JWT_SECRET（openssl rand -hex 32）}
+      # JWT 密钥：留空即由服务端生成一份并写进数据卷（<数据目录>/jwt-secret），重启复用。
+      # 想自己指定就照旧填满 32 字节（HS256 的最低密钥长度）
+      OMIOCLINK_JWT_SECRET: ${OMIOCLINK_JWT_SECRET:-}
       # SQLite 落在挂载卷里；注意 sqlite URL 的绝对路径是四个斜杠
       OMIOCLINK_DATABASE_URL: sqlite+aiosqlite:////app/data/omioclink.db
       # 数据目录：头像文件放这里（<data_dir>/avatars/），和 SQLite 同一个卷
@@ -32,7 +33,8 @@ services:
       OMIOCLINK_ALLOW_REGISTRATION: ${OMIOCLINK_ALLOW_REGISTRATION:-false}
       # 是否暴露 /docs（Swagger UI）与 /openapi.json（默认关闭）
       OMIOCLINK_DOCS_ENABLED: ${OMIOCLINK_DOCS_ENABLED:-false}
-      # Web 管理页令牌。留空即完全关闭（/admin 与 /api/v1/admin/* 连路由都不存在）
+      # 旧版管理台令牌（已废弃）：留空即可，管理台改为「第一次打开时设置管理员密码」。
+      # 保留这个变量只为老 .env 不报错 —— 设好管理员密码后它就不再被接受
       OMIOCLINK_ADMIN_TOKEN: ${OMIOCLINK_ADMIN_TOKEN:-}
       # 下发给客户端的 STUN 列表（只放 stun:，本项目不使用 TURN）。
       # 默认只用 Cloudflare：stun.l.google.com 在国内基本不可达，配了反而拖慢候选收集。

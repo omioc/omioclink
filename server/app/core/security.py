@@ -9,9 +9,11 @@ import bcrypt
 import jwt
 
 __all__ = [
+    "ADMIN_SCOPE",
     "BCRYPT_MAX_BYTES",
     "PasswordTooLongError",
     "create_access_token",
+    "create_admin_token",
     "decode_access_token",
     "hash_password",
     "password_fingerprint",
@@ -20,6 +22,11 @@ __all__ = [
 
 #: bcrypt 算法本身只处理前 72 字节，超长口令直接拒绝而不是静默截断。
 BCRYPT_MAX_BYTES: Final = 72
+
+#: 管理台令牌的作用域与主体。用户令牌里没有 ``scope``，管理令牌里没有数字 ``sub``，
+#: 两边天然互不通用（见 ``app.api.deps.resolve_token_user`` 与 ``app.api.admin``）。
+ADMIN_SCOPE: Final = "admin"
+ADMIN_SUBJECT: Final = "admin"
 
 
 class PasswordTooLongError(ValueError):
@@ -92,3 +99,30 @@ def decode_access_token(token: str, *, secret: str, algorithm: str) -> dict[str,
     if not isinstance(payload, dict) or "sub" not in payload:
         return None
     return payload
+
+
+def create_admin_token(
+    *,
+    secret: str,
+    algorithm: str,
+    ttl_seconds: int,
+    password_fingerprint: str,
+    now: datetime | None = None,
+) -> str:
+    """管理台登录态令牌。
+
+    与用户令牌用同一个密钥签名，但 ``sub`` 固定为 ``admin``、额外带 ``scope=admin``：
+    * 用户令牌拿去打管理接口 → scope 不匹配，被拒；
+    * 管理令牌拿去打用户接口 → ``sub`` 不是数字，被拒。
+
+    ``pwf`` 与用户令牌同一套机制：改管理员密码后，此前签发的管理令牌立即失效。
+    """
+    issued_at = now or datetime.now(UTC)
+    payload: dict[str, Any] = {
+        "sub": ADMIN_SUBJECT,
+        "scope": ADMIN_SCOPE,
+        "pwf": password_fingerprint,
+        "iat": int(issued_at.timestamp()),
+        "exp": int((issued_at + timedelta(seconds=ttl_seconds)).timestamp()),
+    }
+    return jwt.encode(payload, secret, algorithm=algorithm)

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Union, get_args, get_origin
 
 import pytest
+from pydantic import ValidationError as PydanticValidationError
 
 from app.core.config import Settings
 
@@ -49,7 +50,8 @@ def test_settings_accept_compose_environment(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.cors_origins == ["*"]
     assert settings.allow_registration is False
     assert settings.docs_enabled is False
-    assert settings.admin_enabled is False
+    # 旧版管理令牌没配：管理台照样常开，走「设置管理员密码」那条路
+    assert settings.legacy_admin_token is None
     assert settings.database_url.endswith("/app/data/omioclink.db")
 
 
@@ -142,3 +144,28 @@ def test_every_field_is_settable_from_env(monkeypatch: pytest.MonkeyPatch) -> No
     # 万一将来新增了认不出类型的字段，提醒补进 _sample_env_value
     uncovered = set(Settings.model_fields) - covered
     assert not uncovered, f"这些字段没有覆盖到 env 解析：{sorted(uncovered)}"
+
+
+def test_jwt_secret_may_be_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+    """不填 JWT 密钥不再报错：留空 = 启动时自动生成并落盘（见 ServerSecretStore）。"""
+    monkeypatch.setenv("OMIOCLINK_JWT_SECRET", "")
+    assert Settings().jwt_secret == ""
+
+
+def test_configured_jwt_secret_is_kept_verbatim(monkeypatch: pytest.MonkeyPatch) -> None:
+    """用户明确给了密钥就原样用（首尾空白也不替人裁掉，免得换了密钥还不自知）。"""
+    configured = "  " + "z" * 40 + " "
+    monkeypatch.setenv("OMIOCLINK_JWT_SECRET", configured)
+    assert Settings().jwt_secret == configured
+
+
+def test_short_jwt_secret_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OMIOCLINK_JWT_SECRET", "too-short")
+    with pytest.raises(PydanticValidationError) as info:
+        Settings()
+    assert "至少 32 字节" in str(info.value)
+
+
+def test_legacy_admin_token_blank_counts_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OMIOCLINK_ADMIN_TOKEN", "   ")
+    assert Settings().legacy_admin_token is None

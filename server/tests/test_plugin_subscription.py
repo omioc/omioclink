@@ -22,9 +22,7 @@ from app.services.plugin_subscription import (
     PluginSubscriptionStore,
     subscription_hash,
 )
-from tests.conftest import auth_headers, make_settings, register_user
-
-ADMIN_TOKEN = "test-admin-token-please-change"
+from tests.conftest import admin_login, auth_headers, make_settings, register_user
 
 #: 客户端读取接口
 CLIENT_PATH = "/api/v1/music/plugin-subscription"
@@ -37,15 +35,14 @@ URLS = [
 ]
 
 
-def admin_headers(token: str = ADMIN_TOKEN) -> dict[str, str]:
-    return {"X-Admin-Token": token}
+def admin_headers(client: TestClient) -> dict[str, str]:
+    """管理接口要的是管理员登录态：先设密码再登录（见 tests.conftest.admin_login）。"""
+    return admin_login(client)
 
 
 @contextmanager
-def running_client(
-    tmp_path: Path, *, admin_token: str | None = ADMIN_TOKEN
-) -> Iterator[TestClient]:
-    app = create_app(make_settings(tmp_path, admin_token=admin_token))
+def running_client(tmp_path: Path) -> Iterator[TestClient]:
+    app = create_app(make_settings(tmp_path))
     with TestClient(app) as client:
         yield client
 
@@ -202,7 +199,7 @@ def test_client_endpoint_returns_saved_urls_and_stable_hash(tmp_path: Path) -> N
         token, _ = register_user(client, "alice")
         headers = auth_headers(token)
 
-        saved = client.put(ADMIN_PATH, json={"urls": URLS}, headers=admin_headers())
+        saved = client.put(ADMIN_PATH, json={"urls": URLS}, headers=admin_headers(client))
         assert saved.status_code == 200
         assert saved.json() == {"urls": URLS}
 
@@ -212,7 +209,7 @@ def test_client_endpoint_returns_saved_urls_and_stable_hash(tmp_path: Path) -> N
         assert client.get(CLIENT_PATH, headers=headers).json() == first
 
         # 列表变了，hash 跟着变
-        client.put(ADMIN_PATH, json={"urls": URLS[:1]}, headers=admin_headers())
+        client.put(ADMIN_PATH, json={"urls": URLS[:1]}, headers=admin_headers(client))
         changed = client.get(CLIENT_PATH, headers=headers).json()
         assert changed["urls"] == URLS[:1]
         assert changed["hash"] == subscription_hash(URLS[:1])
@@ -222,49 +219,52 @@ def test_client_endpoint_returns_saved_urls_and_stable_hash(tmp_path: Path) -> N
 # --------------------------------------------------------------------------- #
 # 管理接口
 # --------------------------------------------------------------------------- #
-def test_admin_endpoints_need_admin_token(tmp_path: Path) -> None:
+def test_admin_endpoints_need_admin_session(tmp_path: Path) -> None:
     with running_client(tmp_path) as client:
         assert client.get(ADMIN_PATH).status_code == 401
         assert client.put(ADMIN_PATH, json={"urls": []}).status_code == 401
         assert (
-            client.put(ADMIN_PATH, json={"urls": []}, headers=admin_headers("nope")).status_code
+            client.put(ADMIN_PATH, json={"urls": []}, headers={"Authorization": "Bearer nope"}).status_code
             == 401
         )
 
-        # 普通登录用户（不是管理员）同样进不来：管理鉴权只看 X-Admin-Token
+        # 普通登录用户（不是管理员）同样进不来：管理鉴权只看管理员登录态
         token, _ = register_user(client, "alice")
         assert client.get(ADMIN_PATH, headers=auth_headers(token)).status_code == 401
         assert (
-            client.put(ADMIN_PATH, json={"urls": []}, headers=auth_headers(token)).status_code == 401
+            client.put(ADMIN_PATH, json={"urls": []}, headers=auth_headers(token)).status_code
+            == 401
         )
 
 
-def test_admin_endpoints_absent_without_admin_token(tmp_path: Path) -> None:
-    with running_client(tmp_path, admin_token=None) as client:
-        assert client.get(ADMIN_PATH, headers=admin_headers()).status_code == 404
-        assert client.put(ADMIN_PATH, json={"urls": URLS}, headers=admin_headers()).status_code == 404
+def test_admin_endpoints_work_without_any_token_config(tmp_path: Path) -> None:
+    """管理台常开：不配任何管理令牌也能用（登录一次即可）。"""
+    with running_client(tmp_path) as client:
+        headers = admin_headers(client)
+        assert client.put(ADMIN_PATH, json={"urls": URLS}, headers=headers).status_code == 200
+        assert client.get(ADMIN_PATH, headers=headers).json() == {"urls": URLS}
 
 
 def test_admin_get_returns_empty_before_configured(tmp_path: Path) -> None:
     with running_client(tmp_path) as client:
-        body = client.get(ADMIN_PATH, headers=admin_headers()).json()
+        body = client.get(ADMIN_PATH, headers=admin_headers(client)).json()
         assert body == {"urls": []}
 
 
 def test_admin_put_then_get_is_consistent(tmp_path: Path) -> None:
     with running_client(tmp_path) as client:
-        saved = client.put(ADMIN_PATH, json={"urls": URLS}, headers=admin_headers())
+        saved = client.put(ADMIN_PATH, json={"urls": URLS}, headers=admin_headers(client))
         assert saved.status_code == 200
         assert saved.json() == {"urls": URLS}
 
-        assert client.get(ADMIN_PATH, headers=admin_headers()).json() == {"urls": URLS}
+        assert client.get(ADMIN_PATH, headers=admin_headers(client)).json() == {"urls": URLS}
 
         # 顺序被保留、空列表可以清空
         reversed_urls = list(reversed(URLS))
         assert client.put(
-            ADMIN_PATH, json={"urls": reversed_urls}, headers=admin_headers()
+            ADMIN_PATH, json={"urls": reversed_urls}, headers=admin_headers(client)
         ).json() == {"urls": reversed_urls}
-        assert client.put(ADMIN_PATH, json={"urls": []}, headers=admin_headers()).json() == {
+        assert client.put(ADMIN_PATH, json={"urls": []}, headers=admin_headers(client)).json() == {
             "urls": []
         }
 
@@ -279,20 +279,20 @@ def test_admin_put_then_get_is_consistent(tmp_path: Path) -> None:
 )
 def test_admin_put_rejects_invalid_url(tmp_path: Path, bad: str) -> None:
     with running_client(tmp_path) as client:
-        response = client.put(ADMIN_PATH, json={"urls": [bad]}, headers=admin_headers())
+        response = client.put(ADMIN_PATH, json={"urls": [bad]}, headers=admin_headers(client))
 
         assert 400 <= response.status_code < 500
         body = response.json()
         assert body["code"] == "plugin_subscription_invalid"
         assert body["message"]
         # 校验失败不能把已有配置改坏
-        assert client.get(ADMIN_PATH, headers=admin_headers()).json() == {"urls": []}
+        assert client.get(ADMIN_PATH, headers=admin_headers(client)).json() == {"urls": []}
 
 
 def test_admin_put_rejects_too_many_urls(tmp_path: Path) -> None:
     urls = [f"https://example.com/{index}.json" for index in range(MAX_SUBSCRIPTIONS + 1)]
     with running_client(tmp_path) as client:
-        response = client.put(ADMIN_PATH, json={"urls": urls}, headers=admin_headers())
+        response = client.put(ADMIN_PATH, json={"urls": urls}, headers=admin_headers(client))
 
         assert 400 <= response.status_code < 500
         assert response.json()["code"] == "plugin_subscription_invalid"
@@ -301,7 +301,7 @@ def test_admin_put_rejects_too_many_urls(tmp_path: Path) -> None:
 def test_subscription_survives_restart(tmp_path: Path) -> None:
     """配置落盘：换一个应用实例（等价于重启进程）仍然读得到。"""
     with running_client(tmp_path) as client:
-        client.put(ADMIN_PATH, json={"urls": URLS}, headers=admin_headers())
+        client.put(ADMIN_PATH, json={"urls": URLS}, headers=admin_headers(client))
 
     with running_client(tmp_path) as client:
-        assert client.get(ADMIN_PATH, headers=admin_headers()).json() == {"urls": URLS}
+        assert client.get(ADMIN_PATH, headers=admin_headers(client)).json() == {"urls": URLS}

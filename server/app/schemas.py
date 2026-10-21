@@ -14,10 +14,13 @@ from app.signaling.protocol import MemberInfo
 __all__ = [
     "AdminActionResult",
     "AdminKickRequest",
+    "AdminLoginResponse",
     "AdminOverview",
+    "AdminPasswordRequest",
     "AdminPluginSubscription",
     "AdminPluginSubscriptionUpdate",
     "AdminRegistrationToggle",
+    "AdminSessionStatus",
     "AdminUserListResponse",
     "AdminUserResponse",
     "AdminUserUpdate",
@@ -238,6 +241,36 @@ class AdminKickRequest(_Camel):
 
 class AdminRegistrationToggle(_Camel):
     allow: bool
+
+
+class AdminSessionStatus(_Camel):
+    """管理台首屏状态：页面据此决定弹哪个框（设置密码 / 密码登录 / 直接进）。
+
+    ``legacyTokenConfigured`` 只为平滑迁移：老部署的 ``OMIOCLINK_ADMIN_TOKEN``
+    还能用一段时间，页面上要提示「设完密码它就作废了」。
+    """
+
+    initialized: bool
+    authenticated: bool = False
+    legacy_token_configured: bool = Field(default=False, alias="legacyTokenConfigured")
+    password_min_length: int = Field(default=8, alias="passwordMinLength")
+    username: str | None = None
+
+
+class AdminPasswordRequest(_Camel):
+    """首次设置密码 / 登录共用：只认一个密码，管理员名固定是 ``admin``。
+
+    长度下限这里只做粗筛，真正的 ``password_min_length`` 在接口里再判一次。
+    """
+
+    password: str = Field(min_length=1, max_length=200)
+
+
+class AdminLoginResponse(_Camel):
+    access_token: str = Field(alias="accessToken")
+    token_type: str = Field(default="bearer", alias="tokenType")
+    expires_in: int = Field(alias="expiresIn")
+    username: str
 
 
 class AdminActionResult(_Camel):

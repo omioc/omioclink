@@ -85,10 +85,14 @@ class Settings(BaseSettings):
     avatar_max_bytes: int = Field(default=2 * 1024 * 1024, ge=8 * 1024)
 
     # ---- 鉴权 ----
-    #: HS256 要求密钥不短于 32 字节（RFC 7518 §3.2），部署时务必覆盖
-    jwt_secret: str = "dev-only-secret-please-override-me-32b"
+    #: HS256 签名密钥。**留空即自动生成**并持久化到 ``<data_dir>/jwt-secret``
+    #: （见 ``app.services.server_secret``）：用户指定了就用用户的，没指定不该逼人现场编一个。
+    #: 指定时仍然要求 ≥32 字节（RFC 7518 §3.2 对 HS256 的最低密钥长度要求）。
+    jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     access_token_ttl_seconds: int = 7 * 24 * 3600
+    #: 管理台登录态有效期。比客户端令牌短得多：它权限最高，而且只在浏览器里用
+    admin_session_ttl_seconds: int = 12 * 3600
     password_min_length: int = 8
     username_pattern: str = r"^[A-Za-z0-9_\-]{3,32}$"
 
@@ -103,9 +107,10 @@ class Settings(BaseSettings):
     #: 默认关闭：它们会把整个 API 面（含注册接口的存在）公开给任何能访问端口的人。
     docs_enabled: bool = False
 
-    # ---- Web 管理页 ----
-    #: 管理页与管理接口的访问令牌。**留空即完全关闭**——/admin 与 /api/v1/admin/*
-    #: 都不会注册，对外连路由都不存在。开启后访问 http://host:port/admin 即可。
+    # ---- Web 管理台 ----
+    #: **已废弃**（只为平滑迁移保留）：旧版拿它当管理页的钥匙，用户还得先去 .env 里找。
+    #: 现在管理台问的是管理员密码（bcrypt 哈希存库里，见 ``app.services.admin_account``）；
+    #: 这个值只在「还没设置管理员密码」时被接受，设置完立即失效。新部署不用再填。
     admin_token: str | None = None
 
     # ---- 房间 ----
@@ -136,6 +141,8 @@ class Settings(BaseSettings):
     @field_validator("jwt_secret")
     @classmethod
     def _check_jwt_secret(cls, value: str) -> str:
+        if not value.strip():
+            return ""  # 留空 = 启动时自动生成并落盘，见 ServerSecretStore
         if len(value.encode("utf-8")) < 32:
             raise ValueError("jwt_secret 至少 32 字节（HS256 的最低密钥长度）")
         return value
@@ -154,9 +161,10 @@ class Settings(BaseSettings):
         return max(self.max_room_capacity, self.default_room_capacity)
 
     @property
-    def admin_enabled(self) -> bool:
-        """管理页是否启用（配置了非空令牌才算启用）。"""
-        return bool(self.admin_token and self.admin_token.strip())
+    def legacy_admin_token(self) -> str | None:
+        """旧版管理令牌（``OMIOCLINK_ADMIN_TOKEN``）：非空才返回，空串当没配。"""
+        token = (self.admin_token or "").strip()
+        return token or None
 
 
 @lru_cache(maxsize=1)

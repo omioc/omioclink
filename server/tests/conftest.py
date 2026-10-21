@@ -11,6 +11,9 @@ from app.main import create_app
 
 PASSWORD = "s3cret-password"
 
+#: 管理台管理员密码（新版用密码登录，不再有自己的令牌环境变量）
+ADMIN_PASSWORD = "admin-s3cret-password"
+
 
 def make_settings(
     tmp_path: Path,
@@ -97,3 +100,18 @@ def create_room(
 
 def ws_url(token: str) -> str:
     return f"/ws?token={token}"
+
+
+def admin_login(client: TestClient, password: str = ADMIN_PASSWORD) -> dict[str, str]:
+    """拿到管理接口用的请求头：没初始化就先设置密码，否则直接登录。
+
+    管理台改成「密码登录」之后，测试里要打 ``/api/v1/admin/*`` 都得先有管理员；
+    同一个 client 上重复调用是安全的（设置接口只在还没设置时可用）。
+    """
+    session = client.get("/api/v1/admin/session").json()
+    if session["initialized"]:
+        response = client.post("/api/v1/admin/login", json={"password": password})
+    else:
+        response = client.post("/api/v1/admin/setup", json={"password": password})
+    assert response.status_code in (200, 201), response.text
+    return {"Authorization": f"Bearer {response.json()['accessToken']}"}

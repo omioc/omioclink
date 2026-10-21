@@ -37,7 +37,7 @@ curl -fsSL https://raw.githubusercontent.com/omioc/omioclink/main/deploy/install
 # 2. 拷贝本项目根目录的 deploy 文件夹至服务器
 cd deploy
 cp .env.example .env
-# 根据环境变量参数填写必要参数，通常只要填写 OMIOCLINK_JWT_SECRET 和 OMIOCLINK_ADMIN_TOKEN
+# 可选：OMIOCLINK_JWT_SECRET 留空由服务端自动生成并持久化；管理台第一次打开时设置管理员密码
 # 若开启 stun，则需要根据实际情况为 OMIOCLINK_ICE_SERVERS 填写值 —— stun:<公网 IP / 域名>:3478
 docker compose --profile stun up -d
 docker ps
@@ -71,8 +71,9 @@ docker save omioc/omioclink:latest -o "omioclink-server-${VERSION}-${ARCH}.tar"
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `OMIOCLINK_JWT_SECRET` | 无（**必填**） | HS256 签名密钥，**至少 32 字节**；不填 compose 会直接拒绝启动 |
-| `OMIOCLINK_ADMIN_TOKEN` | 空 | Web 管理台令牌；**留空即彻底关闭**（`/admin` 与 `/api/v1/admin/*` 对外 404） |
+| `OMIOCLINK_JWT_SECRET` | 空（自动生成） | HS256 签名密钥；**留空即自动生成**并持久化到数据卷的 `jwt-secret` 文件，指定时至少 32 字节 |
+| `OMIOCLINK_ADMIN_TOKEN` | 空 | **已废弃**：管理台改用管理员密码登录；这个值只在还没设置管理员密码时能当过渡令牌用 |
+| `OMIOCLINK_ADMIN_SESSION_TTL_SECONDS` | `43200`（12 小时） | 管理台登录态有效期；改密码会让所有旧登录态立即失效 |
 | `OMIOCLINK_ALLOW_REGISTRATION` | `false` | 是否允许自行注册；也可在管理台临时切换（重启后回到这里的值） |
 | `OMIOCLINK_DOCS_ENABLED` | `false` | 是否暴露 `/docs` 与 `/openapi.json`（会把整个 API 面对外公开） |
 | `OMIOCLINK_ICE_SERVERS` | `stun:stun.cloudflare.com:3478` | 下发给客户端的 STUN 列表，逗号分隔或 JSON 数组；**只填 `stun:`，本项目不支持 TURN** |
@@ -110,8 +111,8 @@ docker save omioc/omioclink:latest -o "omioclink-server-${VERSION}-${ARCH}.tar"
 | `GET /api/v1/health` | 健康检查；Dockerfile 的 `HEALTHCHECK` 也打它，`docker ps` 里的 healthy 就是它说了算 |
 | `GET /api/v1/server/info` | 服务器能力与下发配置（名称、版本、注册开关、房间容量、ICE/STUN 列表） |
 | `WS /ws` | 信令：进房/离房、成员状态、`offer`/`answer`/`candidate` 转发、应用层心跳与时钟同步 |
-| `GET /admin` | Web 管理台，**仅在配置了 `OMIOCLINK_ADMIN_TOKEN` 时注册** |
-| `GET /api/v1/admin/*` | 管理接口（同一个令牌，走请求头 `X-Admin-Token`），令牌为空时连路由都不存在 |
+| `GET /admin` | Web 管理台，**始终可用**：第一次打开时要求设置管理员密码 |
+| `GET /api/v1/admin/*` | 管理接口（`Authorization: Bearer` + 管理员密码换来的令牌）；老部署的 `X-Admin-Token` 只在设置密码前可用 |
 | `GET /docs`、`/openapi.json` | Swagger UI 与 OpenAPI 描述，**仅在 `OMIOCLINK_DOCS_ENABLED=true` 时注册**，不建议开启 |
 
 端口：
@@ -148,8 +149,9 @@ OMIOCLINK_ICE_SERVERS=stun:<你的公网 IP / 域名>:3478
 
 ## 七、Web 管理台
 
-1. `.env` 里给 `OMIOCLINK_ADMIN_TOKEN` 填一个随机串 → `docker compose up -d`
-2. 浏览器打开 `http://<服务器 IP / 域名>:21077/admin`，页面顶部输入令牌（请求头 `X-Admin-Token`）
+1. `docker compose up -d`（**不用配任何密钥**），浏览器打开 `http://<服务器 IP / 域名>:21077/admin`
+2. 第一次打开会弹「设置管理员密码」，设完自动登录；密码只存 bcrypt 哈希（`admin_account` 表）
+3. 再打开就是密码登录；右上角可改密码（改完其他浏览器的登录态立即失效）或退出
 
 四个区块：
 
@@ -158,6 +160,15 @@ OMIOCLINK_ICE_SERVERS=stun:<你的公网 IP / 域名>:3478
 - **账号**：按用户名/昵称搜索，新建、禁用/启用、删除
 - **音乐插件订阅**：维护下发给客户端的插件订阅地址（`.json` 清单或 `.js` 直链），客户端连上服务器后自动同步、
   按 `sha256` 判断是否需要重装
+
+> 密码忘了：删掉库里那一行再重设 ——
+> `docker compose exec server python -c "import sqlite3; c=sqlite3.connect('/app/data/omioclink.db'); c.execute('DELETE FROM admin_account'); c.commit()"`
+
+> **从老版本升级**（`.env` 里还有 `OMIOCLINK_ADMIN_TOKEN`）：页面同样会弹「设置管理员密码」。
+> 设置之前旧令牌仍可用（`X-Admin-Token`，方便过渡期的脚本），设置完立即作废——之后把 `.env` 里那一行删掉即可。
+
+> 管理台是对外开放的：第一次部署完请**尽快**把管理员密码设好，别把「设置密码」的界面晾在公网上。
+> 只想内网用的话，把 `21077` 收到反代后面，或设置 `OMIOCLINK_BIND_ADDR=127.0.0.1`。
 
 > 想开一批账号：`.env` 里 `OMIOCLINK_ALLOW_REGISTRATION=true` → `docker compose up -d` → 客户端自助注册 → 再改回 `false` 并 `up -d`；或者由管理员在控制台建立账号，注册开关保持关闭
 
@@ -177,7 +188,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 21077 --reload
 - 想看接口文档：`OMIOCLINK_DOCS_ENABLED=true uv run uvicorn app.main:app --port 21077 --reload`，
   然后开 `http://127.0.0.1:21077/docs`
 - 冒烟：`curl http://127.0.0.1:21077/api/v1/health`、`curl http://127.0.0.1:21077/api/v1/server/info`
-- 本地默认没有管理台：自己加个 `OMIOCLINK_ADMIN_TOKEN=dev-admin` 再打开 `/admin`
+- 本地管理台：直接开 `http://127.0.0.1:21077/admin`，第一次会要求设置管理员密码（密码存在 `./omioclink.db`）
 
 > 本机跑的时候数据库为 `./omioclink.db`、数据目录是 `./data`（见 `config.py` 默认值），和容器里的 `/app/data` 互不影响
 
@@ -214,7 +225,7 @@ uv run mypy                  # 类型检查（strict）
 | 项 | 值 |
 | --- | --- |
 | 数据卷 | `omioclink_server-data` → `/app/data` |
-| 里面是什么 | `omioclink.db`（SQLite：账号、好友、房间、插件订阅）+ `avatars/` |
+| 里面是什么 | `omioclink.db`（SQLite：账号、好友、房间、插件订阅、管理员密码哈希）+ `avatars/` + `jwt-secret`（服务端自动生成的签名密钥） |
 | 备份 | 把卷打包即可（示例，任选基础镜像）：`docker run --rm -v omioclink_server-data:/data -v "$PWD":/backup alpine tar czf /backup/omioclink-data.tgz -C /data .` |
 | 恢复 | 反着来：`docker run --rm -v omioclink_server-data:/data -v "$PWD":/backup alpine tar xzf /backup/omioclink-data.tgz -C /data` |
 | 升级 | `docker compose pull && docker compose up -d`（离线环境用方式 B 重新导入 tar） |
@@ -228,8 +239,10 @@ uv run mypy                  # 类型检查（strict）
 
 | 现象 | 原因 / 处理 |
 | --- | --- |
-| `docker compose up` 报「请在 .env 里设置 OMIOCLINK_JWT_SECRET」 | 密钥必填且至少 32 字节；`openssl rand -hex 32` 生成后填进 `.env` |
-| `/admin` 打开是 404 | `OMIOCLINK_ADMIN_TOKEN` 为空（等于彻底关闭管理台），填上并重建容器 |
+| `docker compose up` 报「请在 .env 里设置 OMIOCLINK_JWT_SECRET」 | 那是老版本（1.0.5 及更早）。新版留空即可：服务端会自动生成密钥并存到数据卷的 `jwt-secret` |
+| `/admin` 打开要求设置密码 | 正常：管理台第一次使用要设管理员密码（以前是填令牌），设完就能登录 |
+| 管理台密码忘了 | 删掉库里的 `admin_account` 那一行再重设（第七节有命令） |
+| 老 `.env` 里的 `OMIOCLINK_ADMIN_TOKEN` 还能用吗 | 能在「设置管理员密码」之前当过渡令牌用；设置完就作废，之后把那行删掉即可 |
 | `/docs` 打开是 404 | `OMIOCLINK_DOCS_ENABLED=false`（默认值），调试时临时设为 `true` |
 | `docker ps` 里是 `unhealthy` | 多半是数据库/数据目录权限或 JWT 密钥不合规，先看 `docker compose logs server` |
 | 客户端连不上、容器却是 healthy | 放行 TCP `21077`；走域名+反代时确认 `OMIOCLINK_BIND_ADDR` 与反代指向一致；用 `http/ws` 明文要客户端允许明文 |

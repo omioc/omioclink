@@ -75,6 +75,8 @@ async def test_upgrade_adds_missing_column_and_keeps_rows(tmp_path: Path) -> Non
         await database.create_all()
 
         assert "disabled" in _columns(db_path, "users")
+        # 管理台从「环境变量令牌」改成「管理员密码」：新表由 create_all 在旧库上直接建出来
+        assert "password_hash" in _columns(db_path, "admin_account")
         async with database.session() as session:
             rows = (await session.execute(text("SELECT username, disabled FROM users"))).all()
         # 老数据保留，且新列默认值是 0（未禁用）

@@ -31,6 +31,7 @@ from app.db.base import Database
 from app.services.avatars import AvatarStore
 from app.services.directory import SqlRoomDirectory
 from app.services.plugin_subscription import PluginSubscriptionStore
+from app.services.server_secret import ServerSecretStore
 from app.signaling.endpoint import signaling_endpoint
 from app.signaling.hub import SignalingHub
 
@@ -44,7 +45,7 @@ OmiocLink 信令服务器。
 * REST：账号、好友、房间元数据、服务器信息
 * 点歌台：音乐插件订阅地址下发（客户端自己下载安装插件），不代理任何音乐数据
 * WebSocket（信令）：房间进入/离开、成员状态、`offer`/`answer`/`candidate` 转发、心跳
-* 可选：Web 管理页（配置 `OMIOCLINK_ADMIN_TOKEN` 后访问 `/admin`）
+* Web 管理台：`/admin` 常开，首次打开时设置管理员密码，之后用密码登录
 * **不包含任何媒体中继**：`mediaRelay` 恒为 false，服务器不存在 TURN/relay 组件
 """
 
@@ -52,6 +53,15 @@ OmiocLink 信令服务器。
 def create_app(settings: Settings | None = None) -> FastAPI:
     """组装应用。"""
     resolved = settings or get_settings()
+    # JWT 密钥允许留空：没配就用数据目录里持久化的那一份，第一次启动时自动生成并落盘
+    resolved.jwt_secret = ServerSecretStore(resolved.data_dir).ensure_jwt_secret(
+        resolved.jwt_secret
+    )
+    if resolved.legacy_admin_token is not None:
+        logger.warning(
+            "检测到已废弃的 OMIOCLINK_ADMIN_TOKEN：它只在新版管理台「还没设置管理员密码」时"
+            "可用，设完密码即失效，建议从 .env 删掉"
+        )
     database = Database(resolved.database_url)
     hub = SignalingHub(resolved, SqlRoomDirectory(database.session_factory))
     avatars = AvatarStore(resolved.data_dir)
@@ -122,24 +132,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(api_router, prefix=resolved.api_prefix)
     app.add_api_websocket_route(resolved.websocket_path, signaling_endpoint)
 
-    # 管理页与 /api/v1/admin/* 只在配置了管理令牌时才注册：
-    # 未配置时它们连路由都不存在，对外是普通的 404
-    if resolved.admin_enabled:
-        app.include_router(admin_router, prefix=resolved.api_prefix)
-        app.add_api_route(
-            "/admin",
-            serve_admin_page,
-            methods=["GET"],
-            include_in_schema=False,
-            response_class=HTMLResponse,
-        )
-        app.add_api_route(
-            "/admin/logo.png",
-            serve_admin_logo,
-            methods=["GET"],
-            include_in_schema=False,
-            response_class=Response,
-        )
+    # 管理台常开：/admin 与 /api/v1/admin/* 一直都在，第一次打开时由页面引导设置管理员密码
+    app.include_router(admin_router, prefix=resolved.api_prefix)
+    app.add_api_route(
+        "/admin",
+        serve_admin_page,
+        methods=["GET"],
+        include_in_schema=False,
+        response_class=HTMLResponse,
+    )
+    app.add_api_route(
+        "/admin/logo.png",
+        serve_admin_logo,
+        methods=["GET"],
+        include_in_schema=False,
+        response_class=Response,
+    )
     return app
 
 

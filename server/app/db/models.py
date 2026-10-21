@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 __all__ = [
+    "AdminAccount",
     "Friendship",
     "FriendshipStatus",
     "Room",
@@ -105,3 +106,20 @@ class Friendship(Base):
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
 
+
+class AdminAccount(Base):
+    """管理台管理员（单行表，``id`` 恒为 1）。
+
+    独立成一张表而不是给 ``users`` 加 ``is_admin`` 列：管理员不该出现在客户端的
+    账号列表里，也不需要禁用/好友那套语义；新表在旧库上由 ``create_all`` 直接建出来，
+    不用写列升级。
+    """
+
+    __tablename__ = "admin_account"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    password_hash: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

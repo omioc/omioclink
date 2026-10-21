@@ -270,37 +270,6 @@ env_set() { # env_set <键名> <值>：有这行就替换，没有就追加（�
   fi
 }
 
-# 32 字节随机密钥（64 个十六进制字符）。目标机不一定有 openssl，所以要能降级。
-random_secret() {
-  local secret=""
-  if command -v openssl >/dev/null 2>&1; then
-    secret="$(openssl rand -hex 32 2>/dev/null || true)"
-  fi
-  if [ -z "$secret" ] && command -v od >/dev/null 2>&1; then
-    # od 是 coreutils 自带的，busybox 上也有
-    secret="$(head -c 32 /dev/urandom | od -An -v -tx1 | tr -d ' \n')"
-  fi
-  if [ -z "$secret" ]; then
-    secret="$(LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom | head -c 64 || true)"
-  fi
-  if [ "${#secret}" -lt 32 ]; then
-    die "生成随机密钥失败（openssl / od / tr 都不可用或输出异常）"
-  fi
-  printf '%s' "$secret"
-}
-
-ensure_secret() { # ensure_secret <键名> <中文名>
-  local key="$1" label="$2" current secret
-  current="$(env_get "$key")"
-  if [ -n "$current" ]; then
-    log "$label 已有值（$key 前 8 位 ${current:0:8}…），不再重新生成"
-    return 0
-  fi
-  secret="$(random_secret)"
-  env_set "$key" "$secret"
-  log "$label 已生成并写入 $key（前 8 位 ${secret:0:8}…，共 ${#secret} 字符）"
-}
-
 # ----------------------------------------------------------------------------- STUN
 apply_stun() {
   local host stun_uri current
@@ -384,11 +353,7 @@ print_summary() {
   else
     stun_line="未启用（只起信令服务）"
   fi
-  if [ -n "$(env_get OMIOCLINK_ADMIN_TOKEN)" ]; then
-    admin_line="已启用：http://<服务器IP或域名>:${APP_PORT}/admin （令牌见 $ENV_FILE 的 OMIOCLINK_ADMIN_TOKEN）"
-  else
-    admin_line="未启用（OMIOCLINK_ADMIN_TOKEN 为空）"
-  fi
+  admin_line="http://<服务器IP或域名>:${APP_PORT}/admin （第一次打开时设置管理员密码）"
 
   fw_line="TCP ${APP_PORT}"
   if [ "$STUN_MODE" = "on" ]; then
@@ -467,9 +432,17 @@ main() {
   chmod 600 "$ENV_FILE"   # 里面有密钥，别让同机其他用户读到
   log "$ENV_FILE 权限已设为 600"
 
-  step "4/8 生成并写入密钥"
-  ensure_secret OMIOCLINK_JWT_SECRET "JWT 签名密钥"
-  ensure_secret OMIOCLINK_ADMIN_TOKEN "Web 管理台令牌"
+  step "4/8 检查密钥配置"
+  # 两项都不再必填：JWT 密钥留空时服务端自己生成并写进数据卷（重启复用），
+  # 管理台也不再要令牌——第一次打开时设置管理员密码即可
+  if [ -n "$(env_get OMIOCLINK_JWT_SECRET)" ]; then
+    log "JWT 密钥：沿用 .env 里的值"
+  else
+    log "JWT 密钥：留空，服务端会自己生成并保存到数据卷（备份时一起带走）"
+  fi
+  if [ -n "$(env_get OMIOCLINK_ADMIN_TOKEN)" ]; then
+    warn "OMIOCLINK_ADMIN_TOKEN 已废弃：在管理台设置完管理员密码后它就失效了，建议删掉这一行"
+  fi
 
   step "5/8 处理 STUN 配置"
   apply_stun

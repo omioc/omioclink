@@ -16,9 +16,7 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.services.plugin_subscription import subscription_hash
-from tests.conftest import auth_headers, make_settings, register_user
-
-ADMIN_TOKEN = "test-admin-token-please-change"
+from tests.conftest import admin_login, auth_headers, make_settings, register_user
 
 #: 本版本里必须**不存在**的音乐元数据/洛雪音源接口
 REMOVED_PATHS = [
@@ -41,10 +39,8 @@ REMOVED_PATHS = [
 
 
 @contextmanager
-def running_client(
-    tmp_path: Path, *, admin_token: str | None = ADMIN_TOKEN
-) -> Iterator[TestClient]:
-    app = create_app(make_settings(tmp_path, admin_token=admin_token))
+def running_client(tmp_path: Path) -> Iterator[TestClient]:
+    app = create_app(make_settings(tmp_path))
     with TestClient(app) as client:
         yield client
 
@@ -58,7 +54,7 @@ def test_only_plugin_subscription_route_is_registered(tmp_path: Path) -> None:
     用 ``app.openapi()`` 而不是遍历 ``app.routes``：这个 FastAPI 版本把
     ``include_router`` 的结果包成 ``_IncludedRouter``，扁平路径只在 schema 里齐全。
     """
-    app = create_app(make_settings(tmp_path, admin_token=ADMIN_TOKEN))
+    app = create_app(make_settings(tmp_path))
     paths = set(app.openapi()["paths"])
 
     music_paths = {path for path in paths if path.startswith("/api/v1/music")}
@@ -86,7 +82,7 @@ def test_removed_music_endpoints_are_not_writable(tmp_path: Path) -> None:
         for method in ("post", "patch", "delete"):
             response = getattr(client, method)(
                 "/api/v1/admin/music-sources/abc123",
-                headers={"X-Admin-Token": ADMIN_TOKEN},
+                headers=admin_login(client),
             )
             assert response.status_code == 404
 
@@ -110,7 +106,7 @@ def test_plugin_subscription_reflects_admin_configuration(tmp_path: Path) -> Non
         saved = client.put(
             "/api/v1/admin/music/plugin-subscription",
             json={"urls": urls},
-            headers={"X-Admin-Token": ADMIN_TOKEN},
+            headers=admin_login(client),
         )
         assert saved.status_code == 200
 

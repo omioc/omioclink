@@ -85,6 +85,7 @@
   }
   dialog::backdrop { background: rgba(0,0,0,.6); }
   dialog h3 { margin: 0 0 14px; font-size: 15px; }
+  dialog .field input { width: 100%; }
   .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
   .switch input { display: none; }
   .track { width: 42px; height: 24px; border-radius: 999px; background: var(--elevated); position: relative; transition: .15s; }
@@ -96,6 +97,12 @@
   .switch input:checked + .track::after { left: 21px; background: var(--success); }
   .field { display: flex; flex-direction: column; gap: 5px; }
   .field label { font-size: 12px; color: var(--muted); }
+  .form-error { color: var(--danger); font-size: 12px; min-height: 18px; padding-top: 8px; }
+  .warn-box {
+    display: none; margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; font-size: 12px;
+    line-height: 1.7; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.35);
+    color: #fbbf24;
+  }
 </style>
 </head>
 <body>
@@ -103,10 +110,11 @@
   <img class="logo" src="/admin/logo.png" alt="OmiocLink">
   <h1>OmiocLink 管理</h1>
   <span class="dot" id="statusDot"></span>
-  <span class="hint" id="statusText">未验证</span>
+  <span class="hint" id="statusText">未登录</span>
   <div class="spacer"></div>
-  <input type="password" id="token" placeholder="管理令牌 (X-Admin-Token)" style="width: 260px">
-  <button class="primary" id="connectBtn">连接</button>
+  <span class="hint" id="whoami" style="display: none"></span>
+  <button id="changePasswordBtn" style="display: none">修改密码</button>
+  <button id="logoutBtn" style="display: none">退出</button>
 </header>
 
 <main>
@@ -196,11 +204,81 @@
   </div>
 </dialog>
 
+<!-- 首次访问：库里还没有管理员，先让用户设一个密码 -->
+<dialog id="setupDialog">
+  <h3>设置管理员密码</h3>
+  <p class="hint" style="margin: 0 0 14px">
+    这台服务器还没有管理员密码。设置之后用它登录管理台；
+    密码只保存哈希，忘了只能登录服务器清掉数据库里的
+    <span class="mono">admin_account</span> 一行再重新设置。
+  </p>
+  <div class="warn-box" id="legacyHint"></div>
+  <div style="display: grid; gap: 12px">
+    <div class="field">
+      <label id="setupPasswordLabel">密码（至少 8 位）</label>
+      <input type="password" id="setupPassword" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label>再输一次</label>
+      <input type="password" id="setupPassword2" autocomplete="new-password">
+    </div>
+  </div>
+  <div class="form-error" id="setupError"></div>
+  <div class="row" style="justify-content: flex-end">
+    <button class="primary" id="confirmSetup">设置并登录</button>
+  </div>
+</dialog>
+
+<!-- 已设过密码：登录 -->
+<dialog id="loginDialog">
+  <h3>管理员登录</h3>
+  <p class="hint" style="margin: 0 0 14px">输入管理员密码，登录后可以管理账号、房间与音乐插件订阅。</p>
+  <div class="field">
+    <label>管理员密码</label>
+    <input type="password" id="loginPassword" autocomplete="current-password">
+  </div>
+  <div class="form-error" id="loginError"></div>
+  <div class="row" style="justify-content: flex-end">
+    <button class="primary" id="confirmLogin">登录</button>
+  </div>
+</dialog>
+
+<!-- 已登录：改密码 -->
+<dialog id="passwordDialog">
+  <h3>修改管理员密码</h3>
+  <p class="hint" style="margin: 0 0 14px">改完之后其他浏览器上的登录态会立即失效，这台会换一张新令牌。</p>
+  <div style="display: grid; gap: 12px">
+    <div class="field">
+      <label>当前密码</label>
+      <input type="password" id="oldPassword" autocomplete="current-password">
+    </div>
+    <div class="field">
+      <label id="newPasswordLabel">新密码（至少 8 位）</label>
+      <input type="password" id="newPassword2" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label>再输一次</label>
+      <input type="password" id="newPassword3" autocomplete="new-password">
+    </div>
+  </div>
+  <div class="form-error" id="passwordError"></div>
+  <div class="row" style="justify-content: flex-end">
+    <button id="cancelPassword">取消</button>
+    <button class="primary" id="confirmPassword">保存</button>
+  </div>
+</dialog>
+
 <script>
 const API = '/api/v1/admin';
-let token = localStorage.getItem('omioclink.adminToken') || '';
+const TOKEN_KEY = 'omioclink.adminSession';
+// 旧版本（X-Admin-Token 机制）把令牌存在这个键里：升级后统一改走密码登录，直接丢掉
+localStorage.removeItem('omioclink.adminToken');
+
+let token = localStorage.getItem(TOKEN_KEY) || '';
 let currentRoomId = null;
 let timer = null;
+let passwordMinLength = 8;
+let reauthing = false;
 
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
@@ -220,22 +298,151 @@ function setStatus(ok, text) {
   $('statusText').textContent = text;
 }
 
+function setLoggedIn(username) {
+  const on = !!username;
+  $('whoami').style.display = on ? 'inline' : 'none';
+  $('whoami').textContent = on ? ('已登录：' + username) : '';
+  $('changePasswordBtn').style.display = on ? 'inline-block' : 'none';
+  $('logoutBtn').style.display = on ? 'inline-block' : 'none';
+  ['changePasswordBtn', 'logoutBtn'].forEach((id) => {
+    const btn = $(id);
+    btn.disabled = !on;
+  });
+}
+
+function saveToken(value) {
+  token = value || '';
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+
+function stopPolling() {
+  clearInterval(timer);
+  timer = null;
+}
+
+function startPolling() {
+  stopPolling();
+  timer = setInterval(loadAll, 10000);
+}
+
+// 管理接口统一走 Authorization: Bearer；旧版的 X-Admin-Token 已废弃，前端不再发
 async function api(path, options = {}) {
   const res = await fetch(API + path, {
     ...options,
     headers: {
-      'X-Admin-Token': token,
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       ...(options.headers || {}),
     },
   });
-  if (res.status === 401) { setStatus(false, '令牌不正确'); banner('管理令牌不正确'); throw new Error('unauthorized'); }
+  if (res.status === 401) {
+    setStatus(false, '登录已失效');
+    handleUnauthorized('登录已失效，请重新输入管理员密码');
+    throw new Error('unauthorized');
+  }
   if (res.status === 204) return null;
   const body = await res.json().catch(() => null);
   if (!res.ok) { banner(body && body.message ? body.message : ('HTTP ' + res.status)); throw new Error('api'); }
   return body;
 }
 
+// 免鉴权的两个接口（设置密码 / 登录）：密码错了要留在弹窗里提示，不能像 api() 那样跳登录框
+async function postPublic(path, body) {
+  const res = await fetch(API + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = new Error(data && data.message ? data.message : ('HTTP ' + res.status));
+    err.code = data ? data.code : '';
+    throw err;
+  }
+  return data;
+}
+
+function handleUnauthorized(reason) {
+  stopPolling();
+  saveToken('');
+  setLoggedIn(null);
+  if (reason) banner(reason);
+  // 重新问一次服务器：可能是在别的浏览器里刚设过密码，也可能只是登录过期
+  if (!reauthing) boot();
+}
+
+async function boot() {
+  reauthing = true;
+  let status = null;
+  try {
+    const res = await fetch(API + '/session', {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    });
+    status = await res.json();
+  } catch (e) {
+    setStatus(false, '连不上服务器');
+    banner('连不上服务器，请确认服务已经启动');
+    reauthing = false;
+    return;
+  }
+  passwordMinLength = status.passwordMinLength || 8;
+  $('setupPasswordLabel').textContent = '密码（至少 ' + passwordMinLength + ' 位）';
+  $('newPasswordLabel').textContent = '新密码（至少 ' + passwordMinLength + ' 位）';
+  reauthing = false;
+
+  if (!status.initialized) {
+    setStatus(false, '未设置密码');
+    setLoggedIn(null);
+    showSetup(status.legacyTokenConfigured);
+    return;
+  }
+  if (!status.authenticated) {
+    setStatus(false, '未登录');
+    setLoggedIn(null);
+    showLogin();
+    return;
+  }
+  setStatus(true, '已连接');
+  setLoggedIn(status.username || 'admin');
+  await loadAll();
+  startPolling();
+}
+
+function showSetup(legacyConfigured) {
+  const hint = $('legacyHint');
+  if (legacyConfigured) {
+    hint.innerHTML = '检测到旧版管理令牌 <span class="mono">OMIOCLINK_ADMIN_TOKEN</span>：'
+      + '设置管理员密码后它就失效了，建议顺手从 .env 里删掉这一行。';
+    hint.style.display = 'block';
+  } else {
+    hint.style.display = 'none';
+  }
+  $('setupError').textContent = '';
+  $('setupPassword').value = '';
+  $('setupPassword2').value = '';
+  if (!$('setupDialog').open) $('setupDialog').showModal();
+  $('setupPassword').focus();
+}
+
+function showLogin() {
+  $('loginError').textContent = '';
+  $('loginPassword').value = '';
+  if ($('setupDialog').open) $('setupDialog').close();
+  if (!$('loginDialog').open) $('loginDialog').showModal();
+  $('loginPassword').focus();
+}
+
+function afterLogin(result, message) {
+  saveToken(result.accessToken);
+  ['setupDialog', 'loginDialog'].forEach((id) => { if ($(id).open) $(id).close(); });
+  banner(message, true);
+  boot();
+}
+
+// ---------------------------------------------------------------------------
+// 数据加载与渲染（与原版一致，只有鉴权头换了）
+// ---------------------------------------------------------------------------
 async function loadAll() {
   try {
     const [overview, rooms, users, subscription] = await Promise.all([
@@ -430,15 +637,98 @@ function renderUsers(items, total) {
     }));
 }
 
-$('connectBtn').addEventListener('click', async () => {
-  token = $('token').value.trim();
-  localStorage.setItem('omioclink.adminToken', token);
-  banner('');
-  await loadAll();
-  clearInterval(timer);
-  timer = setInterval(loadAll, 10000);
+// ---------------------------------------------------------------------------
+// 登录 / 设置密码 / 改密码
+// ---------------------------------------------------------------------------
+$('confirmSetup').addEventListener('click', async () => {
+  const password = $('setupPassword').value;
+  const again = $('setupPassword2').value;
+  const error = $('setupError');
+  if (password.length < passwordMinLength) {
+    error.textContent = `密码至少 ${passwordMinLength} 位`;
+    return;
+  }
+  if (password !== again) {
+    error.textContent = '两次输入的密码不一致';
+    return;
+  }
+  error.textContent = '';
+  try {
+    const result = await postPublic('/setup', { password });
+    afterLogin(result, '管理员密码已设置，下次打开这个页面用密码登录');
+  } catch (e) {
+    if (e.code === 'admin_already_initialized') { showLogin(); return; }
+    error.textContent = e.message;
+  }
 });
 
+$('confirmLogin').addEventListener('click', async () => {
+  const password = $('loginPassword').value;
+  const error = $('loginError');
+  if (!password) { error.textContent = '请输入管理员密码'; return; }
+  error.textContent = '';
+  try {
+    const result = await postPublic('/login', { password });
+    afterLogin(result, '已登录');
+  } catch (e) {
+    if (e.code === 'admin_not_initialized') { showSetup(false); return; }
+    error.textContent = e.message;
+  }
+});
+
+$('changePasswordBtn').addEventListener('click', () => {
+  $('oldPassword').value = '';
+  $('newPassword2').value = '';
+  $('newPassword3').value = '';
+  $('passwordError').textContent = '';
+  $('passwordDialog').showModal();
+  $('oldPassword').focus();
+});
+$('cancelPassword').addEventListener('click', () => $('passwordDialog').close());
+$('confirmPassword').addEventListener('click', async () => {
+  const currentPassword = $('oldPassword').value;
+  const newPassword = $('newPassword2').value;
+  const error = $('passwordError');
+  if (!currentPassword) { error.textContent = '请输入当前密码'; return; }
+  if (newPassword.length < passwordMinLength) {
+    error.textContent = `新密码至少 ${passwordMinLength} 位`;
+    return;
+  }
+  if (newPassword !== $('newPassword3').value) {
+    error.textContent = '两次输入的新密码不一致';
+    return;
+  }
+  error.textContent = '';
+  try {
+    const result = await api('/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    saveToken(result.accessToken);
+    $('passwordDialog').close();
+    banner('管理员密码已修改，其他浏览器的登录态已失效', true);
+  } catch (e) {
+    error.textContent = e.message === 'api' ? '当前密码不正确或新密码不合法' : e.message;
+  }
+});
+
+$('logoutBtn').addEventListener('click', () => {
+  saveToken('');
+  handleUnauthorized('已退出登录');
+});
+
+// 设置密码 / 登录这两个框必须填完，别让人按 Esc 关掉就以为没救了
+['setupDialog', 'loginDialog'].forEach((id) =>
+  $(id).addEventListener('cancel', (event) => event.preventDefault()));
+
+// 密码框回车 = 点确认
+$('setupPassword2').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('confirmSetup').click(); });
+$('loginPassword').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('confirmLogin').click(); });
+$('newPassword3').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('confirmPassword').click(); });
+
+// ---------------------------------------------------------------------------
+// 其余交互（与原版一致）
+// ---------------------------------------------------------------------------
 $('registrationToggle').addEventListener('change', async (e) => {
   const allow = e.target.checked;
   try {
@@ -485,14 +775,11 @@ $('addSubscriptionBtn').addEventListener('click', () => {
   addSubscriptionRow().querySelector('[data-subscription-input]').focus();
 });
 $('saveSubscriptionsBtn').addEventListener('click', saveSubscriptions);
-// 首屏先给一个空白行（把快照记成空列表），管理员连上之前也能开始填
+// 首屏先给一个空白行（把快照记成空列表），登录之前也能开始填
 subscriptionSnapshot = JSON.stringify([]);
 renderSubscriptions([]);
 
-if (token) {
-  $('token').value = token;
-  loadAll().then(() => { timer = setInterval(loadAll, 10000); });
-}
+boot();
 </script>
 </body>
 </html>
