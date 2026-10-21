@@ -1,8 +1,6 @@
-<p align="center">
-  <img src="client/assets/branding/omioclink.png" width="112" alt="OmiocLink">
-</p>
-
-<h1 align="center">OmiocLink</h1>
+<h1 align="center">
+  <img src="assets/readme/omioclink-round.png" width="64" height="64" valign="middle" alt="OmiocLink"> OmiocLink
+</h1>
 
 <p align="center">
   为小圈子打造的自部署点对点 P2P 通讯应用 —— <b> 一起开黑语音、游戏投屏、听歌观影 </b>
@@ -31,7 +29,7 @@
 
 OmiocLink 是一个**给自己和固定好友使用**的桌面通讯工具，你在一台公网 Linux 小机器上跑一个信令服务，几位朋友装上客户端，就能语音开黑、看同一块屏幕、一起听歌
 
-![ 海报](assets/readme/poster.webp)
+![ 海报](assets/readme/海报.webp)
 
 两部分组成：
 
@@ -55,11 +53,11 @@ OmiocLink 是一个**给自己和固定好友使用**的桌面通讯工具，你
 
 | 房间内 · 屏幕共享 | 点歌台 · 排行榜 | 点歌台 · 热门歌单 |
 | :---: | :---: | :---: |
-| ![房间内 · 屏幕共享](assets/readme/共享屏幕.png) | ![点歌台 · 排行榜](assets/readme/排行榜.png) | ![点歌台 · 热门歌单](assets/readme/热门歌单.png) |
+| ![房间内 · 屏幕共享](assets/readme/共享屏幕.webp) | ![点歌台 · 排行榜](assets/readme/排行榜.webp) | ![点歌台 · 热门歌单](assets/readme/热门歌单.webp) |
 
 | 点歌台 · 歌榜 | 点歌台 · 我喜欢 | 主题与外观 |
 | :---: | :---: | :---: |
-| ![点歌台 · 歌榜](assets/readme/歌榜.png) | ![点歌台 · 我喜欢](assets/readme/我喜欢.png) | ![主题与外观](assets/readme/主题.png) |
+| ![点歌台 · 歌榜](assets/readme/歌榜.webp) | ![点歌台 · 我喜欢](assets/readme/我喜欢.webp) | ![主题与外观](assets/readme/主题.webp) |
 
 ### 2.1 点对点通讯：媒体不经过服务器，也没有任何代理/中继
 
