@@ -43,8 +43,10 @@ class ServerSecretStore:
         优先级：用户配置的值 > 上次生成并落盘的值 > 现场生成一份。
         长度校验在 ``Settings`` 里做（配置值），这里只管「有还是没有」。
         """
-        explicit = (configured or "").strip()
-        if explicit:
+        explicit = configured or ""
+        if explicit.strip():
+            # 用户给了就原样用（长度已由 Settings 校验）：不能在这里 strip，
+            # 否则实际签名用的密钥和用户在 .env 里写的可能不是一个
             return explicit
         stored = self._read()
         if stored is not None:

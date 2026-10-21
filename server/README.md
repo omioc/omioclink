@@ -170,6 +170,10 @@ OMIOCLINK_ICE_SERVERS=stun:<你的公网 IP / 域名>:3478
 > 管理台是对外开放的：第一次部署完请**尽快**把管理员密码设好，别把「设置密码」的界面晾在公网上。
 > 只想内网用的话，把 `21077` 收到反代后面，或设置 `OMIOCLINK_BIND_ADDR=127.0.0.1`。
 
+> 「设置密码 / 登录」这两个接口只接受**同源**页面发来的请求（`Sec-Fetch-Site` + `Origin`/`Host` 双重判断），
+> 免得别的网站借访客浏览器把管理员密码设掉。反代只要别把浏览器的请求变成跨站就能正常用
+> （现代浏览器都带 `Sec-Fetch-Site`，不受 Host 改写影响）。
+
 > 想开一批账号：`.env` 里 `OMIOCLINK_ALLOW_REGISTRATION=true` → `docker compose up -d` → 客户端自助注册 → 再改回 `false` 并 `up -d`；或者由管理员在控制台建立账号，注册开关保持关闭
 
 ---

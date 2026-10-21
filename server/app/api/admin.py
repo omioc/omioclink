@@ -18,9 +18,10 @@ from __future__ import annotations
 import hmac
 import logging
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Final
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, Header, Query, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -119,7 +120,11 @@ async def require_admin(
         raise UnauthorizedError("请先登录管理台", code="admin_session_invalid")
 
     expected = settings.legacy_admin_token
-    if expected is None or not hmac.compare_digest(legacy, expected):
+    # 按字节比：头里的值可能是任意字节，非 ASCII 的 str 直接喂给 compare_digest 会抛 TypeError
+    matched = expected is not None and hmac.compare_digest(
+        legacy.encode("utf-8", "surrogateescape"), expected.encode("utf-8")
+    )
+    if not matched:
         raise UnauthorizedError("管理令牌不正确", code="bad_admin_token")
     if await admin_account.has_admin(session):
         # 迁移已经完成：旧钥匙立刻作废（只作过渡用，不长期养两套凭证）
@@ -129,6 +134,41 @@ async def require_admin(
 
 
 AdminDep = Annotated[None, Depends(require_admin)]
+
+#: 浏览器自己填的 Sec-Fetch-Site：出现这两个值说明请求来自别的网站
+_BROWSER_CROSS_SITES: Final = frozenset({"cross-site", "same-site"})
+
+
+async def require_same_origin_browser(request: Request) -> None:
+    """给「设置密码 / 登录」这两个免鉴权接口挡一道 CSRF。
+
+    它们不需要任何凭证，而共享的 CORS 允许任意来源（客户端是桌面应用，本来就不走
+    浏览器同源策略）—— 不加这道拦截，任何网站都能借访客的浏览器把管理员密码设掉。
+
+    * ``Sec-Fetch-Site`` 由浏览器填写、JS 改不了：跨站直接拒绝；没有这个头
+      （老浏览器 / curl / 脚本）就继续往下判断；
+    * 再退回对比 ``Origin`` 与 ``Host``：老浏览器带了 Origin 却不是同源，同样拒绝。
+      反代把 Host 改写成上游地址时，现代浏览器仍会带 ``Sec-Fetch-Site``，不受影响。
+    """
+    site = request.headers.get("sec-fetch-site")
+    if site is not None:
+        if site.strip().lower() in _BROWSER_CROSS_SITES:
+            raise ForbiddenError(
+                "不允许从其他网站调用管理接口，请打开 /admin 操作",
+                code="cross_origin_blocked",
+            )
+        return
+    origin = request.headers.get("origin")
+    if not origin:
+        return  # 没有 Origin：脚本 / curl，不受浏览器同源策略约束
+    host = (request.headers.get("host") or "").strip().lower()
+    if not host or urlsplit(origin).netloc.lower() != host:
+        raise ForbiddenError(
+            "不允许从其他网站调用管理接口，请打开 /admin 操作", code="cross_origin_blocked"
+        )
+
+
+SameOriginDep = Annotated[None, Depends(require_same_origin_browser)]
 
 def _issue_admin_token(admin: AdminAccount, settings: Settings) -> AdminLoginResponse:
     secret = settings.jwt_secret
@@ -183,7 +223,10 @@ async def session_status(
     summary="首次设置管理员密码（只在还没设置时可用）",
 )
 async def setup_admin(
-    payload: AdminPasswordRequest, session: SessionDep, settings: SettingsDep
+    payload: AdminPasswordRequest,
+    session: SessionDep,
+    settings: SettingsDep,
+    _: SameOriginDep,
 ) -> AdminLoginResponse:
     if await admin_account.has_admin(session):
         raise ConflictError("管理员密码已经设置过了，请直接登录", code="admin_already_initialized")
@@ -203,7 +246,10 @@ async def setup_admin(
 
 @router.post("/login", response_model=AdminLoginResponse, summary="管理员登录")
 async def login(
-    payload: AdminPasswordRequest, session: SessionDep, settings: SettingsDep
+    payload: AdminPasswordRequest,
+    session: SessionDep,
+    settings: SettingsDep,
+    _: SameOriginDep,
 ) -> AdminLoginResponse:
     if not await admin_account.has_admin(session):
         raise ConflictError("还没有设置管理员密码，请先设置", code="admin_not_initialized")

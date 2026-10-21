@@ -53,15 +53,6 @@ OmiocLink 信令服务器。
 def create_app(settings: Settings | None = None) -> FastAPI:
     """组装应用。"""
     resolved = settings or get_settings()
-    # JWT 密钥允许留空：没配就用数据目录里持久化的那一份，第一次启动时自动生成并落盘
-    resolved.jwt_secret = ServerSecretStore(resolved.data_dir).ensure_jwt_secret(
-        resolved.jwt_secret
-    )
-    if resolved.legacy_admin_token is not None:
-        logger.warning(
-            "检测到已废弃的 OMIOCLINK_ADMIN_TOKEN：它只在新版管理台「还没设置管理员密码」时"
-            "可用，设完密码即失效，建议从 .env 删掉"
-        )
     database = Database(resolved.database_url)
     hub = SignalingHub(resolved, SqlRoomDirectory(database.session_factory))
     avatars = AvatarStore(resolved.data_dir)
@@ -69,6 +60,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # JWT 密钥在这里解析（而不是 import 时）：留空就用数据目录里持久化的那一份，
+        # 第一次启动时自动生成并落盘。放在启动阶段，导入 app.main 不会产生任何写文件副作用
+        resolved.jwt_secret = ServerSecretStore(resolved.data_dir).ensure_jwt_secret(
+            resolved.jwt_secret
+        )
+        if resolved.legacy_admin_token is not None:
+            logger.warning(
+                "检测到已废弃的 OMIOCLINK_ADMIN_TOKEN：它只在新版管理台「还没设置管理员密码」时"
+                "可用，设完密码即失效，建议从 .env 删掉"
+            )
         await database.create_all()
         heartbeat = asyncio.create_task(hub.heartbeat_loop(), name="signaling-heartbeat")
         # 点歌队列推进（1 秒粒度）：duration 可信时按时间切歌，不依赖客户端上报 EOS

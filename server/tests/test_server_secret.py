@@ -56,6 +56,15 @@ def test_configured_secret_wins_and_is_not_written(tmp_path: Path) -> None:
     assert not store.jwt_secret_path.exists()
 
 
+def test_configured_secret_is_used_verbatim(tmp_path: Path) -> None:
+    """用户给的值原样使用：不能 strip，否则实际签名密钥和 .env 里写的不是一个。"""
+    store = _store(tmp_path)
+    configured = "  " + "z" * 40 + " "
+
+    assert store.ensure_jwt_secret(configured) == configured
+    assert not store.jwt_secret_path.exists()
+
+
 @pytest.mark.parametrize("content", ["too-short", "", "   \n"])
 def test_broken_file_is_regenerated(tmp_path: Path, content: str) -> None:
     store = _store(tmp_path)

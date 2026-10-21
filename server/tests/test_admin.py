@@ -172,6 +172,59 @@ def test_setup_twice_conflicts(tmp_path: Path) -> None:
         assert again.json()["code"] == "admin_already_initialized"
 
 
+def test_setup_rejects_cross_site_browser(tmp_path: Path) -> None:
+    """别的网站不能借访客的浏览器把管理员密码设掉（免鉴权接口的 CSRF 兜底）。"""
+    with running_client(tmp_path) as client:
+        blocked = client.post(
+            "/api/v1/admin/setup",
+            json={"password": ADMIN_PASSWORD},
+            headers={"Sec-Fetch-Site": "cross-site"},
+        )
+        assert blocked.status_code == 403
+        assert blocked.json()["code"] == "cross_origin_blocked"
+        assert client.get("/api/v1/admin/session").json()["initialized"] is False
+
+        # 页面自己（同源）当然可以设
+        ok = client.post(
+            "/api/v1/admin/setup",
+            json={"password": ADMIN_PASSWORD},
+            headers={"Sec-Fetch-Site": "same-origin"},
+        )
+        assert ok.status_code == 201
+
+
+def test_setup_rejects_foreign_origin_without_sec_fetch(tmp_path: Path) -> None:
+    """老浏览器不带 Sec-Fetch-Site：退回对比 Origin 与 Host。"""
+    with running_client(tmp_path) as client:
+        blocked = client.post(
+            "/api/v1/admin/setup",
+            json={"password": ADMIN_PASSWORD},
+            headers={"Origin": "http://evil.example"},
+        )
+        assert blocked.status_code == 403
+        assert blocked.json()["code"] == "cross_origin_blocked"
+
+        # 同源（Host 由测试客户端给出，是 testserver）放行
+        ok = client.post(
+            "/api/v1/admin/setup",
+            json={"password": ADMIN_PASSWORD},
+            headers={"Origin": "http://testserver"},
+        )
+        assert ok.status_code == 201
+
+
+def test_login_rejects_cross_site_browser(tmp_path: Path) -> None:
+    with running_client(tmp_path) as client:
+        admin_login(client)
+        blocked = client.post(
+            "/api/v1/admin/login",
+            json={"password": ADMIN_PASSWORD},
+            headers={"Sec-Fetch-Site": "same-site"},
+        )
+        assert blocked.status_code == 403
+        assert blocked.json()["code"] == "cross_origin_blocked"
+
+
 # --------------------------------------------------------------------------- #
 # 登录与管理接口鉴权
 # --------------------------------------------------------------------------- #
@@ -289,6 +342,18 @@ def test_setup_retires_legacy_token(tmp_path: Path) -> None:
 def test_legacy_header_unknown_when_not_configured(tmp_path: Path) -> None:
     with running_client(tmp_path) as client:
         response = client.get("/api/v1/admin/overview", headers=legacy_headers())
+        assert response.status_code == 401
+        assert response.json()["code"] == "bad_admin_token"
+
+
+def test_legacy_token_non_ascii_header_is_rejected_cleanly(tmp_path: Path) -> None:
+    """头里的令牌可能带非 ASCII 字节：必须回 401，而不是让 compare_digest 抛 TypeError。"""
+    with running_client(tmp_path, admin_token=LEGACY_TOKEN) as client:
+        response = client.get(
+            "/api/v1/admin/overview",
+            # httpx 只让 ASCII 的 str 进头部，这里直接给 latin-1 字节，模拟真实客户端
+            headers={b"X-Admin-Token": "admín-tøken-ø".encode("latin-1")},
+        )
         assert response.status_code == 401
         assert response.json()["code"] == "bad_admin_token"
 
