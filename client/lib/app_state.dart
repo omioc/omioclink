@@ -458,8 +458,9 @@ class AppState extends ChangeNotifier {
     await refreshRooms();
     await refreshFriends();
     // 插件订阅也不在这里同步：QuickJS 首次编译要吃掉一份 577KB 的 bundle，
-    // 而大部分会话根本不听歌。真正要听时由 MusicFreeLibrary._ensurePlugins
-    // 触发（进房 warmUp / 打开点歌台 / 设置页的插件卡片）。
+    // 而大部分会话根本不听歌。**登录完成不会碰插件**；真正要听时才由
+    // MusicFreeLibrary._ensurePlugins 触发（打开点歌台 / 点歌台里搜索），
+    // 或者用户在设置页手点「刷新订阅」。
     // 首屏好友偶尔会拿空（刚登录那一下后端还在忙、或者请求抖了一下）：
     // 补两轮，别让用户盯着空列表等 15 秒后的轮询——那之前他也没有刷新入口。
     if (!_disposed && _friends.isEmpty) {
@@ -974,8 +975,9 @@ class AppState extends ChangeNotifier {
       await session.join(roomId: roomId, password: password);
       // 密码是对的：记住它，同一个房间下次直接进
       await _rememberRoomPassword(roomId, password);
-      // 进房成功就在后台把点歌台的数据拉起来（插件、排行榜、热门歌单标签）：
-      // 用户切过去时大概率已经有内容，不用先看一轮转圈。没开音乐的服务器跳过。
+      // 进房只预热音质偏好（本地 SharedPreferences），**不装插件、不拉榜单**：
+      // 插件装载要先在 QuickJS 里编译运行时 bundle，进房付这笔会表现为「一进房就卡」。
+      // 真正的装载等用户点开点歌台（那里有骨架屏）。没开音乐的服务器跳过。
       if (_serverInfo?.musicEnabled ?? false) {
         _music.warmUp();
       }

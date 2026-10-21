@@ -10,6 +10,7 @@ import 'package:quickjs_engine/quickjs_engine.dart';
 
 import '../core/app_log.dart';
 import '../core/app_version.dart';
+import '../core/platform.dart';
 import 'plugin_models.dart';
 import 'plugin_paths.dart';
 
@@ -758,9 +759,17 @@ class MusicFreeHost {
   /// 运行时 bundle 的资产路径（构建期产物，见 tool/build_musicfree_runtime.mjs）。
   static const String bundleAsset = MusicFreeEngine.bundleAsset;
 
-  /// 默认并行度：QuickJS 单线程，想并行编译只能多开运行时；每份都要自己编译
-  /// 一遍 577KB bundle（内存与启动成本都不低），所以默认 2~3 个。
-  static int _defaultPoolSize() => Platform.numberOfProcessors >= 8 ? 3 : 2;
+  /// 默认并行度。
+  ///
+  /// QuickJS 是单线程，想并行编译只能多开运行时；但每份运行时都要自己编译一遍
+  /// 577KB 的 bundle，内存与启动成本都乘上这个数。手机内存远比桌面紧，低端机
+  /// 上 3 份运行时很容易被系统直接杀掉，所以移动端固定 2；桌面上核多的给 3。
+  static int _defaultPoolSize() {
+    if (isMobilePlatform) {
+      return 2;
+    }
+    return Platform.numberOfProcessors >= 8 ? 3 : 2;
+  }
 
   final http.Client _http;
   final PluginPaths _paths;

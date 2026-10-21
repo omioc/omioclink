@@ -137,8 +137,9 @@
 
 ### 3.7 worker 池 + 元数据复用（“最好的形态”）
 
-* **worker 池**：`MusicFreeHost` 现在按需扩充到 2~3 个 worker（`_poolSize`，
-  按核数取），`loadInstalled` 用 3 路并行编译 —— QuickJS 单线程，唯一能并行的
+* **worker 池**：`MusicFreeHost` 按需扩充 worker（`_poolSize`）：**桌面**
+  ≥8 核取 3、否则 2；**移动端固定 2**（手机内存紧，3 份 QuickJS 运行时容易被
+  系统杀掉）。`loadInstalled` 用 3 路并行编译 —— QuickJS 单线程，唯一能并行的
   办法就是多开运行时。串行装载时只会起 1 个，不会平白多占内存。
 * **元数据复用**：每个插件的 `describe` 结果落盘到
   `musicfree-metadata.json`（key = 源码 hash）。启动时
