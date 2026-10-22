@@ -23,6 +23,10 @@
 - `git tag v1.0.3 && git push origin v1.0.3` → Windows/Android 构建、镜像推送、GitHub Release 全自动
   （`.github/workflows/release.yml`）；PR 与 main push 的静态检查+单测在 `.github/workflows/ci.yml`。
 - 发行说明写在 `.github/release-notes/v<版本>.md`，没有就自动用「自上一个 tag 以来的提交列表」。
+- **提交信息与 tag 说明只写「改了什么」**：动了哪个功能、修了哪个 bug、为什么这么改。
+  不要写「发布 1.0.7」「版本统一到 1.0.7」「固定到 1.0.7」这类套话 —— 版本号在 tag
+  和发行说明里已经有了，提交正文再重复一遍等于没写。tag 的说明也一样：总结自上一个
+  tag 以来的改动（功能 / 修复 / 结构调整），而不是一句「发布某版本」。
 
 ## 构建产物落位：一律进 `releases/`
 
