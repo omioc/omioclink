@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -131,6 +132,13 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
 
   final Map<String, MemberInfo> _members = <String, MemberInfo>{};
   final Map<String, PeerLinkState> _linkStates = <String, PeerLinkState>{};
+  /// 聊天消息最多留这么多条。
+  ///
+  /// 为什么不无限留：消息是 P2P 广播、没有服务端兜底，一个房间开一整天就是几千条；
+  /// 而每来一条都要 `notifyListeners` 让整块界面重算。300 条足够翻回半天的上下文，
+  /// 直接丢最旧的比「到点清空」更不容易让人困惑。
+  static const int chatHistoryLimit = 300;
+
   final List<ChatMessage> _chat = <ChatMessage>[];
 
   /// 每个成员的实时电平（自己来自本地电平计，别人来自 P2P presence 广播）。
@@ -167,7 +175,11 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
   bool _speakerEnabled = true;
   bool get speakerEnabled => _speakerEnabled;
 
-  List<ChatMessage> get chat => List.unmodifiable(_chat);
+  /// 最近的聊天消息（最新在末尾）。
+  ///
+  /// 用 [UnmodifiableListView] 而不是 `List.unmodifiable`：后者每次调用都复制一份，
+  /// 而界面每次重建都要读一次——列表越长，这份白复制的代价越明显。
+  List<ChatMessage> get chat => UnmodifiableListView<ChatMessage>(_chat);
 
   /// 成员列表（自己排最前，其余按进房时间）。
   List<RoomMemberView> get members {
@@ -706,7 +718,7 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
         if (message.text.isEmpty) {
           return;
         }
-        _chat.add(message);
+        _appendChat(message);
         notifyListeners();
       case 'presence':
         // 对方在说话时的实时电平（P2P 直发，服务器不参与）
@@ -733,13 +745,21 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
     if (trimmed.isEmpty) {
       return message;
     }
-    _chat.add(message);
+    _appendChat(message);
     final sent = media.broadcastData(jsonEncode(message.toWire()));
     notifyListeners();
     if (sent == 0) {
       AppLog.info('聊天消息暂无已连接的成员，仅本地显示');
     }
     return message;
+  }
+
+  /// 追加一条聊天消息，超出 [chatHistoryLimit] 就把最旧的丢掉。
+  void _appendChat(ChatMessage message) {
+    _chat.add(message);
+    if (_chat.length > chatHistoryLimit) {
+      _chat.removeRange(0, _chat.length - chatHistoryLimit);
+    }
   }
 
   // ------------------------------------------------------------------ 本地控制

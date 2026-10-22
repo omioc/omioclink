@@ -1005,6 +1005,20 @@ void main() {
     expect(session.chat, hasLength(1));
   });
 
+  test('聊天只保留最近若干条，超出的从最旧的丢', () async {
+    await joinRoom(extraMembers: <Map<String, dynamic>>[memberPayload()]);
+
+    final total = RoomSession.chatHistoryLimit + 5;
+    for (var i = 0; i < total; i += 1) {
+      session.sendChat('第 $i 条');
+    }
+
+    // 消息是 P2P 的、没有服务端兜底：不设上限的话开一天就是几千条
+    expect(session.chat, hasLength(RoomSession.chatHistoryLimit));
+    expect(session.chat.first.text, '第 5 条', reason: '最旧的被丢掉了');
+    expect(session.chat.last.text, '第 ${total - 1} 条', reason: '最新的还在末尾');
+  });
+
   test('收到对端数据通道消息（聊天）后追加到消息流', () async {
     await joinRoom();
     final channel = _FakeDataChannel();
