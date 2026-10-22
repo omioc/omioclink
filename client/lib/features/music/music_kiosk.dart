@@ -933,13 +933,9 @@ class _ChartsPaneState extends State<_ChartsPane> {
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                        child: MusicSectionTitle(
-                          text: group.title,
-                          trailing: MusicBadge(
-                            text: musicPlatformLabel(group.platform),
-                            color: context.palette.accent,
-                          ),
-                        ),
+                        // 不贴音源徽标：音源已经由上面那排 tab 标出来了，每行再挂一个
+                        // 「qq / kg」只是重复，还把分组标题挤窄。
+                        child: MusicSectionTitle(text: group.title),
                       ),
                     ),
                     SliverGrid(
