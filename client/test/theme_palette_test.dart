@@ -138,4 +138,22 @@ void main() {
     // 深色那套要能把 Material 的默认浅色也反过来
     expect(AppTheme.data(AppThemePacks.night.palette).brightness, Brightness.dark);
   });
+
+  test('贴壁纸后卡片可以半透，但浮层（下拉菜单 / 弹出菜单）必须是实色', () {
+    // 壁纸下卡片让出透明度（壁纸才透得出来），浮层不能跟着透：
+    // 下拉菜单浮在别的控件之上，透过去就是「玻璃上叠着字」，既花又看不清。
+    for (final pack in AppThemePacks.all) {
+      final palette = pack.palette.withWallpaper();
+      final theme = AppTheme.data(palette);
+      expect(palette.panel.a, lessThan(1), reason: '${pack.name} 卡片应该半透，壁纸才看得见');
+
+      // DropdownButton / DropdownButtonFormField 的菜单底色取 canvasColor
+      expect(theme.canvasColor.a, 1, reason: '${pack.name} 下拉菜单底色不能透');
+      expect(theme.popupMenuTheme.color!.a, 1, reason: '${pack.name} 弹出菜单不能透');
+      final dropdownBg = theme.dropdownMenuTheme.menuStyle!.backgroundColor!.resolve(
+        const <WidgetState>{},
+      )!;
+      expect(dropdownBg.a, 1, reason: '${pack.name} DropdownMenu 底色不能透');
+    }
+  });
 }

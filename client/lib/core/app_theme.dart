@@ -129,12 +129,25 @@ abstract final class AppTheme {
       onError: Colors.white,
     );
 
+    // 浮层（下拉框的菜单、弹出菜单）用的实色。
+    //
+    // 贴了壁纸之后色板会整体让出透明度（见 AppPalette.withWallpaper：卡片 0.86、
+    // 舞台直接 0），壁纸才透得出来；但**浮层不能跟着透**：下拉菜单浮在别的控件
+    // 之上，背后是标题、滑块这些内容，一透就变成「半透明玻璃上叠着字」，既花又
+    // 看不清。这里只把 alpha 拉回 1（RGB 不变），于是有没有壁纸都是同一个实色。
+    //
+    // 为什么非得在主题里改：DropdownButton / DropdownButtonFormField 的菜单底色
+    // 取的是 `Theme.canvasColor`（没有 dropdownColor 时的默认值），而 canvasColor
+    // 原本被设成了 palette.stage —— 壁纸下那个值是全透明的，菜单于是整块透过去。
+    final floatSurface = palette.panelElevated.withValues(alpha: 1);
+
     final base = ThemeData(
       useMaterial3: true,
       brightness: palette.brightness,
       colorScheme: scheme,
       scaffoldBackgroundColor: palette.stage,
-      canvasColor: palette.stage,
+      // 浮层底：不跟壁纸一起半透（见上面的 floatSurface）
+      canvasColor: floatSurface,
       dividerColor: palette.hairline,
       splashFactory: NoSplash.splashFactory,
       // 不用 VisualDensity.compact：它会把按钮可见高度再削 8px，
@@ -344,7 +357,7 @@ abstract final class AppTheme {
         insetPadding: const EdgeInsets.all(24),
       ),
       popupMenuTheme: PopupMenuThemeData(
-        color: palette.panelElevated,
+        color: floatSurface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         shape: RoundedRectangleBorder(
@@ -355,7 +368,7 @@ abstract final class AppTheme {
       ),
       dropdownMenuTheme: DropdownMenuThemeData(
         menuStyle: MenuStyle(
-          backgroundColor: WidgetStatePropertyAll(palette.panelElevated),
+          backgroundColor: WidgetStatePropertyAll(floatSurface),
           surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
           elevation: const WidgetStatePropertyAll(0),
           shape: WidgetStatePropertyAll(
