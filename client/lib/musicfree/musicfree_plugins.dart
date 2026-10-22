@@ -230,6 +230,22 @@ class MusicFreePlugins {
     return entries;
   }
 
+  /// 只把「磁盘上已装插件」的元数据登记进来（读 musicfree-metadata.json），
+  /// **不编译 JS、不起 worker、不 prefetch**。
+  ///
+  /// 为什么单独要这么一条：`loadInstalled()` 会顺带编译「没有元数据」的插件，还在
+  /// 后台 prefetch 一遍——那是同步订阅时才该付的钱。而设置页 / 点歌台只是要把
+  /// 「之前装过的插件」列出来。以前没有任何地方在启动时登记它们，于是重启后第一次
+  /// 进设置页看到的是「还没有安装插件」，必须点一次「刷新订阅」才冒出来。
+  Future<int> restoreInstalled() async {
+    await _loadPrefs();
+    final restored = await host.restoreMetadata();
+    if (restored > 0) {
+      AppLog.info('插件列表从缓存恢复 $restored 个（未编译，按需装载）');
+    }
+    return restored;
+  }
+
   // --------------------------------------------------------------- 本地装载
   /// 扫描本地插件目录并按 MusicFree 的规则装载（hash 去重、失败不阻塞）。
   ///

@@ -247,6 +247,18 @@ isolate 起来了，真正的编译被算进了第一个插件的装载里）。
 
 实现：`MusicFreePlugins.fetchSubscriptionEntries` / `syncSubscription(pickEntries:)` /
 `_installEntries`；弹框是 `features/dialogs.dart` 的 `showPluginPickerDialog`。
+
+### 3.10 启动就登记本地插件（修「首次进设置看不到插件」）
+
+§3.7 说「启动时 `restoreMetadata()` 只登记不编译，插件列表立刻可见」，但那一步
+其实只写在 `MusicFreePlugins.loadInstalled()` 里，而 `loadInstalled()` 只有
+`_loadMusicPlugins()`（点「刷新订阅」/ 进点歌台且没有插件）会调 —— 于是重启后
+第一次打开设置页，看到的是「还没有安装插件」，必须点一次「刷新订阅」才冒出来。
+
+现在 `AppState` 构造时就走 `MusicFreeLibrary.restorePlugins()` →
+`MusicFreePlugins.restoreInstalled()`：只读 `musicfree-metadata.json`、**不编译
+JS、不起 worker、不 prefetch**，读完把列表通知给界面。真正的编译仍然按需发生
+（第一次调用某个音源时）；`loadInstalled()` 保留原职责（同步订阅时补齐 / 编译）。
 ## 4. 还没做的（下一轮）
 
 1. **worker 内部的 `AppLog` 调用**（bundle 编译耗时、卸载失败等）目前只进

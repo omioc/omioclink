@@ -46,6 +46,9 @@ class AppState extends ChangeNotifier {
     unawaited(_micVolume.load());
     // 点歌台发现没有可用插件时（比如首次登录那次还在失败重试中）能主动要一次同步
     _music.requestSync = () => _loadMusicPlugins();
+    // 上次装好的插件列表先从磁盘登记出来（只读 metadata、不编译 JS）：重启后第一次
+    // 进设置页 / 点歌台就能看到它们，而不是空着要等一次「刷新订阅」。
+    unawaited(_restoreMusicPlugins());
     // 「我喜欢」是本机缓存：启动时读一次，点进点歌台之前心形状态就已经是对的
     unawaited(_favorites.load());
   }
@@ -497,6 +500,18 @@ class AppState extends ChangeNotifier {
   /// 失败就让用户自己决定要不要再来一次。
   Future<void> refreshMusicPlugins({bool force = false}) {
     return _loadMusicPlugins(force: force);
+  }
+
+  /// 启动时把「磁盘上已装插件」登记进宿主，再把列表通知给界面。
+  ///
+  /// 只读 `musicfree-metadata.json`（不编译 JS、不起 worker）：这是「重启后第一次
+  /// 进设置页 / 点歌台能看见之前装过的插件」的那一步。以前只有 `_loadMusicPlugins`
+  /// 会调 `loadInstalled()`，于是没点过「刷新订阅」时列表一直是空的。
+  Future<void> _restoreMusicPlugins() async {
+    await _music.restorePlugins();
+    if (!_disposed) {
+      notifyListeners();
+    }
   }
 
   Future<void>? _musicPluginsInflight;

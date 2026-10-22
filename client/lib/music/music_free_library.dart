@@ -75,6 +75,19 @@ class MusicFreeLibrary extends ChangeNotifier {
 
   bool get hasPlugins => plugins.isNotEmpty;
 
+  /// 把「之前装过的插件」从磁盘登记出来（只读元数据、不编译 JS），然后通知界面。
+  ///
+  /// 启动时调一次：设置页 / 点歌台一打开就能看到已有的插件列表，而不是空着等用户
+  /// 点一次「刷新订阅」。真正的编译仍然按需发生（第一次调用某个音源时）。
+  Future<void> restorePlugins() async {
+    try {
+      await _plugins.restoreInstalled();
+    } on Object catch (error) {
+      AppLog.warn('恢复本地插件列表失败', error: error);
+    }
+    notifyListeners();
+  }
+
   bool get canSearch => _service.hasSearchPlugin;
 
   bool _syncing = false;

@@ -542,4 +542,33 @@ void main() {
       reason: '没被选中的旧插件要跟着卸载',
     );
   });
+
+  test('重启后 restoreInstalled 只登记不编译：插件列表立刻可见，worker 不起', () async {
+    await plugins.syncSubscription(urls: <String>['$base/sub.json']);
+    final expected = plugins.plugins.map((plugin) => plugin.hash).toSet();
+    expect(expected, isNotEmpty);
+
+    // 模拟重启：同一份数据目录，全新的 host / store
+    final restartedHost = MusicFreeHost(
+      paths: PluginPaths(root: tempRoot.path),
+      bundleSource: bundle,
+    );
+    addTearDown(restartedHost.dispose);
+    final restarted = MusicFreePlugins(
+      host: restartedHost,
+      paths: PluginPaths(root: tempRoot.path),
+    );
+    // 这就是用户报的那个状态：重启后没人登记，列表是空的 → 设置页「还没有安装插件」
+    expect(restarted.plugins, isEmpty);
+
+    final restored = await restarted.restoreInstalled();
+
+    expect(restored, expected.length);
+    expect(restarted.plugins.map((plugin) => plugin.hash).toSet(), expected);
+    expect(
+      restartedHost.isReady,
+      isFalse,
+      reason: '只是为了显示列表，不该启动 worker / 编译 JS',
+    );
+  });
 }
