@@ -521,4 +521,25 @@ void main() {
         .length;
     expect(leftover, 2, reason: '被取消的插件源码也要删掉');
   });
+
+  test('刷新订阅会卸掉「这条订阅装出来的」旧插件，即使 owned 里没记账（老数据）', () async {
+    // 模拟老版本留下的状态：插件装了，但订阅文件里没有 owned 归属记录。
+    // 这时只靠 owned 卸载会漏，旧插件永远清不掉——所以要同时按 srcUrl 命中清单来认。
+    await plugins.installFromRemote('$base/p1.js');
+    await plugins.installFromRemote('$base/p2.js');
+    expect(plugins.plugins.map((plugin) => plugin.platform).toSet(), <String>{'插件1', '插件2'});
+
+    await plugins.syncSubscription(
+      urls: <String>['$base/big.json'],
+      force: true,
+      // 只留第 3 个（p1 / p2 都被取消）
+      pickEntries: (entries, preselected) async => <String>{entries[2].url},
+    );
+
+    expect(
+      plugins.plugins.map((plugin) => plugin.platform).toSet(),
+      <String>{'插件3'},
+      reason: '没被选中的旧插件要跟着卸载',
+    );
+  });
 }

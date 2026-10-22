@@ -369,10 +369,14 @@ class MusicFreePlugins {
     /// 把「这条订阅要装哪些插件」问清楚：读清单 → 用户选择（或上次的选择 / 默认前 N 个）。
     ///
     /// 返回 null 表示这条订阅这轮跳过（用户取消 / 清单读不出来）：**既不装也不卸**。
-    Future<List<MusicFreeSubscriptionEntry>?> resolve(
-      String url, {
-      required bool ask,
-    }) async {
+    /// 返回值同时带上完整清单：卸载时要靠它认出「哪些已装插件是这条订阅带来的」。
+    Future<
+      ({
+        List<MusicFreeSubscriptionEntry> entries,
+        List<MusicFreeSubscriptionEntry> selected,
+      })?
+    >
+    resolve(String url, {required bool ask}) async {
       List<MusicFreeSubscriptionEntry> entries;
       try {
         entries = await fetchSubscriptionEntries(url);
@@ -383,7 +387,7 @@ class MusicFreePlugins {
       }
       if (entries.isEmpty) {
         failures.add('$url：订阅里没有插件');
-        return const <MusicFreeSubscriptionEntry>[];
+        return (entries: entries, selected: const <MusicFreeSubscriptionEntry>[]);
       }
       final remembered = selection[url];
       final preselected = remembered?.toSet() ?? defaultSelection(entries);
@@ -400,31 +404,39 @@ class MusicFreePlugins {
           .where((entry) => wanted.contains(entry.url))
           .toList(growable: false);
       selection[url] = selected.map((entry) => entry.url).toList(growable: false);
-      return selected;
+      return (entries: entries, selected: selected);
     }
 
     if (force) {
-      // 用户主动点「刷新订阅」：只重装选中的，且只动这条订阅带来的插件。
+      // 用户主动点「刷新订阅」：只装选中的，并且把这条订阅装过的旧的先卸掉。
       // 以前是 uninstallAll() + 全量下载重编译，几十个插件就是几分钟。
       for (final url in clean) {
-        final selected = await resolve(url, ask: true);
-        if (selected == null) {
+        final resolved = await resolve(url, ask: true);
+        if (resolved == null) {
           continue;
         }
-        for (final hash in owned.remove(url) ?? const <String>[]) {
-          final plugin = host.byHash(hash);
-          if (plugin != null) {
-            await _removePlugin(plugin);
-          }
+        // 卸旧的：`owned` 记账（正常情况）+ `srcUrl` 命中清单（老版本没有 owned、
+        // 或插件声明了自己的 srcUrl 时，只靠 owned 会漏，用户的旧插件就永远清不掉）。
+        final entryUrls = resolved.entries.map((entry) => entry.url).toSet();
+        final ownedHashes = owned.remove(url) ?? const <String>[];
+        final stale = host.plugins
+            .where(
+              (plugin) =>
+                  ownedHashes.contains(plugin.hash) ||
+                  entryUrls.contains(plugin.srcUrl),
+            )
+            .toList(growable: false);
+        for (final plugin in stale) {
+          await _removePlugin(plugin);
         }
         reinstalled = true;
-        if (selected.isEmpty) {
+        if (resolved.selected.isEmpty) {
           owned[url] = const <String>[];
           continue;
         }
-        onProgress?.call('正在下载并装载 ${selected.length} 个插件…');
+        onProgress?.call('正在下载并装载 ${resolved.selected.length} 个插件…');
         owned[url] = await _installEntries(
-          selected,
+          resolved.selected,
           onProgress: onProgress,
           failures: failures,
         );
@@ -462,13 +474,13 @@ class MusicFreePlugins {
       // 新增的订阅：没有 UI 选择器（后台同步）时按「上次的选择 / 默认前 N 个」，
       // 绝不因为「没弹框」就把几十个插件全装回来。
       for (final url in clean.where((item) => !saved.urls.contains(item))) {
-        final selected = await resolve(url, ask: false);
-        if (selected == null || selected.isEmpty) {
+        final resolved = await resolve(url, ask: false);
+        if (resolved == null || resolved.selected.isEmpty) {
           continue;
         }
-        onProgress?.call('正在下载并装载 ${selected.length} 个插件…');
+        onProgress?.call('正在下载并装载 ${resolved.selected.length} 个插件…');
         owned[url] = await _installEntries(
-          selected,
+          resolved.selected,
           onProgress: onProgress,
           failures: failures,
         );
