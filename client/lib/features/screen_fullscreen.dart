@@ -205,14 +205,21 @@ class _ScreenFullscreenViewState extends State<ScreenFullscreenView> {
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  // 必须让徽标**撑满**自己分到的那块宽度：只写 Flexible
+                                  // 时它拿的是松约束、按内容宽度绘制，没用掉的部分会变成
+                                  // Row 末尾的空白（RenderFlex 按子节点实际宽度累加），
+                                  // 于是「退出全屏」停在画面中间而不是贴着右边。
                                   Flexible(
-                                    child: _NameBadge(
-                                      text: selfSharing
-                                          ? '你正在共享屏幕 · 本地预览'
-                                          : '$name 正在共享屏幕',
+                                    child: Align(
+                                      alignment:
+                                          AlignmentDirectional.centerStart,
+                                      child: _NameBadge(
+                                        text: selfSharing
+                                            ? '你正在共享屏幕 · 本地预览'
+                                            : '$name 正在共享屏幕',
+                                      ),
                                     ),
                                   ),
-                                  const Spacer(),
                                   _ControlButton(
                                     icon: Icons.fullscreen_exit_rounded,
                                     label: '退出全屏（Esc）',

@@ -159,6 +159,23 @@ void main() {
 
     expect(find.text('小红 正在共享屏幕'), findsOneWidget);
     expect(find.text('退出全屏（Esc）'), findsOneWidget);
+    // 退出按钮要贴着右上角：徽标那一栏是 Flexible 的，它若不撑满自己分到的宽度，
+    // Row 末尾就会漏出一块空白，按钮会停在画面中间（修过一次的 bug，别再退回去）。
+    final exitButton = tester.getRect(
+      find
+          .ancestor(
+            of: find.text('退出全屏（Esc）'),
+            matching: find.byType(InkWell),
+          )
+          .first,
+    );
+    final windowWidth =
+        tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    expect(
+      windowWidth - exitButton.right,
+      lessThan(32),
+      reason: '只留页面内边距，其余全部给画面',
+    );
     expect(find.text('正在接收 小红 的屏幕…'), findsOneWidget);
     expect(find.text('宿主页'), findsNothing, reason: '全屏时盖住整块窗口');
     expect(_fullScreenCalls(windowCalls), <bool>[true], reason: '进入时切系统全屏');
