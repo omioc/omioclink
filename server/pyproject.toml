@@ -1,6 +1,6 @@
 [project]
 name = "omioclink-server"
-version = "1.0.6"
+version = "1.0.7"
 description = "OmiocLink 信令服务器：账号/好友/房间/成员状态 + WebRTC 信令转发（架构上不含任何媒体中继）"
 requires-python = ">=3.12"
 dependencies = [
