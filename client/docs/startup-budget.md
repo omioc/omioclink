@@ -259,6 +259,19 @@ isolate 起来了，真正的编译被算进了第一个插件的装载里）。
 `MusicFreePlugins.restoreInstalled()`：只读 `musicfree-metadata.json`、**不编译
 JS、不起 worker、不 prefetch**，读完把列表通知给界面。真正的编译仍然按需发生
 （第一次调用某个音源时）；`loadInstalled()` 保留原职责（同步订阅时补齐 / 编译）。
+### 3.11 房间列表轮询（15 秒 + 前后台启停）
+
+原来 `AppState` 每 5 秒拉一次 `/rooms`，好友每 15 秒一次。房间里变的只是「谁进了
+谁退了」，不是秒级数据，而这是自部署小机器上最稳定的一笔负载：
+
+* 间隔改成 **15 秒**（`_roomPollInterval`），好友每两个 tick（30 秒）刷一次；
+* 挂一个 `WidgetsBindingObserver`：窗口最小化 / 手机切后台时**停掉轮询**，回前台
+  先补一次再继续（`_onVisibilityChanged`）。以前最小化之后还在按点拉，纯浪费；
+* 通话中不停：「通话时左栏房间列表依然可见」这条约束没变。
+
+进房 / 退房 / 建房之后仍然立即 `refreshRooms()`，所以用户自己的操作不会等到下一个
+tick 才生效；这里省的只是「什么都没发生时的空转」。
+
 ## 4. 还没做的（下一轮）
 
 1. **worker 内部的 `AppLog` 调用**（bundle 编译耗时、卸载失败等）目前只进

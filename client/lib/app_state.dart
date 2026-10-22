@@ -1,6 +1,7 @@
 import 'dart:async';
+import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import 'core/app_log.dart';
 import 'data/api_client.dart';
@@ -162,6 +163,11 @@ class AppState extends ChangeNotifier {
   List<FriendRequest> _friendRequests = const <FriendRequest>[];
 
   Timer? _roomPollTimer;
+
+  /// 前后台观察者：窗口最小化 / 手机切后台时停掉房间列表轮询。
+  _AppVisibilityObserver? _visibilityObserver;
+  bool _foreground = true;
+
   bool _disposed = false;
 
   ServerEndpoint? get endpoint => _endpoint;
@@ -1239,20 +1245,57 @@ class AppState extends ChangeNotifier {
   }
 
   // ------------------------------------------------------------------ 内部
+  /// 房间列表的轮询间隔。
+  ///
+  /// 原来是 5 秒一次。可房间里变的只是「谁进了谁退了」，不是秒级数据；对自部署的小
+  /// 机器来说，这却是最稳定的一笔负载。放到 15 秒；好友在线状态变化更慢，两个 tick
+  /// （30 秒）刷一次。
+  static const Duration _roomPollInterval = Duration(seconds: 15);
+
   void _startRoomPolling() {
     _roomPollTimer?.cancel();
+    _watchVisibility();
+    if (!_foreground) {
+      // 窗口最小化 / 手机切后台：不排 timer，等回到前台时补一次再继续
+      _roomPollTimer = null;
+      return;
+    }
     var tick = 0;
     // 房间列表的成员数是实时状态，靠轻量轮询保持新鲜。
     // 注意：**通话中不能停**——左栏的房间列表在通话时依然可见，
     // 一旦停掉就会看到冻结的人数（也看不到自己刚进的房间）。
-    // 好友在线状态变化慢一些，每 3 个 tick 刷一次，省掉三分之二的请求。
-    _roomPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _roomPollTimer = Timer.periodic(_roomPollInterval, (_) {
       tick += 1;
       unawaited(refreshRooms());
-      if (tick % 3 == 0) {
+      if (tick % 2 == 0) {
         unawaited(refreshFriends());
       }
     });
+  }
+
+  /// 只在第一次调用时挂上前后台观察者。
+  void _watchVisibility() {
+    if (_visibilityObserver != null) {
+      return;
+    }
+    final observer = _AppVisibilityObserver(_onVisibilityChanged);
+    _visibilityObserver = observer;
+    WidgetsBinding.instance.addObserver(observer);
+  }
+
+  void _onVisibilityChanged(bool visible) {
+    if (_disposed || _foreground == visible) {
+      return;
+    }
+    _foreground = visible;
+    if (visible) {
+      // 回前台先补一次：否则用户看到的是切走那一刻的人数
+      unawaited(refreshRooms());
+      _startRoomPolling();
+      return;
+    }
+    _roomPollTimer?.cancel();
+    _roomPollTimer = null;
   }
 
   void _stopRoomPolling() {
@@ -1288,6 +1331,11 @@ class AppState extends ChangeNotifier {
     }
     _disposed = true;
     _stopRoomPolling();
+    final visibility = _visibilityObserver;
+    if (visibility != null) {
+      WidgetsBinding.instance.removeObserver(visibility);
+      _visibilityObserver = null;
+    }
     // 补拉用的定时器在这里收掉：留着会一直吊到下一次会话，
     // 测试收尾时也会被判成「组件树销毁后仍有 Timer 挂着」
     _friendsRetryTimer?.cancel();
@@ -1305,4 +1353,20 @@ class AppState extends ChangeNotifier {
   }
 
   bool get isDisposed => _disposed;
+}
+
+
+/// 监听前后台切换，用来启停房间列表轮询。
+///
+/// 单独抽出来而不是让 `AppState` 直接 `with WidgetsBindingObserver`：AppState 是
+/// ChangeNotifier，混入观察者会让它的类型变复杂，测试里也不好塞假的生命周期。
+class _AppVisibilityObserver with WidgetsBindingObserver {
+  _AppVisibilityObserver(this.onChanged);
+
+  final void Function(bool visible) onChanged;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    onChanged(state == AppLifecycleState.resumed);
+  }
 }
