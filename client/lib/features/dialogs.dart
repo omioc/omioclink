@@ -12,6 +12,7 @@ import '../media/media_engine.dart';
 import '../media/media_models.dart';
 import '../media/share_policy.dart';
 import '../media/stun_probe.dart';
+import '../musicfree/plugin_models.dart';
 import '../widgets/common.dart';
 
 /// 确认对话框。
@@ -949,6 +950,153 @@ class _DiagnosticsBodyState extends State<_DiagnosticsBody> {
         fontSize: 12,
         fontWeight: FontWeight.w600,
       ),
+    ),
+  );
+}
+
+/// 刷新订阅时「要装哪些插件」的选择框。
+///
+/// 订阅里可能有几十个插件：全下载 + 全编译要好几分钟，还会一直占着内存。这里让
+/// 用户先勾，没勾的连请求都不发。
+///
+/// 返回选中的插件地址集合；点「取消」返回 null —— 调用方据此**一个插件都不动**。
+Future<Set<String>?> showPluginPickerDialog(
+  BuildContext context, {
+  required List<MusicFreeSubscriptionEntry> entries,
+  required Set<String> preselected,
+  String? subscriptionUrl,
+}) {
+  // 用副本：勾选过程中不要把调用方的集合改了（它可能就是「上次的选择」）
+  final selected = <String>{...preselected};
+  final source = (subscriptionUrl ?? '').trim();
+
+  return showDialog<Set<String>>(
+    context: context,
+    // 点外面不关：这里一关就是「什么都没选」，容易误触
+    barrierDismissible: false,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, setState) {
+        final allSelected =
+            entries.isNotEmpty && selected.length == entries.length;
+        return AlertDialog(
+          title: const Text(
+            '选择要安装的插件',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          ),
+          content: SizedBox(
+            // 手机上按可用宽收窄；高度也不硬顶，几十项不能把弹框撑出屏幕
+            width: MediaQuery.sizeOf(context).width > 560
+                ? 480
+                : MediaQuery.sizeOf(context).width - 80,
+            height: MediaQuery.sizeOf(context).height > 560
+                ? 420
+                : MediaQuery.sizeOf(context).height * 0.62,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '订阅里共 ${entries.length} 个插件，已选 ${selected.length} 个。'
+                  '没选中的不会下载、也不会编译。',
+                  style: TextStyle(
+                    color: context.palette.textSecondary,
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
+                ),
+                if (source.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      source,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: context.palette.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => setState(() {
+                        if (allSelected) {
+                          selected.clear();
+                        } else {
+                          selected
+                            ..clear()
+                            ..addAll(entries.map((entry) => entry.url));
+                        }
+                      }),
+                      child: Text(allSelected ? '全不选' : '全选'),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '已选 ${selected.length} / ${entries.length}',
+                      style: TextStyle(
+                        color: context.palette.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: entries.length,
+                    itemBuilder: (context, index) {
+                      final entry = entries[index];
+                      return CheckboxListTile(
+                        value: selected.contains(entry.url),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        onChanged: (value) => setState(() {
+                          if (value == true) {
+                            selected.add(entry.url);
+                          } else {
+                            selected.remove(entry.url);
+                          }
+                        }),
+                        title: Text(
+                          entry.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        subtitle: entry.detail.isEmpty
+                            ? null
+                            : Text(
+                                entry.detail,
+                                style: TextStyle(
+                                  color: context.palette.textMuted,
+                                  fontSize: 11,
+                                ),
+                              ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              // 一个都不选等于「把这条订阅的插件全删了」，太容易误触；
+              // 真想清空可以逐个卸载。
+              onPressed: selected.isEmpty
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(<String>{...selected}),
+              child: Text('安装 ${selected.length} 个'),
+            ),
+          ],
+        );
+      },
     ),
   );
 }

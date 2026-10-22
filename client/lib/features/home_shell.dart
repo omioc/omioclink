@@ -16,6 +16,7 @@ import '../data/models.dart';
 import '../media/media_engine.dart';
 import '../media/media_models.dart';
 import '../music/music_free_library.dart';
+import '../musicfree/musicfree_plugins.dart';
 import '../musicfree/musicfree_service.dart';
 import '../musicfree/plugin_models.dart';
 import '../room/room_session.dart';
@@ -2311,9 +2312,34 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
 
   bool get _busy => widget.syncing || library.syncing;
 
-  // 刻意不在 initState 里自动装载插件：装载 = QuickJS 冷启动（编译 577KB bundle）
-  // + 逐个插件编译，全在主 isolate 上同步跑，打开设置页就会整窗卡死几秒。
-  // 装载只由用户显式点卡片上的「刷新订阅」触发（Force），可预期、可取消。
+  // 刻意不在 initState 里自动装载插件：装载要起 worker、把插件源码装进 QuickJS，
+  // 是一次实打实的 CPU/IO 活（字节码缓存之后快了很多，但仍然不该在打开设置页时
+  // 偷偷跑一遍）。装载只由用户显式点「刷新订阅」触发，可预期、可取消。
+
+  @override
+  void initState() {
+    super.initState();
+    // 「刷新订阅」要先把订阅清单摆给用户选，再只装选中的那些。弹框需要
+    // BuildContext，所以由这张卡片挂到 library 上（设置页是唯一入口）。
+    library.pickSubscriptionEntries = _pickEntries;
+  }
+
+  @override
+  void dispose() {
+    library.pickSubscriptionEntries = null;
+    super.dispose();
+  }
+
+  Future<Set<String>?> _pickEntries(
+    List<MusicFreeSubscriptionEntry> entries,
+    Set<String> preselected,
+  ) {
+    return showPluginPickerDialog(
+      context,
+      entries: entries,
+      preselected: preselected,
+    );
+  }
 
   Future<void> _refresh() async {
     final action = widget.onRefreshSubscription;
@@ -2498,7 +2524,9 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
               const SizedBox(height: AppSpacing.sm),
               Text(
                 '插件由服务器下发的订阅地址统一管理；单个插件加载失败不影响其它插件，'
-                '点歌台会把失败原因标出来',
+                '点歌台会把失败原因标出来。点「刷新订阅」会先列出订阅里的插件，'
+                '只装你勾选的（默认前 ${MusicFreePlugins.defaultSelectionSize} 个），'
+                '没勾的不下载也不编译。',
                 style: TextStyle(
                   color: context.palette.textMuted,
                   fontSize: 11,

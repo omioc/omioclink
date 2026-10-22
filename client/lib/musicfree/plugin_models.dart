@@ -219,3 +219,53 @@ class MusicFreeCapabilities {
   static const String importMusicSheet = 'importMusicSheet';
   static const String importMusicItem = 'importMusicItem';
 }
+
+/// 订阅清单里的一条（`.json` 订阅的 `plugins` 数组项）。
+///
+/// 只带「挑选」需要的信息：名字、版本、插件源码地址。**插件源码要等用户确认之后
+/// 才下载**——订阅里动辄几十个插件、几十 MB，先全下下来再让用户挑纯属浪费。
+class MusicFreeSubscriptionEntry {
+  const MusicFreeSubscriptionEntry({
+    required this.url,
+    this.name = '',
+    this.version = '',
+  });
+
+  final String url;
+  final String name;
+  final String version;
+
+  /// 列表里显示的名字：清单没给 `name` 就退回文件名
+  /// （`xxx-source.plugin.v1.9.24.js` 这种，总比一串 URL 好认）。
+  String get label {
+    if (name.isNotEmpty) {
+      return name;
+    }
+    final path = Uri.tryParse(url)?.path ?? url;
+    final parts = path.split('/').where((part) => part.isNotEmpty).toList(growable: false);
+    final file = parts.isEmpty ? '' : parts.last;
+    return file.isEmpty ? url : file;
+  }
+
+  String get detail => version.isEmpty ? '' : 'v$version';
+
+  /// 兼容两种清单写法：`{"url": "...", "name": "..."}` 与裸字符串 URL。
+  static MusicFreeSubscriptionEntry? tryParse(Object? raw) {
+    if (raw is String) {
+      final url = raw.trim();
+      return url.isEmpty ? null : MusicFreeSubscriptionEntry(url: url);
+    }
+    if (raw is! Map) {
+      return null;
+    }
+    final url = raw['url']?.toString().trim() ?? '';
+    if (url.isEmpty) {
+      return null;
+    }
+    return MusicFreeSubscriptionEntry(
+      url: url,
+      name: raw['name']?.toString().trim() ?? '',
+      version: raw['version']?.toString().trim() ?? '',
+    );
+  }
+}

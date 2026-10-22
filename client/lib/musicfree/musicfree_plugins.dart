@@ -6,10 +6,10 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:http/http.dart' as http;
 
 import '../core/app_log.dart';
+import 'musicfree_bytecode.dart';
 import 'musicfree_host.dart';
 import 'plugin_models.dart';
 import 'plugin_paths.dart';
-import 'musicfree_bytecode.dart';
 
 /// 一次订阅同步的结果。
 class SubscriptionSyncResult {
@@ -18,23 +18,39 @@ class SubscriptionSyncResult {
     required this.signature,
     required this.reinstalled,
     required this.failures,
+    this.cancelled = false,
   });
 
   final List<String> urls;
   final String signature;
 
-  /// 是否发生了「清空本地插件 + 全量重装」。
+  /// 是否发生了「按订阅重新安装」。
   final bool reinstalled;
   final List<String> failures;
 
+  /// 用户在「选要装哪些插件」的弹框里点了取消：本地插件一个都没动。
+  final bool cancelled;
+
   bool get hasFailures => failures.isNotEmpty;
 }
+
+/// 刷新订阅时让用户挑要安装哪些插件。
+///
+/// [entries] 是订阅清单（顺序就是清单顺序），[preselected] 是上次的选择
+/// （没有就是默认的前 [MusicFreePlugins.defaultSelectionSize] 个）。
+/// 返回选中的插件地址集合；返回 `null` 表示用户取消 —— 这时**不动任何插件**。
+typedef SubscriptionEntryPicker =
+    Future<Set<String>?> Function(
+      List<MusicFreeSubscriptionEntry> entries,
+      Set<String> preselected,
+    );
 
 class _SubscriptionState {
   const _SubscriptionState({
     this.urls = const <String>[],
     this.signature = '',
     this.owned = const <String, List<String>>{},
+    this.selection = const <String, List<String>>{},
   });
 
   final List<String> urls;
@@ -46,10 +62,17 @@ class _SubscriptionState {
   /// `srcUrl` 是单个插件地址（订阅是 .json 时更是对不上），只能由我们记录归属。
   final Map<String, List<String>> owned;
 
+  /// 订阅地址 → 用户选中的插件源码地址。
+  ///
+  /// 为什么要记住：订阅里可能有几十个插件、用户只挑了少数几个。下次启动或后续
+  /// 同步必须沿用这份选择，否则要么又把几十个装回来（慢），要么把用户挑的删了。
+  final Map<String, List<String>> selection;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
     'urls': urls,
     'signature': signature,
     'owned': owned,
+    'selection': selection,
   };
 }
 
@@ -156,6 +179,57 @@ class MusicFreePlugins {
   Map<String, String> userVariablesOf(String platform) =>
       _prefs.userVariables[platform] ?? const <String, String>{};
 
+  // --------------------------------------------------------------- 订阅清单
+  /// 默认替用户勾选多少个。
+  ///
+  /// 订阅里动辄几十个插件（`heb.../plugins-fastly.json` 有 57 个），全装既慢又吃
+  /// 内存：每个插件要一份 QuickJS 运行时对象 + 一份字节码。6 个大约够「主力音源
+  /// 各一个」，用户还可以在弹框里自己改。
+  static const int defaultSelectionSize = 6;
+
+  /// 默认选择：清单里的前 [defaultSelectionSize] 个。
+  static Set<String> defaultSelection(List<MusicFreeSubscriptionEntry> entries) =>
+      entries.take(defaultSelectionSize).map((entry) => entry.url).toSet();
+
+  /// 只读订阅清单（`.json` 里的 `plugins`），**不下载任何插件源码**。
+  ///
+  /// `.js` 订阅（单插件）也会返回一条，方便「选择」这条链路统一处理。
+  Future<List<MusicFreeSubscriptionEntry>> fetchSubscriptionEntries(
+    String urlLike,
+  ) async {
+    final url = urlLike.trim();
+    if (url.isEmpty) {
+      return const <MusicFreeSubscriptionEntry>[];
+    }
+    final isJson =
+        Uri.tryParse(url)?.path.toLowerCase().endsWith('.json') ??
+        url.endsWith('.json');
+    // `.js` 订阅就是一个插件：直接合成一条，**不要再发一次请求**（否则同一份源码
+    // 要下两遍：一遍当清单、一遍当插件）。真正的下载发生在安装那一步。
+    if (!isJson) {
+      return <MusicFreeSubscriptionEntry>[MusicFreeSubscriptionEntry(url: url)];
+    }
+    final body = await _fetch(_addRandomHash(url));
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(body);
+    } on FormatException catch (error) {
+      throw MusicFreeException('订阅不是合法 JSON：${error.message}');
+    }
+    final list = decoded is Map ? decoded['plugins'] : null;
+    if (list is! List) {
+      throw const MusicFreeException('订阅里没有 plugins 列表');
+    }
+    final entries = <MusicFreeSubscriptionEntry>[];
+    for (final item in list) {
+      final entry = MusicFreeSubscriptionEntry.tryParse(item);
+      if (entry != null) {
+        entries.add(entry);
+      }
+    }
+    return entries;
+  }
+
   // --------------------------------------------------------------- 本地装载
   /// 扫描本地插件目录并按 MusicFree 的规则装载（hash 去重、失败不阻塞）。
   ///
@@ -248,9 +322,15 @@ class MusicFreePlugins {
   // ------------------------------------------------------------- 订阅同步
   /// 同步服务器下发的订阅 URL。
   ///
+  /// * 用户点「刷新订阅」（[force]）→ 先读订阅清单，用 [pickEntries] 让用户挑要装
+  ///   哪些（没给回调就按上次的选择 / 默认前 [defaultSelectionSize] 个），
+  ///   **只下载、只编译选中的那些**；
   /// * URL 列表没变且本地已有插件 → 什么都不做（一条请求都不发）；
-  /// * URL 变了 → 只装新增、只卸被移除的，其余沿用；
+  /// * URL 变了 → 只装新增、只卸被移除的，其余沿用（新增的同样按选择装）；
   /// * 服务器下发空列表 → **保留本地插件**（只提示，不删）。
+  ///
+  /// 以前订阅里 50 多个插件是一次性全下载全编译的，装载要好几分钟；现在清单先给
+  /// 用户看，装哪几个由用户定，其余连请求都不发。
   ///
   /// [onProgress] 每装上一个插件就回调一次，界面据此显示「已装载 x 个」，
   /// 不用等整轮结束才刷新。
@@ -259,6 +339,7 @@ class MusicFreePlugins {
     String? signature,
     bool force = false,
     void Function(String message)? onProgress,
+    SubscriptionEntryPicker? pickEntries,
   }) async {
     await _loadPrefs();
     final clean = urls
@@ -271,63 +352,83 @@ class MusicFreePlugins {
     final saved = await _readSubscription();
     final failures = <String>[];
     var reinstalled = false;
+    var cancelled = false;
 
-    // 只有这三种情况才动磁盘/发请求，其余一条都不发：
-    //   · 用户主动点「刷新订阅」（force）→ 清空重装；
-    //   · 远端下发空列表 → 清空本地；
-    //   · 远端 URL 列表变了 → 只装新增、只卸移除，没变的沿用。
-    //
-    // 以前只要签名变了就 `uninstallAll()` 再全量重装：明明本地插件还能用，也要
-    // 重新下载、重新解析一遍；第一次同步和之后每次订阅微调都在付这笔钱。
     final sameList = _sameList(saved.urls, clean);
     // 「哪条订阅装出了哪些插件」要记下来：删订阅时才能精确卸掉它带来的那些
     // （插件自己的 srcUrl 是单个插件地址，订阅是 .json 时对不上）
     final owned = <String, List<String>>{
       for (final entry in saved.owned.entries) entry.key: List<String>.of(entry.value),
     };
+    // 用户的选择要在这一轮结束前算好并落盘，否则下次启动会按「默认前 6 个」把
+    // 用户没挑的插件又装回来（或者把用户挑的删掉）。
+    final selection = <String, List<String>>{
+      for (final entry in saved.selection.entries) entry.key: List<String>.of(entry.value),
+    };
 
-    Future<void> installTracked(String url) async {
-      final existing = host.plugins.map((plugin) => plugin.hash).toSet();
-      await installFromRemote(url, onProgress: onProgress);
-      owned[url] = host.plugins
-          .map((plugin) => plugin.hash)
-          .where((hash) => !existing.contains(hash))
-          .toList(growable: false);
-      onProgress?.call('已装载 ${host.plugins.length} 个插件');
-    }
-
-    // 并发装订阅：每个插件是「下载 → 在 worker 里编译」两段活，串成一条队列的话
-    // N 个插件就是 N 次下载依次排队 + N 次编译依次排队。限 3 路并发让下载重叠，
-    // 编译仍在 worker 内排队（JS 是单线程，快不了）。
-    Future<void> installAll(List<String> urls) async {
-      final pending = List<String>.of(urls);
-      Future<void> pump() async {
-        while (pending.isNotEmpty) {
-          final url = pending.removeAt(0);
-          try {
-            await installTracked(url);
-            reinstalled = true;
-          } on Object catch (error) {
-            AppLog.warn('订阅安装失败 $url', error: error);
-            failures.add(
-              '$url：${error is MusicFreeException ? error.message : error}',
-            );
-          }
-        }
+    /// 把「这条订阅要装哪些插件」问清楚：读清单 → 用户选择（或上次的选择 / 默认前 N 个）。
+    ///
+    /// 返回 null 表示这条订阅这轮跳过（用户取消 / 清单读不出来）：**既不装也不卸**。
+    Future<List<MusicFreeSubscriptionEntry>?> resolve(
+      String url, {
+      required bool ask,
+    }) async {
+      List<MusicFreeSubscriptionEntry> entries;
+      try {
+        entries = await fetchSubscriptionEntries(url);
+      } on Object catch (error) {
+        AppLog.warn('读取订阅清单失败 $url', error: error);
+        failures.add('$url：${error is MusicFreeException ? error.message : error}');
+        return null;
       }
-
-      final lanes = urls.length < 3 ? urls.length : 3;
-      await Future.wait<void>(<Future<void>>[
-        for (var i = 0; i < lanes; i += 1) pump(),
-      ]);
+      if (entries.isEmpty) {
+        failures.add('$url：订阅里没有插件');
+        return const <MusicFreeSubscriptionEntry>[];
+      }
+      final remembered = selection[url];
+      final preselected = remembered?.toSet() ?? defaultSelection(entries);
+      // 只有一条（纯 `.js` 订阅）就别弹框了：没什么可挑的
+      final wanted = ask && entries.length > 1 && pickEntries != null
+          ? await pickEntries(entries, preselected)
+          : preselected;
+      if (wanted == null) {
+        // 用户取消：这条订阅原样保留，不装也不卸
+        cancelled = true;
+        return null;
+      }
+      final selected = entries
+          .where((entry) => wanted.contains(entry.url))
+          .toList(growable: false);
+      selection[url] = selected.map((entry) => entry.url).toList(growable: false);
+      return selected;
     }
 
     if (force) {
-      await uninstallAll();
-      owned.clear();
-      reinstalled = true;
-      onProgress?.call('正在按订阅重新装载 ${clean.length} 个来源…');
-      await installAll(clean);
+      // 用户主动点「刷新订阅」：只重装选中的，且只动这条订阅带来的插件。
+      // 以前是 uninstallAll() + 全量下载重编译，几十个插件就是几分钟。
+      for (final url in clean) {
+        final selected = await resolve(url, ask: true);
+        if (selected == null) {
+          continue;
+        }
+        for (final hash in owned.remove(url) ?? const <String>[]) {
+          final plugin = host.byHash(hash);
+          if (plugin != null) {
+            await _removePlugin(plugin);
+          }
+        }
+        reinstalled = true;
+        if (selected.isEmpty) {
+          owned[url] = const <String>[];
+          continue;
+        }
+        onProgress?.call('正在下载并装载 ${selected.length} 个插件…');
+        owned[url] = await _installEntries(
+          selected,
+          onProgress: onProgress,
+          failures: failures,
+        );
+      }
     } else if (clean.isEmpty) {
       // 服务器这次没下发订阅（或请求拿到空）：**绝不据此清空本地插件**。
       // 以前这里会 uninstallAll()，一次瞬时的空响应就把用户装好的插件全删了，
@@ -349,6 +450,7 @@ class MusicFreePlugins {
     } else {
       for (final url in saved.urls.where((item) => !clean.contains(item))) {
         final hashes = owned.remove(url) ?? const <String>[];
+        selection.remove(url);
         for (final hash in hashes) {
           final plugin = host.byHash(hash);
           if (plugin != null) {
@@ -357,19 +459,29 @@ class MusicFreePlugins {
         }
         reinstalled = true;
       }
-      await installAll(
-        clean
-            .where((item) => !saved.urls.contains(item))
-            .toList(growable: false),
-      );
+      // 新增的订阅：没有 UI 选择器（后台同步）时按「上次的选择 / 默认前 N 个」，
+      // 绝不因为「没弹框」就把几十个插件全装回来。
+      for (final url in clean.where((item) => !saved.urls.contains(item))) {
+        final selected = await resolve(url, ask: false);
+        if (selected == null || selected.isEmpty) {
+          continue;
+        }
+        onProgress?.call('正在下载并装载 ${selected.length} 个插件…');
+        owned[url] = await _installEntries(
+          selected,
+          onProgress: onProgress,
+          failures: failures,
+        );
+        reinstalled = true;
+      }
     }
-
 
     await _writeSubscription(
       _SubscriptionState(
         urls: clean,
         signature: effectiveSignature,
         owned: owned,
+        selection: selection,
       ),
     );
     return SubscriptionSyncResult(
@@ -377,8 +489,48 @@ class MusicFreePlugins {
       signature: effectiveSignature,
       reinstalled: reinstalled,
       failures: failures,
+      cancelled: cancelled,
     );
   }
+
+  /// 下载并安装选中的清单项，返回「这一批新装出来的 hash」（写进 owned）。
+  ///
+  /// 3 路并发：每个插件是「下载 → 在 worker 里编译」两段活，串成一条队列的话
+  /// N 个插件就是 N 次下载排队 + N 次编译排队。编译仍在 worker 内排队（JS 单线程）。
+  Future<List<String>> _installEntries(
+    List<MusicFreeSubscriptionEntry> entries, {
+    void Function(String message)? onProgress,
+    required List<String> failures,
+  }) async {
+    final before = host.plugins.map((plugin) => plugin.hash).toSet();
+    final pending = entries.toList(growable: true);
+    Future<void> pump() async {
+      while (pending.isNotEmpty) {
+        final entry = pending.removeAt(0);
+        try {
+          final code = await _fetch(_addRandomHash(entry.url));
+          await installCode(code, srcUrl: entry.url, onProgress: onProgress);
+          onProgress?.call('已装载 ${host.plugins.length} 个插件');
+        } on Object catch (error) {
+          // 一个插件坏了不能拖累同一份订阅里的其它插件
+          AppLog.warn('订阅安装失败 ${entry.url}', error: error);
+          failures.add(
+            '${entry.label}：${error is MusicFreeException ? error.message : error}',
+          );
+        }
+      }
+    }
+
+    final lanes = entries.length < 3 ? entries.length : 3;
+    await Future.wait<void>(<Future<void>>[
+      for (var i = 0; i < lanes; i += 1) pump(),
+    ]);
+    return host.plugins
+        .map((plugin) => plugin.hash)
+        .where((hash) => !before.contains(hash))
+        .toList(growable: false);
+  }
+
   /// 安装订阅（`.json` 插件清单或 `.js` 单插件）。
   ///
   /// [onProgress] 转发给每个插件的安装过程，让界面能边装边刷新。
@@ -734,27 +886,32 @@ class MusicFreePlugins {
             .map((item) => item.toString())
             .toList(growable: false);
         // 老版本文件里有 `failed`（自动补装时代留下的），这里忽略：那套逻辑已删
-        final owned = <String, List<String>>{};
-        final rawOwned = decoded['owned'];
-        if (rawOwned is Map) {
-          rawOwned.forEach((key, value) {
-            if (value is List) {
-              owned[key.toString()] = value
-                  .map((item) => item.toString())
-                  .toList(growable: false);
-            }
-          });
-        }
         return _SubscriptionState(
           urls: urls,
           signature: decoded['signature']?.toString() ?? '',
-          owned: owned,
+          owned: _urlHashMap(decoded['owned']),
+          selection: _urlHashMap(decoded['selection']),
         );
       }
     } on Object catch (error) {
       AppLog.warn('读取订阅缓存失败', error: error);
     }
     return const _SubscriptionState();
+  }
+
+  /// `{订阅地址: [字符串]}` 的解析（`owned` 与 `selection` 共用同一套形状）。
+  static Map<String, List<String>> _urlHashMap(Object? raw) {
+    final result = <String, List<String>>{};
+    if (raw is Map) {
+      raw.forEach((key, value) {
+        if (value is List) {
+          result[key.toString()] = value
+              .map((item) => item.toString())
+              .toList(growable: false);
+        }
+      });
+    }
+    return result;
   }
 
   Future<void> _writeSubscription(_SubscriptionState state) async {

@@ -102,6 +102,10 @@ class MusicFreeLibrary extends ChangeNotifier {
     }
   }
 
+  /// 刷新订阅时让用户挑要安装哪些插件（由设置页注入：那里有 BuildContext，
+  /// 能弹框）。为 null 时按「上次的选择 / 默认前 6 个」走，不弹框。
+  SubscriptionEntryPicker? pickSubscriptionEntries;
+
   /// 进房后的轻量预热：只读音质偏好（纯本地 SharedPreferences）。
   ///
   /// **不碰插件、不拉榜单**：插件装载要把 577KB 运行时 bundle 与每份插件源码
@@ -135,6 +139,8 @@ class MusicFreeLibrary extends ChangeNotifier {
         urls: urls,
         signature: hash,
         force: force,
+        // 只有「用户点刷新订阅」才弹框挑插件；启动/进房的后台同步沿用上次的选择。
+        pickEntries: force ? pickSubscriptionEntries : null,
         // 每装上一个就刷一次界面：插件多的时候用户能看到「已装载 3 个」，
         // 而不是盯着一个不动的转圈等整轮结束（以前是全部装完才通知）。
         onProgress: (message) {
@@ -146,7 +152,9 @@ class MusicFreeLibrary extends ChangeNotifier {
         _syncError = result.failures.join('；');
       }
       _syncMessage = result.reinstalled
-          ? '已按订阅重新安装 ${plugins.length} 个插件'
+          ? '已按订阅安装 ${plugins.length} 个插件'
+          : result.cancelled
+          ? '已取消，插件保持不变'
           : '插件已是最新（共 ${plugins.length} 个）';
       // 插件集合真的换了才清空已加载内容；换完立刻把原来在看的那些内容重拉一遍，
       // 免得界面突然停在「插件没有提供排行榜」这种空态上（点第一首歌就会触发一次同步）。

@@ -225,6 +225,28 @@ isolate 起来了，真正的编译被算进了第一个插件的装载里）。
   不需要额外的版本比对。
 * **未验证**：Android 上只验证了 native 库能编出（NDK r28 / arm64 / clang，
   已确认导出三个新符号），没在真机上跑过装载耗时；armv7/x86 也没单独编。
+
+### 3.9 订阅清单按需勾选（不再「清单里有几个就装几个」）
+
+订阅清单里常见的数量是 50+（`hebijunge/musicfree-plugins` 的 `plugins-fastly.json`
+有 57 个）。以前「刷新订阅」= 把清单里每一个都下载 + 编译 + 装载，即使只用两三个
+音源。现在：
+
+* **点「刷新订阅」→ 先只读清单（一次请求），弹框让用户勾**；默认勾清单前
+  `MusicFreePlugins.defaultSelectionSize`（6）个，可全选/全不选，确认后
+  **只下载、只编译、只装载勾中的那些**（没勾的连请求都不发）；
+* 选择记进 `musicfree-subscription.json` 的 `selection`（订阅地址 → 插件地址列表），
+  下次启动/后台同步沿用；再点刷新时把上次的选择作为预设勾选值交回弹框；
+* 刷新时「取消」= 一个插件都不动（`SubscriptionSyncResult.cancelled`）；
+  刷新时选得比上次少 → 被取消的那些会连同源码一起卸载；
+* 弹框由设置页的插件卡片注入（`MusicFreeLibrary.pickSubscriptionEntries`），
+  后台同步（启动 / 进房）没有 UI 就不弹框，按「上次的选择 / 默认前 6 个」走——
+  绝不因为「没弹框」就把几十个插件全装回来；
+* 纯 `.js` 订阅（单插件）不弹框，也不会为「读清单」多发一次请求（以前同一份源码
+  会下两遍）。`force` 的「重装」也只动这条订阅带来的插件，不再 `uninstallAll()`。
+
+实现：`MusicFreePlugins.fetchSubscriptionEntries` / `syncSubscription(pickEntries:)` /
+`_installEntries`；弹框是 `features/dialogs.dart` 的 `showPluginPickerDialog`。
 ## 4. 还没做的（下一轮）
 
 1. **worker 内部的 `AppLog` 调用**（bundle 编译耗时、卸载失败等）目前只进

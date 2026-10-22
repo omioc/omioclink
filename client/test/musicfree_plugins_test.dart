@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:omioclink_client/musicfree/musicfree_host.dart';
 import 'package:omioclink_client/musicfree/musicfree_plugins.dart';
+import 'package:omioclink_client/musicfree/plugin_models.dart';
 import 'package:omioclink_client/musicfree/plugin_paths.dart';
 
 String pluginCode(
@@ -68,7 +69,31 @@ void main() {
         await request.response.close();
       }
 
+      // 8 个插件的订阅清单：用来验证「默认只装前 6 个」与「只装勾选的」
+      final numbered = RegExp(r'^/p(\d)\.js$').firstMatch(path);
+      if (numbered != null) {
+        final index = numbered.group(1)!;
+        await text(
+          pluginCode('插件$index', '1.0.$index', srcUrl: '$base/p$index.js'),
+        );
+        return;
+      }
       switch (path) {
+        case '/big.json':
+          await text(
+            jsonEncode(<String, dynamic>{
+              'plugins': [
+                for (var i = 1; i <= 8; i += 1)
+                  <String, dynamic>{
+                    'name': '插件$i',
+                    'url': '$base/p$i.js',
+                    'version': '1.0.$i',
+                  },
+              ],
+            }),
+            type: 'json',
+          );
+          return;
         case '/a.js':
           await text(
             upgraded
@@ -394,5 +419,106 @@ void main() {
       isFalse,
       reason: '只是登记元数据，不该为它启动 worker / 编译 JS',
     );
+  });
+
+  // ------------------------------------------------- 订阅清单里的「挑着装」
+  test('清单有 8 个插件时默认只装前 6 个，没选中的连请求都不发', () async {
+    final result = await plugins.syncSubscription(urls: <String>['$base/big.json']);
+    expect(result.reinstalled, isTrue);
+    expect(
+      plugins.plugins.map((plugin) => plugin.platform).toSet(),
+      <String>{'插件1', '插件2', '插件3', '插件4', '插件5', '插件6'},
+    );
+    expect(
+      requestedUris.any((uri) => uri.contains('/p7.js') || uri.contains('/p8.js')),
+      isFalse,
+      reason: '没选中的插件不该被下载：$requestedUris',
+    );
+  });
+
+  test('刷新订阅时按用户勾选的装，并把这份选择记下来', () async {
+    var asked = 0;
+    Set<String>? preselected;
+    Future<Set<String>?> picker(
+      List<MusicFreeSubscriptionEntry> entries,
+      Set<String> initial,
+    ) async {
+      asked += 1;
+      preselected = initial;
+      // 只要第一个和最后一个
+      return <String>{entries.first.url, entries.last.url};
+    }
+
+    final result = await plugins.syncSubscription(
+      urls: <String>['$base/big.json'],
+      force: true,
+      pickEntries: picker,
+    );
+    expect(result.reinstalled, isTrue);
+    expect(asked, 1);
+    expect(
+      preselected,
+      hasLength(MusicFreePlugins.defaultSelectionSize),
+      reason: '第一次没有历史选择，默认勾前 6 个',
+    );
+    expect(
+      plugins.plugins.map((plugin) => plugin.platform).toSet(),
+      <String>{'插件1', '插件8'},
+    );
+    expect(
+      requestedUris.any((uri) => uri.contains('/p5.js')),
+      isFalse,
+      reason: '只下载勾选的那两个',
+    );
+
+    // 再刷一次：上一次的选择要被当作预设值交回给弹框
+    asked = 0;
+    preselected = null;
+    await plugins.syncSubscription(
+      urls: <String>['$base/big.json'],
+      force: true,
+      pickEntries: picker,
+    );
+    expect(asked, 1);
+    expect(preselected, <String>{'$base/p1.js', '$base/p8.js'});
+  });
+
+  test('在选择框里点取消：本地插件一个都不动', () async {
+    await plugins.syncSubscription(urls: <String>['$base/big.json']);
+    final before = plugins.plugins.map((plugin) => plugin.hash).toSet();
+    expect(before, hasLength(MusicFreePlugins.defaultSelectionSize));
+
+    final result = await plugins.syncSubscription(
+      urls: <String>['$base/big.json'],
+      force: true,
+      pickEntries: (entries, preselected) async => null,
+    );
+
+    expect(result.cancelled, isTrue);
+    expect(result.reinstalled, isFalse);
+    expect(plugins.plugins.map((plugin) => plugin.hash).toSet(), before);
+  });
+
+  test('刷新时选得比上次少：没选中的插件被卸掉', () async {
+    await plugins.syncSubscription(urls: <String>['$base/big.json']);
+    expect(plugins.plugins, hasLength(MusicFreePlugins.defaultSelectionSize));
+
+    await plugins.syncSubscription(
+      urls: <String>['$base/big.json'],
+      force: true,
+      pickEntries: (entries, preselected) async =>
+          <String>{entries[1].url, entries[2].url},
+    );
+
+    expect(
+      plugins.plugins.map((plugin) => plugin.platform).toSet(),
+      <String>{'插件2', '插件3'},
+    );
+    final leftover = Directory('${tempRoot.path}/musicfree-plugins')
+        .listSync()
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.js'))
+        .length;
+    expect(leftover, 2, reason: '被取消的插件源码也要删掉');
   });
 }
