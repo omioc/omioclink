@@ -234,7 +234,7 @@
   .panel[data-active="true"] { display: flex; }
   .panel-toolbar {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 12px 16px; min-height: 52px; background: var(--surface);
+    padding: 14px 20px; min-height: 56px; background: var(--surface);
   }
   .panel-toolbar .spacer { flex: 1; }
   .search-field {
@@ -249,11 +249,11 @@
   .search-field input { width: 100%; padding-left: 32px; padding-right: 30px; }
   #newUserBtn { display: inline-flex; align-items: center; gap: 6px; }
   #newUserBtn svg { width: 14px; height: 14px; }
-  .panel-body { flex: 1; min-height: 0; overflow: auto; padding: 6px 14px 8px; }
+  .panel-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 20px 12px; }
   /* 窄屏先丢次要列，避免表格横向溢出（页面本身永远不滚） */
   @media (max-width: 1080px) { .hide-md { display: none; } }
   .panel-foot {
-    display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+    display: flex; align-items: center; gap: 10px; padding: 12px 20px;
     color: var(--muted); font-size: 12.5px;
   }
   .panel-foot .spacer { flex: 1; }
@@ -284,13 +284,14 @@
     text-align: left; font-size: 11.5px; font-weight: 600; color: var(--muted);
     background: var(--head-tint); padding: 10px 16px; white-space: nowrap;
   }
-  thead th:first-child { padding-left: 18px; border-radius: 10px 0 0 10px; }
+  /* 表体左右已是 20px 面板内边距：色带就从这条边界起，首列收回 6px 免得文字跟着往里缩 */
+  thead th:first-child { padding-left: 14px; border-radius: 10px 0 0 10px; }
   thead th:last-child { border-radius: 0 10px 10px 0; }
   tbody td {
     padding: 12px 16px; font-size: 13px; vertical-align: middle; white-space: nowrap;
     border: none;
   }
-  tbody td:first-child { padding-left: 18px; }
+  tbody td:first-child { padding-left: 14px; }
   /* 斑马纹从第二行开始：第一行留白，和第二行交替，看起来更像「一条条」的行 */
   tbody tr:nth-child(even) td { background: var(--row-tint); }
   tbody tr:hover td { background: var(--head-tint); }
