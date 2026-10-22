@@ -553,7 +553,10 @@ class MusicFreePlugins {
       }
     }
 
-    final lanes = entries.length < 3 ? entries.length : 3;
+    // 并发路数不能超过 worker 池：多出来的那一路只能排队等 worker，
+    // 却先把文件下下来了（手机上池只有 2 份，见 MusicFreeHost.workerPoolSize）。
+    final maxLanes = host.workerPoolSize < 3 ? host.workerPoolSize : 3;
+    final lanes = entries.length < maxLanes ? entries.length : maxLanes;
     await Future.wait<void>(<Future<void>>[
       for (var i = 0; i < lanes; i += 1) pump(),
     ]);

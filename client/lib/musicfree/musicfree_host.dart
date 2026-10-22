@@ -926,6 +926,10 @@ class MusicFreeHost {
   final String lang;
   final int _poolSize;
 
+  /// worker 池上限。装载流程按它决定并发路数：比它多的并发只会在池里排队，
+  /// 白占一个下载槽位（手机上池固定 2，见 [_defaultPoolSize]）。
+  int get workerPoolSize => _poolSize;
+
   final List<_WorkerLink> _links = <_WorkerLink>[];
   final Map<int, _PendingCall> _pending = <int, _PendingCall>{};
 
