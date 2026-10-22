@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, get_settings
 from app.core.errors import UnauthorizedError
+from app.core.ratelimit import LoginLimits
 from app.core.security import decode_access_token, password_fingerprint
 from app.db.models import User
 from app.services import accounts
@@ -20,6 +21,7 @@ __all__ = [
     "AvatarStoreDep",
     "CurrentUser",
     "HubDep",
+    "LoginLimitsDep",
     "OptionalUser",
     "PluginSubscriptionStoreDep",
     "SessionDep",
@@ -27,6 +29,7 @@ __all__ = [
     "bearer_scheme",
     "get_avatar_store",
     "get_hub",
+    "get_login_limits",
     "get_plugin_subscription_store",
     "get_session",
     "get_settings_dep",
@@ -56,6 +59,11 @@ def get_plugin_subscription_store(request: Request) -> PluginSubscriptionStore:
     return store
 
 
+def get_login_limits(request: Request) -> LoginLimits:
+    limits: LoginLimits = request.app.state.login_limits
+    return limits
+
+
 async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
     factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     async with factory() as session:
@@ -75,6 +83,7 @@ PluginSubscriptionStoreDep = Annotated[
     PluginSubscriptionStore, Depends(get_plugin_subscription_store)
 ]
 CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)]
+LoginLimitsDep = Annotated[LoginLimits, Depends(get_login_limits)]
 
 
 async def resolve_token_user(session: AsyncSession, settings: Settings, token: str | None) -> User:

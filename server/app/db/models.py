@@ -23,6 +23,7 @@ __all__ = [
     "AdminAccount",
     "Friendship",
     "FriendshipStatus",
+    "LoginRecord",
     "Room",
     "RoomMembership",
     "User",
@@ -122,4 +123,25 @@ class AdminAccount(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+class LoginRecord(Base):
+    """一次登录尝试（成功与失败都记）。
+
+    只用于安全审计与「谁在扫号」的排查：不存密码、不存会话内容。
+    ``username`` 是客户端填的原样值（可能是根本不存在或故意乱填的），
+    所以这里**不做外键**——失败记录的账号可能压根没有对应的 ``users`` 行。
+    """
+
+    __tablename__ = "login_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    #: "client" = 客户端账号登录；"admin" = 管理台密码登录
+    source: Mapped[str] = mapped_column(String(16), default="client")
+    username: Mapped[str] = mapped_column(String(64), default="")
+    ip: Mapped[str] = mapped_column(String(64), default="", index=True)
+    user_agent: Mapped[str] = mapped_column(String(200), default="")
+    success: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
     )

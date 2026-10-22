@@ -13,6 +13,7 @@ __all__ = [
     "ForbiddenError",
     "NotFoundError",
     "PayloadTooLargeError",
+    "TooManyRequestsError",
     "UnauthorizedError",
     "ValidationError",
 ]
@@ -65,3 +66,26 @@ class ValidationError(ApiError):
     def __init__(self, message: str = "参数不合法", code: str = "invalid_request") -> None:
         # 注意：Starlette 已弃用 HTTP_422_UNPROCESSABLE_ENTITY，用新名字避免弃用告警
         super().__init__(status.HTTP_422_UNPROCESSABLE_CONTENT, code, message)
+
+
+class TooManyRequestsError(ApiError):
+    """限流：短时间内重试太多次。
+
+    客户端按响应里的 ``retryAfter``（秒）退避后再试即可，不必退出登录。
+    """
+
+    def __init__(
+        self,
+        message: str = "请求过于频繁，请稍后再试",
+        *,
+        code: str = "too_many_requests",
+        retry_after: float = 0.0,
+    ) -> None:
+        # 向上取整到秒：给 0 秒会客户端立刻又撞一次
+        seconds = max(1, round(retry_after + 0.4999)) if retry_after > 0 else 0
+        super().__init__(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            code,
+            message,
+            extra={"retryAfter": seconds} if seconds else None,
+        )

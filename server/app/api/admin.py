@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import (
     CredentialsDep,
     HubDep,
+    LoginLimitsDep,
     PluginSubscriptionStoreDep,
     SessionDep,
     SettingsDep,
@@ -39,9 +40,11 @@ from app.core.errors import (
     ConflictError,
     ForbiddenError,
     NotFoundError,
+    TooManyRequestsError,
     UnauthorizedError,
     ValidationError,
 )
+from app.core.ratelimit import client_ip
 from app.core.security import (
     ADMIN_SCOPE,
     BCRYPT_MAX_BYTES,
@@ -54,6 +57,8 @@ from app.db.models import AdminAccount, User
 from app.schemas import (
     AdminActionResult,
     AdminKickRequest,
+    AdminLoginListResponse,
+    AdminLoginRecordResponse,
     AdminLoginResponse,
     AdminOverview,
     AdminPasswordRequest,
@@ -69,7 +74,7 @@ from app.schemas import (
     RegisterRequest,
     RoomListResponse,
 )
-from app.services import accounts, admin_account
+from app.services import accounts, admin_account, logins
 from app.services import rooms as room_service
 from app.signaling.hub import SignalingHub
 
@@ -247,15 +252,53 @@ async def setup_admin(
 @router.post("/login", response_model=AdminLoginResponse, summary="管理员登录")
 async def login(
     payload: AdminPasswordRequest,
+    request: Request,
     session: SessionDep,
     settings: SettingsDep,
+    limits: LoginLimitsDep,
     _: SameOriginDep,
 ) -> AdminLoginResponse:
     if not await admin_account.has_admin(session):
         raise ConflictError("还没有设置管理员密码，请先设置", code="admin_not_initialized")
+    ip = client_ip(request)
+    # 管理台只有一个账号，没有「换个用户名再试」的空间，所以按来源 IP 锁定：
+    # 连续错 5 次 → 5 分钟内连正确的密码也不放行（否则猜对那一次等于没锁）。
+    wait = limits.admin.locked_for(ip)
+    if wait > 0:
+        raise TooManyRequestsError(
+            f"密码错误次数过多，请 {round(wait)} 秒后再试",
+            code="admin_locked",
+            retry_after=wait,
+        )
     admin = await admin_account.authenticate(session, payload.password)
     if admin is None:
+        wait = limits.admin.record_failure(ip)
+        await logins.record_login(
+            session,
+            source=logins.LOGIN_SOURCE_ADMIN,
+            username=admin_account.ADMIN_NAME,
+            ip=ip,
+            user_agent=request.headers.get("user-agent", ""),
+            success=False,
+        )
+        # 先落盘再抛：401 会让会话依赖回滚，审计记录得自己 commit
+        await session.commit()
+        if wait > 0:
+            raise TooManyRequestsError(
+                f"密码错误次数过多，请 {round(wait)} 秒后再试",
+                code="admin_locked",
+                retry_after=wait,
+            )
         raise UnauthorizedError("管理员密码不正确", code="bad_admin_password")
+    limits.admin.clear(ip)
+    await logins.record_login(
+        session,
+        source=logins.LOGIN_SOURCE_ADMIN,
+        username=admin_account.ADMIN_NAME,
+        ip=ip,
+        user_agent=request.headers.get("user-agent", ""),
+        success=True,
+    )
     return _issue_admin_token(admin, settings)
 
 
@@ -528,4 +571,37 @@ async def serve_admin_logo() -> Response:
         media_type="image/png",
         # 图标不会变，让浏览器缓存一天，省得每次开管理页都重拉
         headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router.get(
+    "/logins",
+    response_model=AdminLoginListResponse,
+    summary="最近的登录记录（安全审计）",
+)
+async def login_records(
+    _: AdminDep,
+    session: SessionDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    only_failed: bool = Query(default=False, alias="onlyFailed"),
+) -> AdminLoginListResponse:
+    """客户端与管理台的登录尝试（成功与失败都在），按时间倒序。"""
+    records = await logins.list_logins(
+        session, limit=limit, offset=offset, only_failed=only_failed
+    )
+    return AdminLoginListResponse(
+        items=[
+            AdminLoginRecordResponse(
+                source=record.source,
+                username=record.username,
+                ip=record.ip,
+                user_agent=record.user_agent,
+                success=record.success,
+                created_at=record.created_at,
+            )
+            for record in records
+        ],
+        limit=limit,
+        offset=offset,
     )

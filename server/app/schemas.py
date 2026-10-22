@@ -14,6 +14,8 @@ from app.signaling.protocol import MemberInfo
 __all__ = [
     "AdminActionResult",
     "AdminKickRequest",
+    "AdminLoginListResponse",
+    "AdminLoginRecordResponse",
     "AdminLoginResponse",
     "AdminOverview",
     "AdminPasswordRequest",
@@ -325,3 +327,20 @@ class ServerInfoResponse(_Camel):
     media_relay: bool = Field(default=False, alias="mediaRelay")
     # 点歌台（音乐插件订阅）是否可用：关掉后客户端不显示入口
     music_enabled: bool = Field(default=False, alias="musicEnabled")
+
+
+class AdminLoginRecordResponse(_Camel):
+    """一条登录记录（管理台的安全审计视图）。"""
+
+    source: str
+    username: str
+    ip: str
+    user_agent: str = Field(alias="userAgent")
+    success: bool
+    created_at: datetime = Field(alias="createdAt")
+
+
+class AdminLoginListResponse(_Camel):
+    items: list[AdminLoginRecordResponse]
+    limit: int
+    offset: int

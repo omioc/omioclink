@@ -27,6 +27,7 @@ from app.api.admin import serve_admin_logo, serve_admin_page
 from app.api.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.errors import ApiError
+from app.core.ratelimit import LoginLimits
 from app.db.base import Database
 from app.services.avatars import AvatarStore
 from app.services.directory import SqlRoomDirectory
@@ -119,6 +120,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.hub = hub
     app.state.avatars = avatars
     app.state.plugin_subscription = plugin_subscription
+    # 登录限流是进程内内存态：每次 create_app 一份（测试之间互不影响）
+    app.state.login_limits = LoginLimits()
 
     origins = list(resolved.cors_origins)
     app.add_middleware(

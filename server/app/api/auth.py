@@ -1,11 +1,12 @@
 """账号接口：注册、登录、资料、头像。"""
 
-from fastapi import APIRouter, UploadFile, status
+from fastapi import APIRouter, Request, UploadFile, status
 
 from app.api.deps import (
     AvatarStoreDep,
     CurrentUser,
     HubDep,
+    LoginLimitsDep,
     SessionDep,
     SettingsDep,
 )
@@ -15,9 +16,11 @@ from app.core.errors import (
     ConflictError,
     ForbiddenError,
     PayloadTooLargeError,
+    TooManyRequestsError,
     UnauthorizedError,
     ValidationError,
 )
+from app.core.ratelimit import client_ip
 from app.core.security import (
     create_access_token,
     password_fingerprint,
@@ -32,7 +35,7 @@ from app.schemas import (
     UpdateProfileRequest,
     UserProfile,
 )
-from app.services import accounts
+from app.services import accounts, logins
 from app.services.avatars import UnsupportedImageError
 
 router = APIRouter(prefix="/auth", tags=["账号"])
@@ -82,13 +85,59 @@ async def register(
 
 @router.post("/login", response_model=TokenResponse, summary="登录")
 async def login(
-    payload: LoginRequest, session: SessionDep, settings: SettingsDep, hub: HubDep
+    payload: LoginRequest,
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+    hub: HubDep,
+    limits: LoginLimitsDep,
 ) -> TokenResponse:
+    ip = client_ip(request)
+    # 两道限流，缺一不可：
+    # * 来源级——同一台机器 5 分钟内最多 10 次登录请求（成功失败都算），
+    #   挡「换着用户名挨个试」的扫号，账号级退避挡不住这种；
+    # * 账号级——同一个用户名连续输错后指数退避，挡盯住一个账号的暴力猜解。
+    wait = limits.login_ip.hit(ip)
+    if wait > 0:
+        raise TooManyRequestsError(
+            f"登录请求过于频繁，请 {round(wait)} 秒后再试",
+            code="login_rate_limited",
+            retry_after=wait,
+        )
+    account_key = payload.username.strip()
+    wait = limits.account.retry_after(account_key)
+    if wait > 0:
+        raise TooManyRequestsError(
+            f"该账号输错次数过多，请 {round(wait)} 秒后再试",
+            code="login_backoff",
+            retry_after=wait,
+        )
     user = await accounts.authenticate(session, payload.username, payload.password)
     if user is None:
+        limits.account.record_failure(account_key)
+        await logins.record_login(
+            session,
+            source=logins.LOGIN_SOURCE_CLIENT,
+            username=payload.username,
+            ip=ip,
+            user_agent=request.headers.get("user-agent", ""),
+            success=False,
+        )
+        # 失败记录必须在抛 401 之前落盘：请求结束时会话依赖会回滚，
+        # 不先 commit 这条审计记录就白记了（见 app.services.logins）。
+        await session.commit()
         raise UnauthorizedError("用户名或密码错误", code="bad_credentials")
     if user.disabled:
         raise ForbiddenError("账号已被管理员禁用", code="account_disabled")
+    limits.account.clear(account_key)
+    await logins.record_login(
+        session,
+        source=logins.LOGIN_SOURCE_CLIENT,
+        username=user.username,
+        ip=ip,
+        user_agent=request.headers.get("user-agent", ""),
+        success=True,
+    )
     return _issue_token(user, settings, online=hub.state.is_user_online(user.id))
 
 
