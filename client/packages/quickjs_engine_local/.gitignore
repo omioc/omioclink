@@ -3,3 +3,7 @@
 /native/build/
 *.o
 *.obj
+
+# AGP/NDK 在仓库内构建 Android 时留下的中间目录（几十 MB、上百个文件）：
+# 不忽略的话 `git add -A` 很容易顺手把它提交上去。
+/android/.cxx/
