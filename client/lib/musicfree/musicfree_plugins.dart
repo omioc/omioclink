@@ -9,6 +9,7 @@ import '../core/app_log.dart';
 import 'musicfree_host.dart';
 import 'plugin_models.dart';
 import 'plugin_paths.dart';
+import 'musicfree_bytecode.dart';
 
 /// 一次订阅同步的结果。
 class SubscriptionSyncResult {
@@ -175,6 +176,19 @@ class MusicFreePlugins {
         .where((file) => file.path.toLowerCase().endsWith('.js'))
         .toList(growable: false);
     files.sort((a, b) => a.path.compareTo(b.path));
+
+    // 顺手清掉「源码已不在磁盘上」的字节码：QuickJS 的字节码会把源码与调试信息
+    // 一起序列化，一个插件几 MB，插件更新（换 hash）/ 卸载很容易攒出几百 MB。
+    // 后台做即可，不影响本次装载。
+    unawaited(
+      MusicFreeBytecodeCache(dir: paths.bytecodeDir).prunePlugins(
+        files
+            .map((file) => file.path.split(Platform.pathSeparator).last)
+            .where((name) => name.toLowerCase().endsWith('.js'))
+            .map((name) => name.substring(0, name.length - 3))
+            .toSet(),
+      ),
+    );
 
     // 1) 元数据复用：列表立刻可见，编译推迟到真正要用的时候
     final restored = await host.restoreMetadata();
@@ -589,6 +603,12 @@ class MusicFreePlugins {
     host.unload(plugin.hash);
     // 元数据也要一起清：否则下次启动会从缓存里「复活」一个已经删掉的插件
     await host.forgetMetadata(plugin.hash);
+    // 字节码同理：一个插件的字节码有好几 MB（QuickJS 会把源码与调试信息一起
+    // 序列化），插件删了它就是纯粹的磁盘垃圾。文件名就是 sha256(源码)，不用读盘。
+    unawaited(
+      MusicFreeBytecodeCache(dir: paths.bytecodeDir)
+          .remove(MusicFreeBytecodeCache.pluginKeyForHash(plugin.hash)),
+    );
     final file = File(paths.pluginFile(plugin.hash));
     if (file.existsSync()) {
       try {

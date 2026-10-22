@@ -279,8 +279,40 @@ globalThis.__mfRuntime = {
     return requireFn;
   },
 
-  /** 按 MusicFree 的 Plugin 构造函数方式执行插件代码。 */
+  /** 按 MusicFree 的 Plugin 构造函数方式执行插件代码（源码路径）。 */
   loadPlugin(pluginKey, code, options) {
+    const factory = Function(
+      'require',
+      '__musicfree_require',
+      'module',
+      'exports',
+      'console',
+      'env',
+      'process',
+      `'use strict';\n${code}`,
+    );
+    return this.instantiate(pluginKey, factory, options);
+  },
+
+  /**
+   * 用**已经编译好的**工厂函数装载插件（字节码路径）。
+   *
+   * 宿主把插件源码包成上面同样的七参数函数、编译成 QuickJS 字节码并缓存，
+   * 之后每次装载只要「反序列化 + 在这里调一次」，不用再解析上兆字节的源码。
+   * 工厂由宿主执行完字节码后挂在 `globalThis.__mfPluginFactory` 上，用完即删，
+   * 免得下一个插件误用上一个的工厂。
+   */
+  loadPluginFromFactory(pluginKey, options) {
+    const factory = globalThis.__mfPluginFactory;
+    delete globalThis.__mfPluginFactory;
+    if (typeof factory !== 'function') {
+      throw new Error('插件工厂缺失（字节码没有装载成功？）');
+    }
+    return this.instantiate(pluginKey, factory, options);
+  },
+
+  /** loadPlugin / loadPluginFromFactory 的共用部分：建 env → 调用工厂 → 登记实例。 */
+  instantiate(pluginKey, factory, options) {
     const opts = parseOptions(options);
     const env = {
       getUserVariables: () => opts.userVariables || {},
@@ -296,16 +328,6 @@ globalThis.__mfRuntime = {
     };
     const pluginModule = { exports: {}, loaded: false };
     const requireFn = globalThis.__mfRequires[pluginKey];
-    const factory = Function(
-      'require',
-      '__musicfree_require',
-      'module',
-      'exports',
-      'console',
-      'env',
-      'process',
-      `'use strict';\n${code}`,
-    );
     factory(
       requireFn,
       requireFn,
@@ -355,11 +377,14 @@ globalThis.__mfRuntime = {
   },
 
   /**
-   * 一次性装载插件：createRequire → 执行源码 → describe。
+   * 一次性装载插件：createRequire → 执行源码（或已编译的工厂）→ describe。
    *
-   * 以前这三步在 Dart 侧各是一次 evaluate（外加一次注入源码），装 N 个插件就是
-   * 4N 次跨桥往返——每次都要切一次 JS 引擎，UI 线程被切得稀碎。合成一次只多带
-   * 一段源码字符串，返回值就是 describe 的 JSON。
+   * 两条路：
+   * * `globalThis.__mfPluginFactory` 已经由宿主用字节码建好 → 直接调用它
+   *   （`code` 传空串即可），省掉整份源码的解析；
+   * * 否则退回源码路径：`Function(...)` 现场编译（缓存未命中 / 引擎不支持字节码）。
+   *
+   * 返回值都是 describe 的 JSON，调用方不需要关心走的是哪条。
    */
   install(pluginKey, code, optionsJson, storageJson, cookiesJson) {
     // 源码走单独参数：调用方只转义一次，这里也不再 JSON.parse 整个 payload。
@@ -374,7 +399,11 @@ globalThis.__mfRuntime = {
         cookies: parseOptions(cookiesJson) || [],
       });
       stage = '插件源码执行';
-      this.loadPlugin(pluginKey, code, options);
+      if (typeof globalThis.__mfPluginFactory === 'function') {
+        this.loadPluginFromFactory(pluginKey, options);
+      } else {
+        this.loadPlugin(pluginKey, code, options);
+      }
       stage = '插件信息解析';
       return this.describe(pluginKey);
     } catch (error) {

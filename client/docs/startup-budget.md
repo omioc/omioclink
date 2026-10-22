@@ -16,7 +16,13 @@
 | `启动.首帧` | 第一帧画完；**这是"冷启动"的验收口径** | `lib/main.dart` |
 | `插件.JS 运行时创建` | `getJavascriptRuntime` + 桥注册 | `lib/musicfree/musicfree_host.dart` |
 | `插件.bundle 读取` | `rootBundle` 读 `runtime.bundle.js`（约 577KB） | 同上 |
-| `插件.bundle 编译执行` | QuickJS 里同步编译整份 bundle；**每次进程启动一次，最贵的一步** | 同上 |
+| `插件.bundle 编译执行` | 运行时 bundle 进引擎（缓存命中时只有反序列化）；**每次进程启动一次** | 同上 |
+| `插件.字节码 <标签>` | 命中磁盘字节码后「读文件 + 反序列化 + 执行」的耗时 | 同上 |
+| `插件.编译 <标签>` | 没命中缓存时把源码编译成字节码（并落盘）的耗时 | 同上 |
+| `插件.worker#N 就绪（含引擎预热）` | worker isolate 起来 + QuickJS 运行时建好 + bundle 装载完 | 同上 |
+
+后三条是 §3.8 的字节码缓存加进来的：`<标签>` 是 `bundle` 或 `插件<hash 前 8 位>`。
+worker 里的打点经端口回主 isolate 再落盘（见 `MusicFreeEngine.timingSink`）。
 
 `启动.首帧` 之后 3 秒会清一次 7 天前的旧日志（同步 IO 不占启动路径）。
 
@@ -150,17 +156,83 @@
 
 代价与注意：
 * 每个 worker 都要自己编译一遍 577KB bundle，内存与启动成本 ×N（默认 2~3）。
+  **§3.8 的字节码缓存已经把这笔账消掉了**：首份编译并落盘，其余读缓存。
 * 重启后的**第一次**搜索/榜单如果撞上还没编译完的音源，那个音源会因为超时被跳过；
   后台 `prefetch()` 跑完（约几十秒）就恢复正常。插件顺序/启用状态来自偏好文件，
   不受元数据缓存影响。
 * 卸载插件时会同时清掉它的元数据（`forgetMetadata`），不会「复活」。
+
+### 3.8 字节码缓存 + 引擎按发布版编译（这一轮的核心，彻底解决「装载极慢」）
+
+真机日志里的数字（改前）：`插件.装载 agg：22239ms`、`插件.编译 kugou：6170ms`，
+577KB 的运行时 bundle 每个 worker 各要编译一遍（`插件.worker#N 就绪：32ms` 只是
+isolate 起来了，真正的编译被算进了第一个插件的装载里）。53 个插件装完 5 分钟起步。
+
+**根因有两个，都不是网络**（`插件.下载` 只有 70~400ms）：
+
+1. **QuickJS 每次都从源码重新编译**：插件是「一整份几 MB 的 JS」，`JS_Eval` 每次
+   装载都要做一遍词法/语法分析。
+2. **引擎被编成了 Debug**：`flutter run` 出来的构建让 CMake 走 Debug 配置，MSVC 就是
+   `/Od`，GCC/Clang 就是不优化。QuickJS 的解析器在这个级别下慢两个数量级。
+
+做了四件事（不改变任何插件行为）：
+
+1. **引擎内置进仓库**（`packages/quickjs_engine_local`，`dependency_overrides` 指向它）：
+   上游桥只导出 `JS_Eval`，我们补了 `jsCompileToBytecode` / `jsEvalBytecode` /
+   `jsFreeBinaryBuffer` 三个 C 导出（QuickJS 本来就有 `JS_WriteObject` / `JS_ReadObject`，
+   `qjsc` 就是这么发布预编译脚本的）。Dart 侧是 `QuickJsRuntime2.compileToBytecode` /
+   `evaluateBytecode`，符号缺失时（没重编的旧 DLL）自动退回源码路径。
+2. **引擎永远按发布版编译**：`native/CMakeLists.txt` 给 Debug/Profile 也追加 `/O2`、`/Oi`
+   （MSVC）或 `-O2`，并摘掉与 `/O2` 互斥的 `/RTC1`；同时加 `/utf-8`（不然后面的中文注释
+   在 GBK 代码页下会把下一行吞进注释，直接编不过）。
+3. **字节码磁盘缓存**（`lib/musicfree/musicfree_bytecode.dart`）：`<数据根>/musicfree-data/bytecode`，
+   文件名 = `v<格式版本>-plugin-<源码 sha256>.qbc`（bundle 单独一套 `bundle-` 前缀）。
+   源码一变键就变；反序列化失败会自动删缓存重编译；插件卸载/更新时清掉旧文件
+   （一个插件几 MB，不清会攒出几百 MB）。
+4. **插件包装方式固定下来**：`Function('require', …)` 换成等价的
+   `globalThis.__mfPluginFactory = (function (require, …) { 'use strict'; <源码> });`，
+   编译产物就是这个脚本的字节码；运行时 `install()` 发现全局上有工厂就用它，
+   没有才回退源码编译。**改这段包装（或改桥）必须同时把 `formatVersion` +1**。
+
+顺带修的三个结构问题：
+
+* **worker 先暖机再报到**：`MusicFreeEngine.boot()` 在把 SendPort 发回去之前就把
+  QuickJS 建好、bundle 装好。于是「worker 就绪」这个数字终于可信，`_pickLink` 选到的
+  空闲 worker 也真能立刻干活（以前第一份插件要替整个 worker 付 bundle 的编译时间）。
+* **worker 启动串行化**：冷启动时三份 worker 各自编译一遍 bundle 是纯浪费；现在排队启动，
+  第一个编译并把字节码写进磁盘，后面的直接读。
+* **worker 里的打点回传主 isolate**（`timingSink`）：`插件.字节码 <标签>` /
+  `插件.编译 <标签>` 现在能落进 `client-*.log`，缓存命中率一眼可见。
+
+实测（同一台机器，用真实插件源码，`flutter test` 里量的）：
+
+| 对象 | 源码体积 | 改前（Debug/`Od`，日志） | 改后（`/O2` 首次编译） | 改后（命中字节码） |
+| --- | --- | --- | --- | --- |
+| 运行时 bundle | 577KB | ≈5.7s（每 worker 一次） | 88ms | **25ms**（字节码 2.2MB） |
+| 聚合插件 agg | 2.96MB | 22013ms | 348ms | **24ms**（字节码 12.0MB） |
+| 一般插件 | 150~190KB | 4~6s | 15~16ms | **1~2ms** |
+| 小插件 | 11KB | 500~700ms | 3ms | **0ms** |
+
+代价与注意：
+
+* **磁盘**：字节码会把源码与调试信息一起序列化（体积约源码的 3~4 倍）。53 个插件
+  源 8.2MB → 字节码约 35MB。卸载/更新会自动清理，见 `prunePlugins`。
+* **首次运行**仍要编译一遍（最坏 348ms/插件，3 路并行约 2~4 秒装完 53 个），之后
+  每次启动、每个 worker 都是读缓存。
+* **换引擎版本/改包装方式必须 `MusicFreeBytecodeCache.formatVersion + 1`**，否则会读到
+  格式不兼容的字节码（虽然会自动自愈重编译，但那是一次白跑的编译）。
+* 字节码按「源码 sha256」命名，与插件文件名同源，所以「插件更新」天然失效，
+  不需要额外的版本比对。
+* **未验证**：Android 上只验证了 native 库能编出（NDK r28 / arm64 / clang，
+  已确认导出三个新符号），没在真机上跑过装载耗时；armv7/x86 也没单独编。
 ## 4. 还没做的（下一轮）
 
 1. **worker 内部的 `AppLog` 调用**（bundle 编译耗时、卸载失败等）目前只进
    `developer.log`：如果需要它们落到 `client-*.log`，得把这几处也接到 `logSink`。
 2. 好友页 / 设置页仍是 `ListView(children:)`：受产品规模限制（私人小圈子），
    评估后**暂不改**（改成 `CustomScrollView` + sliver 属于结构改造）。
-3. **字节码/快照缓存**：`quickjs_engine 0.1.6` 没有 `JS_WriteObject/ReadObject`，
-   要做只能 vendor 引擎（改 C++、两平台构建、按引擎版本失效）。
+3. ~~字节码/快照缓存~~ **已完成**，见 §3.8（vendor 引擎 + 三个 C 导出 + 磁盘缓存）。
+   还剩两件小事：Android 真机耗时未实测；iOS/macOS 平台目录在 vendored 包里已删
+   （客户端只构建 Windows/Android）。
 4. `sheetsByTag` 没有 `refresh` 参数（加它会破坏 3 个既有 test stub）；
    要作废标签下的歌单走 `clearCache()`。

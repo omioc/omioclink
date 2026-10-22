@@ -57,8 +57,9 @@ async function main() {
     platform: 'browser',
     target: ['es2020'],
     charset: 'utf8',
-    // 产物是每次进程启动都要在 QuickJS 里编译一遍的（引擎没有字节码缓存），
-    // 1.12MB 未压缩源码压到约 400KB，编译时间近似按体积下降。
+    // 仍然压缩：产物要先当源码读一遍再编译成字节码（首次运行才编，之后走
+    // musicfree-data/bytecode 的缓存），而且字节码体积与源码体积成正比
+    // （QuickJS 会把源码一起序列化进去）。1.12MB → 577KB 能省下读盘与缓存空间。
     // 不 drop console：插件调试信息走宿主转发的 console，不能丢。
     minify: true,
     legalComments: 'none',

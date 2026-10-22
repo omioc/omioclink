@@ -318,4 +318,34 @@ void main() {
     final value = await second.invoke('test-hash', 'readStorage', <Object?>['lastQuery']);
     expect(value, '存储测试');
   });
+
+  test('字节码缓存真的落在磁盘上（跨 isolate 的路径也走缓存）', () async {
+    // 装载发生在 worker isolate 里，缓存的写盘是「不阻塞装载」的，所以这里轮询。
+    final dir = Directory('${tempRoot.path}/musicfree-data/bytecode');
+    var cached = <File>[];
+    for (var attempt = 0; attempt < 100; attempt += 1) {
+      if (dir.existsSync()) {
+        cached = dir
+            .listSync()
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.qbc'))
+            .toList(growable: false);
+        if (cached.length >= 2) {
+          break;
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    // 一个 bundle + 一个插件
+    expect(cached.length, greaterThanOrEqualTo(2),
+        reason: 'plugin/bundle 字节码都应该落盘：$cached');
+    expect(
+      cached.any((file) => file.uri.pathSegments.last.contains('-bundle-')),
+      isTrue,
+    );
+    expect(
+      cached.any((file) => file.uri.pathSegments.last.contains('-plugin-')),
+      isTrue,
+    );
+  });
 }

@@ -22,6 +22,10 @@ class PluginPaths {
   /// 插件结果的本地缓存（搜索页 / 榜单标签），见 `MusicFreeCache`。
   String get cacheDir => '$dataDir${Platform.pathSeparator}cache';
 
+  /// QuickJS 字节码缓存（见 `MusicFreeBytecodeCache`）：插件源码编译一次就够，
+  /// 之后每个 worker、每次启动都只做「读文件 + 反序列化」。
+  String get bytecodeDir => '$dataDir${Platform.pathSeparator}bytecode';
+
   /// 订阅 URL 与其签名的落盘文件。
   String get subscriptionFile =>
       '$root${Platform.pathSeparator}musicfree-subscription.json';
@@ -42,7 +46,7 @@ class PluginPaths {
   String cookieFile(String hash) => '$cookieDir${Platform.pathSeparator}$hash.json';
 
   Future<void> ensureReady() async {
-    for (final dir in <String>[pluginDir, storageDir, cookieDir, cacheDir]) {
+    for (final dir in <String>[pluginDir, storageDir, cookieDir, cacheDir, bytecodeDir]) {
       final target = Directory(dir);
       if (!target.existsSync()) {
         await target.create(recursive: true);

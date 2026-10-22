@@ -1,0 +1,5 @@
+# tool/build_native.ps1（Windows）/ tool/build_native.sh（Linux/CI）的产物：
+# 由 flutter test 通过 LIBQUICKJSC_TEST_PATH 或 client/native/build 定位。
+/native/build/
+*.o
+*.obj

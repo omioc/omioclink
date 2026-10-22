@@ -1,0 +1,50 @@
+name: quickjs_engine
+description: >
+  本地内置（vendored）的 quickjs_engine：QuickJS-NG 0.14.0 + 我们补的字节码接口。
+
+  为什么不再用 pub 上那个包：插件源码动辄 1~3MB，每次装载都要在 QuickJS 里
+  从头编译一遍（实测 2.96MB 的插件要 22 秒）。QuickJS 本来支持
+  JS_WriteObject / JS_ReadObject 的字节码序列化，但上游只暴露了 JS_Eval；
+  要加导出函数就得改 C++ 与 CMake（见 native/cxx/libfastdev_quickjs_runtime.cpp）。
+  pub 包放在只读缓存里改不动，所以整份源码搬进仓库。
+
+  只保留客户端真正构建的两个平台（Windows / Android）：上游还带 ios/macos/linux
+  的桥接代码与 macOS 预编译 dylib，仓库里用不到，删掉以免误导。
+version: 0.1.6
+homepage: https://github.com/denisnadey/flutter_full_svg_support/tree/main/packages/quickjs_engine
+repository: https://github.com/denisnadey/flutter_full_svg_support
+issue_tracker: https://github.com/denisnadey/flutter_full_svg_support/issues
+
+environment:
+  sdk: ^3.8.0
+  flutter: ">=3.32.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  ffi: ^2.0.0
+  http: ^1.0.0
+  sync_http: ^0.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: io.quickjs_engine
+        pluginClass: QuickjsEnginePlugin
+      windows:
+        pluginClass: QuickjsEnginePluginCApi
+  assets:
+    - assets/js/
+
+topics:
+  - javascript
+  - quickjs
+  - js-engine
+  - ffi
+  - runtime

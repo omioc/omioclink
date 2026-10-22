@@ -105,3 +105,11 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# 内置（vendored）的 JS 引擎：本仓库给 QuickJS 桥补了字节码序列化接口
+# （插件装载从「每次编译源码」变成「反序列化一次」，2.96MB 的插件由 22s 降到几十 ms）。
+# pub 上那个包在只读缓存里改不动 native 源码，只能把整份引擎搬进仓库。
+# 说明见 packages/quickjs_engine_local/pubspec.yaml。
+dependency_overrides:
+  quickjs_engine:
+    path: packages/quickjs_engine_local

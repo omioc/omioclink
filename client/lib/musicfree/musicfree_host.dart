@@ -11,6 +11,7 @@ import 'package:quickjs_engine/quickjs_engine.dart';
 import '../core/app_log.dart';
 import '../core/app_version.dart';
 import '../core/platform.dart';
+import 'musicfree_bytecode.dart';
 import 'plugin_models.dart';
 import 'plugin_paths.dart';
 
@@ -52,9 +53,12 @@ class MusicFreeEngine {
     this.lang = 'zh-CN',
     this.httpProxy,
     this.logSink,
+    this.timingSink,
   }) : _http = httpClient ?? _pluginClient(),
        _paths = paths ?? PluginPaths(),
-       _injectedBundle = bundleSource;
+       _injectedBundle = bundleSource {
+    _bytecode = MusicFreeBytecodeCache(dir: _paths.bytecodeDir);
+  }
 
   final http.Client _http;
   final PluginPaths _paths;
@@ -68,9 +72,21 @@ class MusicFreeEngine {
 
   /// 插件 console 日志的出口（worker 里 AppLog 落不到文件，只能回传主 isolate）。
   final void Function(String level, String message)? logSink;
+
+  /// 打点出口：worker 里 `AppLog.timing` 也落不到文件，只能回传主 isolate。
+  /// 字节码缓存命中率、每份插件/ bundle 的实际耗时都要靠它才看得见。
+  final void Function(String key, Duration elapsed)? timingSink;
   String? _cachedBundle;
 
-  JavascriptRuntime? _js;
+  /// 字节码缓存（磁盘）：插件源码编译一次，之后每个 worker 都只反序列化。
+  late final MusicFreeBytecodeCache _bytecode;
+
+  /// 引擎必须是 [QuickJsRuntime2]：字节码接口是我们在本地引擎包里加的，
+  /// 基类 `JavascriptRuntime` 上没有（`getJavascriptRuntime` 永远返回它）。
+  QuickJsRuntime2? _js;
+
+  /// 正在建运行时的那个 future，避免并发调用各自建一份 QuickJS。
+  Future<void>? _booting;
   final Map<String, _LoadedEntry> _entries = <String, _LoadedEntry>{};
   bool _disposed = false;
   /// 正在落盘的插件写入（storage / cookie）。调用结束前等它们写完，
@@ -151,17 +167,35 @@ class MusicFreeEngine {
     return text;
   }
 
-  Future<void> _ensureBooted() async {
+  /// 预热：真正建好 QuickJS 运行时并装载 577KB 的运行时代码。
+  ///
+  /// worker 一起来就调它（见 [musicFreeWorkerMain]），这样对外报的「worker 就绪」
+  /// 才真的等于「可以立刻装插件」——以前 `isReady` 只代表 isolate 起来了，第一次
+  /// 装载还要在调用方毫不知情的情况下编译一遍 bundle（占掉大半个装载耗时）。
+  Future<void> boot() => _ensureBooted();
+
+  Future<void> _ensureBooted() {
     if (_disposed) {
-      throw const MusicFreeException('插件宿主已释放');
+      return Future<void>.error(const MusicFreeException('插件宿主已释放'));
     }
     if (_js != null) {
-      return;
+      return Future<void>.value();
     }
+    final inflight = _booting;
+    if (inflight != null) {
+      return inflight;
+    }
+    // 同一时刻只建一份运行时：worker 里的请求处理器是异步的，两条并发调用
+    // 各自走到这里会建出两套 QuickJS（内存翻倍，而且互相看不见插件）。
+    _booting = _bootEngine().whenComplete(() => _booting = null);
+    return _booting!;
+  }
+
+  Future<void> _bootEngine() async {
     await _paths.ensureReady();
     final boot = Stopwatch()..start();
-    final js = getJavascriptRuntime(xhr: false);
-    AppLog.timing('插件.JS 运行时创建', boot.elapsed);
+    final js = getJavascriptRuntime(xhr: false) as QuickJsRuntime2;
+    _timing('插件.JS 运行时创建', boot.elapsed);
     js.onMessage('mf.http', (dynamic args) {
       // 请求自己跑完就行，调用方不需要（也不应该）等它落盘。
       unawaited(_handleHttp(args));
@@ -189,16 +223,105 @@ class MusicFreeEngine {
     });
     final bundleWatch = Stopwatch()..start();
     final source = await _bundle();
-    AppLog.timing('插件.bundle 读取', bundleWatch.elapsed);
+    _timing('插件.bundle 读取', bundleWatch.elapsed);
     final created = Stopwatch()..start();
-    final loaded = js.evaluate(source);
-    // 这是每次进程启动最贵的一步（压缩后仍有 577KB JS 要编译），必须能看到数字
-    AppLog.timing('插件.bundle 编译执行', created.elapsed);
+    final loaded = await _runScript(
+      js,
+      source,
+      cacheKey: MusicFreeBytecodeCache.bundleKey(source),
+      label: 'bundle',
+    );
+    _timing('插件.bundle 编译执行', created.elapsed);
     if (loaded.isError) {
       js.dispose();
       throw MusicFreeException('插件运行时加载失败：${loaded.stringResult}');
     }
     _js = js;
+  }
+
+  /// 跑一段脚本：**优先用磁盘上的字节码**，没有（或坏了）才编译一次并落盘。
+  ///
+  /// 两条路在 JS 侧等价：字节码就是同一份脚本的编译产物，执行结果与直接
+  /// evaluate 源码一致。任何一步不顺（老桥没有字节码接口、源码有语法错误、
+  /// 缓存文件被截断、引擎升级后字节码格式变了）都退回源码执行，绝不让
+  /// 「优化」变成「功能不可用」。
+  Future<JsEvalResult> _runScript(
+    QuickJsRuntime2 js,
+    String source, {
+    required String cacheKey,
+    required String label,
+  }) async {
+    final cached = await _bytecode.read(cacheKey);
+    if (cached != null) {
+      final watch = Stopwatch()..start();
+      final result = js.evaluateBytecode(cached);
+      _timing('插件.字节码 $label', watch.elapsed);
+      if (!result.isError) {
+        return result;
+      }
+      await _bytecode.remove(cacheKey);
+      _log('DEBUG', '字节码缓存不可用（$label），重新编译：${_brief(result.stringResult)}');
+    }
+    final compileWatch = Stopwatch()..start();
+    final bytes = js.compileToBytecode(source, name: '$label.js');
+    _timing('插件.编译 $label', compileWatch.elapsed);
+    if (bytes == null) {
+      // 桥不支持字节码，或者源码本身有语法错误：直接跑源码，
+      // 这样报错信息和以前一模一样。
+      final reason = js.lastBytecodeError;
+      if (reason != null) {
+        _log('DEBUG', '字节码编译失败（$label）：${_brief(reason)}');
+      }
+      return js.evaluate(source);
+    }
+    // 落盘不阻塞本次装载：字节码已经在手里了。
+    unawaited(_bytecode.write(cacheKey, bytes));
+    return js.evaluateBytecode(bytes);
+  }
+
+  /// 把插件源码包成与运行时 bundle 里 `Function(...)` **完全等价**的七参数工厂。
+  ///
+  /// 为什么要一模一样：字节码缓存键是「源码的 sha256」，这里改了包装方式而
+  /// 忘了 +1 `MusicFreeBytecodeCache.formatVersion`，就会把旧字节码读进新包装，
+  /// 插件立刻全挂。所以两边（这里与 runtime 的 `loadPlugin`）参数顺序、`'use strict';`
+  /// 前缀必须逐字一致。
+  ///
+  /// 末尾的 `'ok'` 是脚本的 completion value：不写的话最后一步是赋值，
+  /// 反序列化执行完会把整个函数（几 MB）转成字符串传回 Dart，纯属浪费。
+  static String _wrapPluginSource(String code) =>
+      'globalThis.$pluginFactoryGlobal = (function (require, __musicfree_require, '
+      'module, exports, console, env, process) {\n'
+      "'use strict';\n"
+      '$code\n'
+      '});\n'
+      "'ok';";
+
+  /// 编译好的插件工厂挂在哪个全局名上（与 runtime.bundle.js 的
+  /// `loadPluginFromFactory` 约定一致）。
+  static const String pluginFactoryGlobal = '__mfPluginFactory';
+
+  /// 字节码路径的装载是「反序列化 → 执行脚本（只定义工厂）→ install 调用工厂」，
+  /// install 会看全局上有没有工厂；有就说明宿主已经编译好了。
+  static const String _emptyPluginCode = '';
+
+  void _timing(String key, Duration elapsed) {
+    final sink = timingSink;
+    if (sink != null) {
+      sink(key, elapsed);
+    } else {
+      AppLog.timing(key, elapsed);
+    }
+  }
+
+  void _log(String level, String message) {
+    final sink = logSink;
+    if (sink != null) {
+      sink(level, message);
+    } else if (level == 'WARN') {
+      AppLog.warn(message);
+    } else {
+      AppLog.debug(message);
+    }
   }
 
   /// 把插件源码载入运行时，返回插件声明（platform / version / supportedMethod…）。
@@ -225,14 +348,34 @@ class MusicFreeEngine {
       'userVariables': userVariables,
     };
 
-    // 源码只转义一次：以前是 `jsonEncode(整个 payload)` 再塞进 evaluate，
-    // JS 侧还要 JSON.parse 一遍 —— 同一份插件源码被解析三次、字面量体积接近翻倍。
-    // 插件越大这笔越贵（实测大插件 5~25s），所以这里把 code 单独当参数传。
     final storageJson = jsonEncode(storage);
     final cookiesJson = jsonEncode(cookies);
     final optionsJson = jsonEncode(options);
+
+    // 插件源码先包成七参数工厂再走字节码缓存：同一份源码只需编译一次
+    // （落盘到 musicfree-data/bytecode），之后每次装载都只是「读文件 +
+    // 反序列化 + 调一次工厂」。以前每次装载都要在 QuickJS 里从头解析整份源码，
+    // 2.96MB 的聚合插件就是 22 秒。
+    final compiled = await _runScript(
+      js,
+      _wrapPluginSource(code),
+      cacheKey: MusicFreeBytecodeCache.pluginKey(code),
+      label: '插件${_shorten(hash)}',
+    );
+    if (compiled.isError) {
+      _entries.remove(hash)?.cancelTimers();
+      return MusicFreePlugin(
+        hash: hash,
+        platform: '未知插件',
+        path: path,
+        srcUrl: srcUrl,
+        loadError: _brief(compiled.stringResult),
+      );
+    }
+    // 字节码执行完 `__mfPluginFactory` 就在全局上了，install 会优先用它；
+    // 走到源码兜底路径时工厂同样已经定义好，两条路的收尾完全一致。
     final installed = js.evaluate(
-      '__mfRuntime.install(${jsonEncode(hash)}, ${jsonEncode(code)}, '
+      '__mfRuntime.install(${jsonEncode(hash)}, ${jsonEncode(_emptyPluginCode)}, '
       '${jsonEncode(optionsJson)}, ${jsonEncode(storageJson)}, '
       '${jsonEncode(cookiesJson)})',
     );
@@ -728,6 +871,10 @@ class MusicFreeEngine {
     }
     return '${oneLine.substring(0, 200)}…';
   }
+
+  /// 打点里的 hash 只留前 8 位，够对上插件、又不刷屏。
+  static String _shorten(String hash) =>
+      hash.length <= 8 ? hash : hash.substring(0, 8);
 }
 
 // ---------------------------------------------------------------------------
@@ -761,9 +908,10 @@ class MusicFreeHost {
 
   /// 默认并行度。
   ///
-  /// QuickJS 是单线程，想并行编译只能多开运行时；但每份运行时都要自己编译一遍
-  /// 577KB 的 bundle，内存与启动成本都乘上这个数。手机内存远比桌面紧，低端机
-  /// 上 3 份运行时很容易被系统直接杀掉，所以移动端固定 2；桌面上核多的给 3。
+  /// QuickJS 是单线程，插件同时要跑起来只能多开运行时（各自一份内存）。字节码
+  /// 缓存之后「每个 worker 编译一遍 577KB bundle」这笔账已经没了（首份编译并落盘，
+  /// 其余读缓存，每个几十毫秒），所以这个数字现在只由**内存**决定：手机内存紧，
+  /// 低端机上 3 份运行时很容易被系统杀掉，固定 2；桌面上核多的给 3。
   static int _defaultPoolSize() {
     if (isMobilePlatform) {
       return 2;
@@ -780,6 +928,13 @@ class MusicFreeHost {
 
   final List<_WorkerLink> _links = <_WorkerLink>[];
   final Map<int, _PendingCall> _pending = <int, _PendingCall>{};
+
+  /// worker 启动的串行链（见 [_start]）：第一个负责编译运行时 bundle，
+  /// 后面的读它写好的字节码缓存。
+  Future<void> _starting = Future<void>.value();
+
+  /// worker 里 `AppLog.timing` 落不到文件，打点由端口回传到这里再落盘。
+  void _timing(String key, Duration elapsed) => AppLog.timing(key, elapsed);
 
   /// hash → 跑着它的 worker；值为 null 表示「已登记元数据、还没编译」。
   final Map<String, _WorkerLink?> _owner = <String, _WorkerLink?>{};
@@ -1045,7 +1200,22 @@ class MusicFreeHost {
     return ready.first;
   }
 
-  Future<void> _start(_WorkerLink link) async {
+  /// 启动一个 worker。
+  ///
+  /// **串行化**：几个 worker 同时冷启动时，每个都会把 577KB 运行时 bundle 编译
+  /// 一遍（三份 = 三倍 CPU 和内存峰值）。串行之后第一个负责编译并把字节码写进
+  /// 磁盘缓存，后面的直接读缓存，每个都只要几十毫秒，等待时间可以忽略。
+  Future<void> _start(_WorkerLink link) {
+    if (link.isReady) {
+      return Future<void>.value();
+    }
+    final started = _starting.then((_) => _startLink(link));
+    // 失败不能把链条卡死：后面还要能启动别的 worker。
+    _starting = started.then<void>((_) {}, onError: (Object _) {});
+    return started;
+  }
+
+  Future<void> _startLink(_WorkerLink link) async {
     if (link.isReady) {
       return;
     }
@@ -1080,7 +1250,7 @@ class MusicFreeHost {
         debugName: 'musicfree-worker-${link.index}',
       );
       await completer.future;
-      AppLog.timing('插件.worker#${link.index} 就绪（含 bundle 编译）', watch.elapsed);
+      _timing('插件.worker#${link.index} 就绪（含引擎预热）', watch.elapsed);
     } on Object {
       link.starting = null;
       rethrow;
@@ -1113,6 +1283,12 @@ class MusicFreeHost {
     }
     if (map['http'] == true) {
       unawaited(_serveHttp(map));
+      return;
+    }
+    final timingKey = map['timing'];
+    if (timingKey is String) {
+      final ms = (map['ms'] as num?)?.toInt() ?? 0;
+      _timing(timingKey, Duration(milliseconds: ms));
       return;
     }
     final id = map['id'];
@@ -1252,7 +1428,7 @@ void musicFreeWorkerMain(List<Object?> args) {
   // 界面表现就是「插件突然全没了，然后从头再装一遍」。用 zone 拦住它，
   // 只记一条日志继续服务（原生栈溢出 `0xc00000fd` 这一层拦不住，另说）。
   runZonedGuarded(
-    () => _musicFreeWorkerBody(args),
+    () async => _musicFreeWorkerBody(args),
     (error, stack) {
       final toMain = args.isNotEmpty ? args[0] : null;
       if (toMain is SendPort) {
@@ -1266,7 +1442,12 @@ void musicFreeWorkerMain(List<Object?> args) {
 }
 
 /// worker 的真实主体（被 [musicFreeWorkerMain] 的 zone 包住）。
-void _musicFreeWorkerBody(List<Object?> args) {
+///
+/// **先暖机再报到**：QuickJS 运行时和 577KB 运行时代码在把 SendPort 发回去之前
+/// 就建好，主 isolate 收到端口时这个 worker 立刻可用来装插件。以前是「先报到、
+/// 第一次装载时才编译 bundle」，于是「worker 就绪 32ms」这个数字骗人——真正的
+/// 6 秒编译被算进了第一个插件的装载时间里。
+Future<void> _musicFreeWorkerBody(List<Object?> args) async {
   final toMain = args[0] as SendPort;
   final config = (args[1] as Map).cast<String, dynamic>();
   final engine = MusicFreeEngine(
@@ -1276,9 +1457,23 @@ void _musicFreeWorkerBody(List<Object?> args) {
     lang: config['lang']?.toString() ?? 'zh-CN',
     logSink: (level, message) =>
         toMain.send(<String, dynamic>{'log': level, 'message': message}),
+    // 打点也回主 isolate：worker 里的 AppLog 落不到文件，字节码缓存命中率
+    // 与每份插件的真实耗时只能这样才看得见。
+    timingSink: (key, elapsed) =>
+        toMain.send(<String, dynamic>{'timing': key, 'ms': elapsed.inMilliseconds}),
     httpProxy: (request, timeout) => _workerHttp(toMain, request, timeout),
   );
   final requests = ReceivePort();
+  try {
+    await engine.boot();
+  } on Object catch (error) {
+    // 暖机失败也要把端口交回去：后面的请求能报出真正的错误，
+    // 而且下次调用会自己重试建引擎。
+    toMain.send(<String, dynamic>{
+      'log': 'WARN',
+      'message': '插件引擎预热失败（下次调用会重试）：$error',
+    });
+  }
   toMain.send(requests.sendPort);
   requests.listen((message) async {
     if (message is! Map) {
