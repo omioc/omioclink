@@ -454,7 +454,13 @@ class MusicFreeLibrary extends ChangeNotifier {
       _chartGroups = await _service.topLists(refresh: force);
       _chartsLoaded = true;
       if (_chartGroups.isEmpty) {
-        _chartsError = hasPlugins ? '插件没有提供排行榜' : '还没有安装音乐插件';
+        // 分清「插件确实没有这个能力」和「有音源卡住了」：后者多半点一次重试就好
+        // （服务层有 20 多秒的总闸，卡住的结果会被丢掉重拉）。
+        _chartsError = !hasPlugins
+            ? '还没有安装音乐插件'
+            : _service.lastListTimedOut
+            ? '有的音源响应超时了，点重试再拉一次'
+            : '插件没有提供排行榜';
       }
     } on Object catch (error) {
       _chartsError = _message(error);

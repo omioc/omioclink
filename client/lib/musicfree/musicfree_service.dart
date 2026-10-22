@@ -558,6 +558,38 @@ class MusicFreeService {
   String _listCacheKey(String method, MusicFreePlugin plugin, [String extra = '']) =>
       '$method|${plugin.hash}${extra.isEmpty ? '' : '|$extra'}';
 
+  /// 等一批音源回来，但**不无限等**。
+  ///
+  /// 单个音源有自己的截止时间（[listTimeout]），可那个超时是在 worker 里由 Dart
+  /// 定时器触发的 —— 如果 worker 被插件里的死循环 / 微任务饥饿冻住（isolate 同步
+  /// 卡死），定时器根本跑不起来，调用就永远不返回，界面一直是「正在加载」。
+  /// 所以整轮再加一道总闸：到点就把已经回来的那些显示出来（每个音源写的是
+  /// `perPlugin[index]`，超时前拿到的结果都还在）。
+  Future<void> _waitWithDeadline(
+    List<Future<void>> futures, {
+    required String label,
+  }) async {
+    if (futures.isEmpty) {
+      lastListTimedOut = false;
+      return;
+    }
+    lastListTimedOut = false;
+    try {
+      await Future.wait<void>(
+        futures,
+      ).timeout(listTimeout * 3 + const Duration(seconds: 10));
+    } on TimeoutException {
+      lastListTimedOut = true;
+      AppLog.warn('获取$label超时，先显示已经返回的音源（有插件卡住了）');
+    }
+  }
+
+  /// 上一次「整轮等音源」是不是到点被总闸掐断的。
+  ///
+  /// 界面据此区分「插件确实没有这个能力」和「有音源卡住了」——否则超时会被显示成
+  /// 「插件没有提供排行榜」，把用户往错的方向引。
+  bool lastListTimedOut = false;
+
   /// 等落盘的写入。
   ///
   /// 搜索那条路径是「每敲一个字一次」，那边写缓存不等（见 [_writeCache]）；
@@ -641,7 +673,7 @@ class MusicFreeService {
       targets.length,
       (_) => <MusicFreeTopListGroup>[],
     );
-    await Future.wait<void>(<Future<void>>[
+    await _waitWithDeadline(<Future<void>>[
       for (var index = 0; index < targets.length; index += 1)
         () async {
           final plugin = targets[index];
@@ -702,7 +734,7 @@ class MusicFreeService {
             AppLog.warn('获取榜单失败 ${plugin.platform}', error: error);
           }
         }(),
-    ]);
+    ], label: '榜单');
     final groups = <MusicFreeTopListGroup>[
       for (final item in perPlugin) ...item,
     ];
@@ -738,7 +770,7 @@ class MusicFreeService {
       targets.length,
       (_) => const MusicFreeTags(),
     );
-    await Future.wait<void>(<Future<void>>[
+    await _waitWithDeadline(<Future<void>>[
       for (var index = 0; index < targets.length; index += 1)
         () async {
           final plugin = targets[index];
@@ -808,7 +840,7 @@ class MusicFreeService {
             AppLog.warn('获取歌单标签失败 ${plugin.platform}', error: error);
           }
         }(),
-    ]);
+    ], label: '歌单标签');
     final tags = MusicFreeTags(
       pinned: <MusicFreeTag>[for (final item in perPlugin) ...item.pinned],
       groups: <MusicFreeTagGroup>[for (final item in perPlugin) ...item.groups],

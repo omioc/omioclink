@@ -241,7 +241,11 @@ class MusicFreePlugins {
     await _loadPrefs();
     final restored = await host.restoreMetadata();
     if (restored > 0) {
-      AppLog.info('插件列表从缓存恢复 $restored 个（未编译，按需装载）');
+      AppLog.info('插件列表从缓存恢复 $restored 个（先显示，后台逐个编译）');
+      // 后台**逐个**编译（`prefetch()` 是一次一个：并发装载会互相拖死）。
+      // 这样用户过几秒点开点歌台时，排行榜 / 热门歌单直接就是「已就绪」的状态，
+      // 不用现场付编译时间（首次安装后每个 0.3~1.2s，字节码命中后几十毫秒）。
+      unawaited(host.prefetch());
     }
     return restored;
   }

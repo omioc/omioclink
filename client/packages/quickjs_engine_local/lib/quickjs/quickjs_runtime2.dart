@@ -152,15 +152,24 @@ class QuickJsRuntime2 extends JavascriptRuntime {
     }
   }
 
+  /// 一次 drain 最多抽多少个微任务。
+  ///
+  /// 为什么需要上限：`JS_ExecutePendingJob` 一次只跑一个 job，而
+  /// `Promise.resolve().then(fn)` 里再 `then` 自己这种写法会让队列**永远抽不空**，
+  /// 原来的 `while (true)` 就会同步卡死整个 isolate。表现出来是：插件某个方法永远
+  /// 不返回，连超时都触发不了 —— 超时靠 Dart 定时器，而定时器需要事件循环。
+  /// 加上限之后最坏是「这一轮少抽一点」，20ms 后的轮询 / 下一次调用会接着抽。
+  static const int maxJobsPerDrain = 20000;
+
   void _executePendingJob() {
     final rt = _rt;
     final ctx = _ctx;
     if (rt == null || ctx == null) return;
-    while (true) {
-      int err = jsExecutePendingJob(rt);
+    for (var i = 0; i < maxJobsPerDrain; i += 1) {
+      final err = jsExecutePendingJob(rt);
       if (err <= 0) {
         if (err < 0) print(_parseJSException(ctx));
-        break;
+        return;
       }
     }
   }
