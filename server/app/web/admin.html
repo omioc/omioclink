@@ -1,190 +1,559 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/admin/logo.png">
 <title>OmiocLink 管理</title>
 <style>
+  /* ---------------------------------------------------------------- 主题令牌
+     浅色 / 暗色各一套。所有颜色只能从这里取：页面里不再出现写死的色值，
+     否则换主题时总有一块留在另一套配色里。 */
   :root {
-    --bg: #0d131c; --sidebar: #141c26; --panel: #19222e; --elevated: #1f2a38;
-    --divider: #26323f; --accent: #4c6fff; --success: #34d399; --danger: #f87171;
-    --warning: #f59e0b; --text: #e6edf3; --muted: #93a1b2; --faint: #5f6d7e;
+    --canvas: #f7f8fa;
+    --surface: #ffffff;
+    --surface-2: #f2f4f7;
+    --surface-3: #e9edf1;
+    --row-tint: rgba(16, 24, 40, .028);
+    --head-tint: rgba(16, 24, 40, .045);
+    --line: #e5e7eb;
+    --line-soft: rgba(16, 24, 40, .07);
+    --line-strong: #d6dae0;
+    --ink: #14181d;
+    --ink-2: #464f5a;
+    --muted: #7c858f;
+    --accent: #12a150;
+    --accent-ink: #0b7a3b;
+    --accent-soft: #e7f6ec;
+    --danger: #c63c3c;
+    --danger-soft: #fdecec;
+    --warn: #a96a00;
+    --warn-soft: #fdf3e2;
+    --shadow: none;
+    --shadow-sm: none;
+    --rail: #ffffff;
   }
+  html[data-theme="dark"] {
+    --canvas: #0d1014;
+    --surface: #141920;
+    --surface-2: #1b222b;
+    --surface-3: #232c36;
+    --row-tint: rgba(255, 255, 255, .035);
+    --head-tint: rgba(255, 255, 255, .055);
+    --line: #232b35;
+    --line-soft: rgba(255, 255, 255, .07);
+    --line-strong: #2f3944;
+    --ink: #e8ecf1;
+    --ink-2: #b3bcc7;
+    --muted: #7f8a97;
+    --accent: #34d399;
+    --accent-ink: #6ee7b7;
+    --accent-soft: rgba(52, 211, 153, .13);
+    --danger: #f27c7c;
+    --danger-soft: rgba(242, 124, 124, .13);
+    --warn: #e3a44a;
+    --warn-soft: rgba(227, 164, 74, .13);
+    --shadow: none;
+    --shadow-sm: none;
+    --rail: #12171e;
+  }
+
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    margin: 0; background: var(--bg); color: var(--text); font-size: 14px;
-    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    margin: 0; background: var(--canvas); color: var(--ink);
+    font: 14px/1.55 "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    /* 页面本身永不滚动：内容区自己滚（见 .panel-body） */
+    display: grid; grid-template-columns: 216px minmax(0, 1fr);
+    height: 100dvh; overflow: hidden;
+    -webkit-font-smoothing: antialiased;
   }
-  a { color: var(--accent); }
-  header {
-    display: flex; align-items: center; gap: 16px; padding: 14px 22px;
-    background: var(--sidebar); border-bottom: 1px solid var(--divider);
-    position: sticky; top: 0; z-index: 10;
+  a { color: var(--accent-ink); }
+  .mono {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    letter-spacing: .04em; font-variant-numeric: tabular-nums;
   }
-  .logo {
-    width: 24px; height: 24px; border-radius: 6px; object-fit: cover; display: block;
+  .num { font-variant-numeric: tabular-nums; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  /* 输入框不画轮廓：聚焦只用底色区分（Chrome 对文本框连鼠标点击也算 focus-visible） */
+  input:focus-visible, select:focus-visible { outline: none; }
+
+  /* ------------------------------------------------------------------ 左栏 */
+  .rail {
+    background: var(--rail);
+    display: flex; flex-direction: column; gap: 18px;
+    padding: 18px 16px; min-height: 0;
   }
-  header h1 { font-size: 15px; margin: 0; font-weight: 700; }
-  .spacer { flex: 1; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
-  .dot.on { background: var(--success); box-shadow: 0 0 6px var(--success); }
-  .dot.off { background: var(--danger); }
-  main { padding: 22px; max-width: 1180px; margin: 0 auto; }
-  section { margin-bottom: 22px; }
-  .card {
-    background: var(--panel); border: 1px solid var(--divider); border-radius: 12px;
-    padding: 16px;
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .brand img { width: 32px; height: 32px; border-radius: 9px; object-fit: cover; flex: none; }
+  .brand-text { min-width: 0; flex: 1; }
+  .brand-text b {
+    display: block; font-size: 14px; letter-spacing: -.01em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .grow { flex: 1; }
-  h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0 0 12px; letter-spacing: .3px; }
-  input[type=text], input[type=password], input[type=search] {
-    background: var(--elevated); border: 1px solid transparent; color: var(--text);
-    border-radius: 8px; padding: 9px 12px; font-size: 13px; outline: none; min-width: 0;
+  .brand-text span {
+    display: block; font-size: 11.5px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  input:focus { border-color: var(--accent); }
+
+  .rail-block { display: grid; gap: 7px; font-size: 12px; color: var(--muted); }
+  .rail-block .k { color: var(--muted); }
+  .rail-block .v { color: var(--ink-2); font-weight: 600; }
+
+  .status { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+  .status.on .dot { background: var(--accent); }
+  .status.off .dot { background: var(--danger); }
+
+
+  /* ------------------------------------------------------------------ 按钮 */
+  /* 普通按钮：有底色、小圆角；只有「幽灵」变体才不铺底色 */
   button {
-    background: var(--elevated); color: var(--text); border: 1px solid var(--divider);
-    border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer;
+    font: inherit; color: var(--ink); background: var(--surface-2);
+    border: 1px solid transparent; border-radius: 5px;
+    height: 32px; padding: 0 12px; gap: 6px;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: background .15s, color .15s;
   }
-  button:hover { background: #26313f; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.primary:hover { background: #3f5eeb; }
-  button.danger { color: var(--danger); border-color: #4a2b2f; }
-  button.danger:hover { background: #3a2327; }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .stat { background: var(--panel); border: 1px solid var(--divider); border-radius: 12px; padding: 14px 16px; }
-  .stat .k { color: var(--faint); font-size: 12px; }
-  .stat .v { font-size: 24px; font-weight: 700; margin-top: 4px; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--divider); font-size: 13px; }
-  th { color: var(--faint); font-weight: 600; font-size: 12px; }
-  tr:last-child td { border-bottom: none; }
-  .tag {
-    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
-    background: var(--elevated); color: var(--muted);
+  button:hover:not(:disabled) { background: var(--surface-3); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #fff; font-weight: 600; }
+  html[data-theme="dark"] button.primary { color: #06170f; }
+  button.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.06); }
+  button.danger { color: var(--danger); }
+  button.danger:hover:not(:disabled) { background: var(--danger-soft); }
+  button.ghost { background: transparent; color: var(--ink-2); }
+  button.ghost:hover:not(:disabled) { background: var(--surface-2); }
+  button.small { height: 28px; padding: 0 10px; font-size: 12.5px; border-radius: 5px; }
+  button svg { width: 14px; height: 14px; display: block; }
+  .icon-btn {
+    width: 32px; height: 32px; padding: 0; display: inline-grid; place-items: center;
+    font-size: 15px; line-height: 1;
   }
-  .tag.on { background: rgba(52,211,153,.15); color: var(--success); }
-  .tag.off { background: rgba(248,113,113,.15); color: var(--danger); }
-  .tag.lock { background: rgba(245,158,11,.15); color: var(--warning); }
-  .mono { font-family: ui-monospace, Consolas, monospace; letter-spacing: 1px; }
-  .empty { color: var(--faint); padding: 18px 8px; font-size: 13px; }
-  .hint { color: var(--faint); font-size: 12px; line-height: 1.7; }
+
+  input[type=text], input[type=password], input[type=search], select {
+    font: inherit; color: var(--ink); background: var(--surface-2);
+    border: 1px solid transparent; border-radius: 5px;
+    height: 32px; padding: 0 11px; min-width: 0;
+    transition: background .15s, box-shadow .15s;
+  }
+  /* 聚焦只把底色压深一档：不加描边，靠色差把输入框和卡片分开 */
+  input:focus, select:focus {
+    background: var(--surface-3);
+  }
+  input::placeholder { color: var(--muted); }
+  /* 搜索框的「清空」：浏览器自带的叉用系统强调色（各家还不一样），
+     直接藏掉，用下面 .search-clear 自己画一个主题色的。 */
+  input[type="search"]::-webkit-search-cancel-button,
+  input[type="search"]::-webkit-search-decoration {
+    -webkit-appearance: none; appearance: none; display: none;
+  }
+  .search-clear {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    width: 22px; height: 22px; padding: 0; border: none; background: transparent;
+    border-radius: 5px; display: none; place-items: center; color: var(--accent);
+  }
+  .search-clear[data-visible="true"] { display: grid; }
+  .search-clear:hover:not(:disabled) { background: var(--line-soft); }
+  .search-clear svg { width: 13px; height: 13px; display: block; }
+
+  /* -------------------------------------------------------------- 主内容区 */
+  .main {
+    display: grid; grid-template-rows: auto auto auto minmax(0, 1fr);
+    gap: 14px; padding: 18px 22px 16px; min-width: 0; min-height: 0;
+  }
+  .page-head { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .head-titles { min-width: 0; }
+  .page-head h1 { font-size: 20px; margin: 0; letter-spacing: -.015em; }
+  .page-head p { margin: 0; color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 提示放在标题行的空白处：出现在那一行里，不额外占一整行高度 */
+  .head-notice { flex: 1 1 0; min-width: 0; display: flex; justify-content: flex-end; }
+  .head-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; flex: none; }
+  .whoami {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--ink-2);
+    max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .whoami::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent); flex: none;
+  }
+
+  /* 统计：四张各自独立的小卡片（没有共用边框、也没有中间的竖线） */
+  .stats {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .stat {
+    padding: 11px 13px; min-width: 0;
+    background: var(--surface); border-radius: 13px;
+  }
+  .stat-top { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px; }
+  .stat-top .mark { width: 5px; height: 5px; border-radius: 2px; background: var(--line-strong); }
+  .stat-top .mark.live { background: var(--accent); }
+  .stat-body { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; margin-top: 3px; }
+  .stat-body > div:first-child { min-width: 0; }
+  .stat-value {
+    font-size: 20px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-sub {
+    color: var(--muted); font-size: 11px; margin-top: 1px; min-height: 15px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .spark { width: 54px; height: 22px; flex: none; overflow: visible; }
+  .spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+  .spark.empty polyline { display: none; }
+
+  /* ------------------------------------------------------------------ 页签 */
+  .tabs {
+    display: inline-flex; gap: 2px; padding: 3px;
+    /* grid 子项默认拉伸到整行：这里只按三个页签的内容宽度铺开 */
+    justify-self: start;
+    background: var(--surface-2); border-radius: 11px;
+  }
+  .tab {
+    border: none; background: transparent; color: var(--ink-2);
+    padding: 7px 16px; border-radius: 5px; font-size: 13px; font-weight: 600;
+  }
+  .tab:hover:not([aria-selected="true"]) { background: var(--surface); }
+  .tab[aria-selected="true"] {
+    background: var(--surface); color: var(--ink);
+  }
+  .tab .count {
+    margin-left: 6px; font-weight: 600; font-size: 11.5px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ------------------------------------------------------ 面板（各页签主体） */
+  .panel {
+    display: none; min-height: 0; flex-direction: column;
+    background: var(--surface); border-radius: 16px;
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .panel[data-active="true"] { display: flex; }
+  .panel-toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 16px; min-height: 52px; background: var(--surface);
+  }
+  .panel-toolbar .spacer { flex: 1; }
+  .search-field {
+    position: relative; display: inline-flex; align-items: center;
+    flex: 0 1 240px; min-width: 160px;
+  }
+  .search-field .search-icon {
+    position: absolute; left: 10px; display: grid; place-items: center;
+    color: var(--muted); pointer-events: none;
+  }
+  .search-field .search-icon svg { width: 14px; height: 14px; display: block; }
+  .search-field input { width: 100%; padding-left: 32px; padding-right: 30px; }
+  #newUserBtn { display: inline-flex; align-items: center; gap: 6px; }
+  #newUserBtn svg { width: 14px; height: 14px; }
+  .panel-body { flex: 1; min-height: 0; overflow: auto; padding: 6px 14px 8px; }
+  /* 窄屏先丢次要列，避免表格横向溢出（页面本身永远不滚） */
+  @media (max-width: 1080px) { .hide-md { display: none; } }
+  .panel-foot {
+    display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+    color: var(--muted); font-size: 12.5px;
+  }
+  .panel-foot .spacer { flex: 1; }
+  /* 工具条里的单行说明：不换行、超长省略，保证三个页签的工具条一样高 */
+  .hint-line { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 分页：圆角方块页码，当前页填充强调色 */
+  .pager { display: inline-flex; align-items: center; gap: 4px; }
+  .page-btn {
+    min-width: 28px; height: 28px; padding: 0 8px; border: none;
+    background: var(--surface-2); color: var(--ink-2);
+    border-radius: 5px; font-size: 12.5px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .page-btn:hover:not(:disabled):not(.active) { background: var(--line-soft); }
+  .page-btn.active { background: var(--accent); color: #fff; }
+  html[data-theme="dark"] .page-btn.active { color: #06170f; }
+  .page-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .page-gap { color: var(--muted); font-size: 12px; padding: 0 2px; }
+
+  /* ------------------------------------------------------------------ 表格 */
+  /* 表头是一条浅色带、行与行之间靠斑马纹区分（没有分割线），操作是行尾的图标 */
+  table {
+    width: 100%; margin: 0;
+    border-collapse: separate; border-spacing: 0;
+  }
+  thead th {
+    position: sticky; top: 0; z-index: 1;
+    text-align: left; font-size: 11.5px; font-weight: 600; color: var(--muted);
+    background: var(--head-tint); padding: 10px 16px; white-space: nowrap;
+  }
+  thead th:first-child { padding-left: 18px; border-radius: 10px 0 0 10px; }
+  thead th:last-child { border-radius: 0 10px 10px 0; }
+  tbody td {
+    padding: 12px 16px; font-size: 13px; vertical-align: middle; white-space: nowrap;
+    border: none;
+  }
+  tbody td:first-child { padding-left: 18px; }
+  /* 斑马纹从第二行开始：第一行留白，和第二行交替，看起来更像「一条条」的行 */
+  tbody tr:nth-child(even) td { background: var(--row-tint); }
+  tbody tr:hover td { background: var(--head-tint); }
+  /* 每行首尾切角：一条条圆角色带（白底行看不出来，斑马行和悬停行才显形） */
+  tbody tr td:first-child { border-radius: 10px 0 0 10px; }
+  tbody tr td:last-child { border-radius: 0 10px 10px 0; }
+  td.actions { text-align: right; white-space: nowrap; }
+  thead th.actions { text-align: right; }
+  /* 行尾操作：无边框的图标按钮，悬停才上底色 */
+  .icon-action {
+    width: 28px; height: 28px; padding: 0; border: none; background: transparent;
+    border-radius: 5px; display: inline-grid; place-items: center; vertical-align: middle;
+    color: var(--ink-2);
+  }
+  .icon-action + .icon-action { margin-left: 2px; }
+  .icon-action:hover:not(:disabled) { background: var(--line-soft); }
+  .icon-action.danger { color: var(--danger); }
+  .icon-action.danger:hover:not(:disabled) { background: var(--danger-soft); }
+  .icon-action svg { width: 15px; height: 15px; display: block; }
+  /* 启用（绿）/ 禁用（灰）用两个不同的图标，光看图标就知道点下去会发生什么 */
+  .icon-action.accent { color: var(--accent); }
+  .strong { font-weight: 600; }
+  .dim { color: var(--muted); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
+    background: var(--surface-2); color: var(--ink-2);
+    /* 抵消左右内边距：胶囊里的文字与表头文字落在同一条左边界上 */
+    margin-left: -9px;
+  }
+  .pill.on { background: var(--accent-soft); color: var(--accent-ink); }
+  .pill.off { background: var(--danger-soft); color: var(--danger); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+
+  /* 自绘下拉：触发器 + 展开列表都用主题样式，原生 <select> 的列表改不动 */
+  .select {
+    position: relative; display: inline-flex; align-items: center; gap: 5px;
+    height: 28px; padding: 0 8px 0 10px; border-radius: 5px;
+    background: var(--surface-2); color: var(--ink-2);
+    font-size: 12.5px; cursor: pointer; user-select: none;
+  }
+  .select:hover { background: var(--surface-3); }
+  .select-value { font-variant-numeric: tabular-nums; }
+  .select-caret { width: 12px; height: 12px; }
+  .select-menu {
+    position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 20;
+    min-width: 88px; padding: 4px; display: grid; gap: 2px;
+    background: var(--surface-2); border-radius: 10px;
+  }
+  html[data-theme="dark"] .select-menu { background: var(--surface-3); }
+  .select-menu[hidden] { display: none; }
+  .select-option {
+    width: 100%; height: 28px; padding: 0 12px; border: none; background: transparent;
+    border-radius: 5px; justify-content: flex-start; color: var(--ink-2);
+    font-size: 12.5px; font-variant-numeric: tabular-nums;
+  }
+  .select-option:hover:not(:disabled) { background: var(--surface-3); }
+  html[data-theme="dark"] .select-option:hover:not(:disabled) { background: var(--surface-2); }
+  .select-option[aria-selected="true"] { color: var(--accent-ink); font-weight: 600; }
+
+  .code {
+    display: inline-block; padding: 1px 7px; border-radius: 6px;
+    background: var(--surface-2); font-size: 12px;
+  }
+  .meter { width: 52px; height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+  .cell-inline { display: inline-flex; align-items: center; gap: 8px; }
+
+  .empty { padding: 34px 16px; text-align: center; color: var(--muted); font-size: 13px; }
+  .empty b { display: block; color: var(--ink-2); font-size: 13.5px; margin-bottom: 4px; }
+
+  /* ------------------------------------------------------------------ 其它 */
+  .hint { color: var(--muted); font-size: 12px; line-height: 1.7; }
+  .hint code, .mono-box {
+    font-family: ui-monospace, Consolas, monospace; font-size: 11.5px;
+    background: var(--surface-2);
+    padding: 1px 5px; border-radius: 5px;
+  }
   #banner {
-    display: none; margin: 0 0 18px; padding: 11px 14px; border-radius: 10px; font-size: 13px;
-    background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.35); color: #fca5a5;
+    display: none; padding: 5px 11px; border-radius: 8px; font-size: 12px;
+    background: var(--danger-soft); color: var(--danger);
+    max-width: min(46vw, 460px);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  #banner.ok {
-    background: rgba(52,211,153,.12); border-color: rgba(52,211,153,.35); color: #6ee7b7;
-  }
-  dialog {
-    background: var(--panel); color: var(--text); border: 1px solid var(--divider);
-    border-radius: 14px; padding: 20px; width: min(620px, 92vw);
-  }
-  dialog::backdrop { background: rgba(0,0,0,.6); }
-  dialog h3 { margin: 0 0 14px; font-size: 15px; }
-  dialog .field input { width: 100%; }
-  .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+  #banner.ok { background: var(--accent-soft); color: var(--accent-ink); }
+
+  .switch { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; user-select: none; font-size: 12.5px; color: var(--ink-2); }
   .switch input { display: none; }
-  .track { width: 42px; height: 24px; border-radius: 999px; background: var(--elevated); position: relative; transition: .15s; }
+  .track { width: 38px; height: 21px; border-radius: 999px; background: var(--line-strong); position: relative; transition: background .15s; flex: none; }
   .track::after {
-    content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
-    border-radius: 50%; background: var(--muted); transition: .15s;
+    content: ''; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px;
+    border-radius: 50%; background: #fff; transition: left .15s;
   }
-  .switch input:checked + .track { background: rgba(52,211,153,.25); }
-  .switch input:checked + .track::after { left: 21px; background: var(--success); }
-  .field { display: flex; flex-direction: column; gap: 5px; }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track::after { left: 20px; }
+
+  dialog {
+    border: none; border-radius: 18px; padding: 20px 22px;
+    background: var(--surface); color: var(--ink); width: min(640px, 92vw);
+    max-height: min(86dvh, 720px);
+  }
+  dialog::backdrop { background: rgba(9, 13, 18, .55); backdrop-filter: blur(2px); }
+  dialog h3 { margin: 0 0 14px; font-size: 15.5px; letter-spacing: -.01em; }
+  dialog .body { max-height: min(64dvh, 560px); overflow: auto; }
+  dialog .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  .field { display: grid; gap: 5px; }
   .field label { font-size: 12px; color: var(--muted); }
+  .field input { width: 100%; }
+  .grid-form { display: grid; gap: 12px; }
   .form-error { color: var(--danger); font-size: 12px; min-height: 18px; padding-top: 8px; }
   .warn-box {
-    display: none; margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; font-size: 12px;
-    line-height: 1.7; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.35);
-    color: #fbbf24;
+    display: none; margin: 0 0 14px; padding: 10px 12px; border-radius: 10px;
+    font-size: 12px; line-height: 1.7; background: var(--warn-soft); color: var(--warn);
+  }
+  .sub-row { display: flex; gap: 8px; align-items: center; }
+  .sub-row input { flex: 1; }
+  .sub-index { width: 22px; color: var(--muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* 细滚动条：只在表格体里出现，看起来是「面板在滚」而不是页面在滚 */
+  .panel-body, dialog .body { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+  .panel-body::-webkit-scrollbar, dialog .body::-webkit-scrollbar { width: 9px; height: 9px; }
+  .panel-body::-webkit-scrollbar-thumb, dialog .body::-webkit-scrollbar-thumb {
+    background: var(--line-strong); border-radius: 999px; border: 2px solid var(--surface);
+  }
+
+  @media (max-width: 900px) {
+    body { grid-template-columns: minmax(0, 1fr); }
+    .rail { display: none; }
+    .main { padding: 14px; gap: 11px; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
   }
 </style>
 </head>
 <body>
-<header>
-  <img class="logo" src="/admin/logo.png" alt="OmiocLink">
-  <h1>OmiocLink 管理</h1>
-  <span class="dot" id="statusDot"></span>
-  <span class="hint" id="statusText">未登录</span>
-  <div class="spacer"></div>
-  <span class="hint" id="whoami" style="display: none"></span>
-  <button id="changePasswordBtn" style="display: none">修改密码</button>
-  <button id="logoutBtn" style="display: none">退出</button>
-</header>
+<aside class="rail">
+  <div class="brand">
+    <img src="/admin/logo.png" alt="OmiocLink">
+    <div class="brand-text">
+      <b>OmiocLink 管理</b>
+      <span id="serverName">正在连接…</span>
+    </div>
+  </div>
 
-<main>
-  <div id="banner"></div>
+  <div class="rail-block">
+    <div><span class="k">服务端</span></div>
+    <div class="v num" id="serverVersion">—</div>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">未登录</span></div>
+  </div>
+</aside>
 
-  <section>
-    <div class="stats" id="stats"></div>
-  </section>
+<main class="main">
+  <div class="page-head">
+    <div class="head-titles">
+      <h1>系统概览</h1>
+      <p id="headline">连接后这里显示这台服务器的实时状态</p>
+    </div>
+    <div class="head-notice" id="banner"></div>
+    <div class="head-actions">
+      <span class="whoami" id="whoami" style="display: none"></span>
+      <button class="icon-btn ghost" id="themeBtn" title="切换浅色 / 深色" aria-label="切换主题">◐</button>
+      <button class="ghost small" id="changePasswordBtn" style="display: none">修改密码</button>
+      <button class="ghost small" id="logoutBtn" style="display: none">退出登录</button>
+      <button class="icon-btn ghost" id="refreshBtn" title="立即刷新" aria-label="立即刷新">⟳</button>
+    </div>
+  </div>
 
-  <section class="card">
-    <h2>用户自注册</h2>
-    <div class="row">
-      <label class="switch">
+  <section class="stats" id="stats"></section>
+
+  <div class="tabs" role="tablist" aria-label="管理区块">
+    <button class="tab" id="tab-accounts" role="tab" aria-selected="true" aria-controls="panel-accounts" data-tab="accounts">
+      账号<span class="count" id="countAccounts"></span>
+    </button>
+    <button class="tab" id="tab-rooms" role="tab" aria-selected="false" aria-controls="panel-rooms" data-tab="rooms">
+      房间<span class="count" id="countRooms"></span>
+    </button>
+    <button class="tab" id="tab-plugins" role="tab" aria-selected="false" aria-controls="panel-plugins" data-tab="plugins">
+      插件
+    </button>
+  </div>
+
+  <!-- 账号 -->
+  <section class="panel" id="panel-accounts" role="tabpanel" aria-labelledby="tab-accounts" data-active="true">
+    <div class="panel-toolbar">
+      <label class="search-field" title="按用户名或昵称搜索，回车确认">
+        <span class="search-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6"></circle><path d="M16 16l4.5 4.5"></path></svg>
+        </span>
+        <input type="search" id="userQuery" placeholder="按用户名或昵称搜索">
+        <button type="button" class="search-clear" id="userQueryClear" aria-label="清空搜索" data-visible="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+        </button>
+      </label>
+      <div class="spacer"></div>
+      <label class="switch" title="重启容器后回到 .env 里的 OMIOCLINK_ALLOW_REGISTRATION">
         <input type="checkbox" id="registrationToggle">
         <span class="track"></span>
+        <span id="registrationLabel">自助注册</span>
       </label>
-      <span id="registrationLabel" class="hint">—</span>
+      <button class="primary" id="newUserBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        新建账号
+      </button>
     </div>
-    <p class="hint" style="margin: 12px 0 0">
-      这里切换是<strong>临时</strong>的：重启容器后会回到 .env 里的 <span class="mono">OMIOCLINK_ALLOW_REGISTRATION</span>。
-      想永久生效请改 .env。账号也可以直接用下面的「新建账号」创建，不需要开注册。
-    </p>
-  </section>
-
-  <section class="card">
-    <h2>房间</h2>
-    <div id="rooms"></div>
-  </section>
-
-  <section class="card">
-    <h2>账号</h2>
-    <div class="row" style="margin-bottom: 14px">
-      <input type="search" id="userQuery" placeholder="按用户名或昵称搜索" style="width: 260px">
-      <button id="searchBtn">搜索</button>
+    <div class="panel-body" id="users"></div>
+    <div class="panel-foot">
+      <span id="usersSummary" class="dim">—</span>
       <div class="spacer"></div>
-      <button class="primary" id="newUserBtn">新建账号</button>
+      <div class="hint">每页</div>
+      <div class="select" id="usersPageSize" role="button" tabindex="0" aria-label="每页数量"></div>
+      <div class="pager" id="usersPager"></div>
     </div>
-    <div id="users"></div>
   </section>
 
-  <section class="card">
-    <h2>音乐插件订阅</h2>
-    <p class="hint" style="margin: 0 0 14px">
-      服务器只保存订阅地址，客户端登录后会自动下载并安装插件；<strong>不再支持洛雪音源脚本</strong>——
-      服务器不下载、不解析、不代理任何音乐数据，播放地址由客户端直连音源。
-      每条地址必须是 <span class="mono">http://</span> 或 <span class="mono">https://</span> 开头的绝对地址，
-      且以 <span class="mono">.js</span> / <span class="mono">.json</span> 结尾（可带 ?查询串），最多 20 条。
-    </p>
-    <div id="subscriptions" style="display: grid; gap: 10px; margin-bottom: 14px"></div>
-    <div class="row">
-      <button id="addSubscriptionBtn">添加一条</button>
+  <!-- 房间 -->
+  <section class="panel" id="panel-rooms" role="tabpanel" aria-labelledby="tab-rooms">
+    <div class="panel-toolbar">
+      <span class="hint hint-line">有人的房间排在前面，成员数实时刷新</span>
+    </div>
+    <div class="panel-body" id="rooms"></div>
+    <div class="panel-foot">
+      <span id="roomsSummary" class="dim">—</span>
       <div class="spacer"></div>
-      <button class="primary" id="saveSubscriptionsBtn">保存订阅</button>
+      <div class="hint">每页</div>
+      <div class="select" id="roomsPageSize" role="button" tabindex="0" aria-label="每页数量"></div>
+      <div class="pager" id="roomsPager"></div>
+    </div>
+  </section>
+
+  <!-- 插件订阅 -->
+  <section class="panel" id="panel-plugins" role="tabpanel" aria-labelledby="tab-plugins">
+    <div class="panel-toolbar">
+      <span class="hint hint-line" title="每条必须是 http(s):// 开头、以 .js 或 .json 结尾的绝对地址，最多 20 条">
+        订阅地址（.js / .json，最多 20 条）
+      </span>
+      <div class="spacer"></div>
+      <button id="addSubscriptionBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>添加一条</button>
+      <button class="primary" id="saveSubscriptionsBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg>保存</button>
+    </div>
+    <div class="panel-body" id="subscriptions"></div>
+    <div class="panel-foot">
+      <span id="pluginsSummary" class="dim">—</span>
+      <div class="spacer"></div>
+      <div class="hint">每页</div>
+      <div class="select" id="pluginsPageSize" role="button" tabindex="0" aria-label="每页数量"></div>
+      <div class="pager" id="pluginsPager"></div>
     </div>
   </section>
 
 </main>
 
 <dialog id="membersDialog">
-  <div class="row" style="margin-bottom: 12px">
-    <h3 id="membersTitle" style="margin: 0">房间成员</h3>
-    <div class="spacer"></div>
-    <button id="closeMembers">关闭</button>
-  </div>
-  <div id="membersBody"></div>
+  <h3 id="membersTitle">房间成员</h3>
+  <div class="body" id="membersBody"></div>
+  <div class="foot"><button id="closeMembers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>关闭</button></div>
 </dialog>
 
 <dialog id="newUserDialog">
   <h3>新建账号</h3>
-  <div style="display: grid; gap: 12px">
+  <div class="grid-form">
     <div class="field">
       <label>用户名（3~32 位字母、数字、_ 或 -）</label>
       <input type="text" id="newUsername" autocomplete="off">
@@ -198,9 +567,9 @@
       <input type="text" id="newPassword" autocomplete="off">
     </div>
   </div>
-  <div class="row" style="margin-top: 18px; justify-content: flex-end">
-    <button id="cancelNewUser">取消</button>
-    <button class="primary" id="confirmNewUser">创建</button>
+  <div class="foot">
+    <button id="cancelNewUser"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>取消</button>
+    <button class="primary" id="confirmNewUser"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>创建</button>
   </div>
 </dialog>
 
@@ -208,12 +577,11 @@
 <dialog id="setupDialog">
   <h3>设置管理员密码</h3>
   <p class="hint" style="margin: 0 0 14px">
-    这台服务器还没有管理员密码。设置之后用它登录管理台；
-    密码只保存哈希，忘了只能登录服务器清掉数据库里的
-    <span class="mono">admin_account</span> 一行再重新设置。
+    这台服务器还没有管理员密码。设置之后用它登录管理台；密码只保存哈希，
+    忘了只能登录服务器清掉数据库里的 <span class="mono-box">admin_account</span> 一行再重新设置。
   </p>
   <div class="warn-box" id="legacyHint"></div>
-  <div style="display: grid; gap: 12px">
+  <div class="grid-form">
     <div class="field">
       <label id="setupPasswordLabel">密码（至少 8 位）</label>
       <input type="password" id="setupPassword" autocomplete="new-password">
@@ -224,8 +592,8 @@
     </div>
   </div>
   <div class="form-error" id="setupError"></div>
-  <div class="row" style="justify-content: flex-end">
-    <button class="primary" id="confirmSetup">设置并登录</button>
+  <div class="foot">
+    <button class="primary" id="confirmSetup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg>设置并登录</button>
   </div>
 </dialog>
 
@@ -238,8 +606,8 @@
     <input type="password" id="loginPassword" autocomplete="current-password">
   </div>
   <div class="form-error" id="loginError"></div>
-  <div class="row" style="justify-content: flex-end">
-    <button class="primary" id="confirmLogin">登录</button>
+  <div class="foot">
+    <button class="primary" id="confirmLogin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4.5"></path><path d="M14 8.5L17.5 12 14 15.5"></path><path d="M8 12h9.5"></path></svg>登录</button>
   </div>
 </dialog>
 
@@ -247,7 +615,7 @@
 <dialog id="passwordDialog">
   <h3>修改管理员密码</h3>
   <p class="hint" style="margin: 0 0 14px">改完之后其他浏览器上的登录态会立即失效，这台会换一张新令牌。</p>
-  <div style="display: grid; gap: 12px">
+  <div class="grid-form">
     <div class="field">
       <label>当前密码</label>
       <input type="password" id="oldPassword" autocomplete="current-password">
@@ -262,15 +630,16 @@
     </div>
   </div>
   <div class="form-error" id="passwordError"></div>
-  <div class="row" style="justify-content: flex-end">
-    <button id="cancelPassword">取消</button>
-    <button class="primary" id="confirmPassword">保存</button>
+  <div class="foot">
+    <button id="cancelPassword"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>取消</button>
+    <button class="primary" id="confirmPassword"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg>保存</button>
   </div>
 </dialog>
 
 <script>
 const API = '/api/v1/admin';
 const TOKEN_KEY = 'omioclink.adminSession';
+const THEME_KEY = 'omioclink.adminTheme';
 // 旧版本（X-Admin-Token 机制）把令牌存在这个键里：升级后统一改走密码登录，直接丢掉
 localStorage.removeItem('omioclink.adminToken');
 
@@ -285,29 +654,57 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
 
+// 行尾操作图标（内联 SVG：不引图标库，也不额外发请求）
+const ICON = {
+  power: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v8"/><path d="M7.2 6.7a7.5 7.5 0 1 0 9.6 0"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9.5 7V4.8h5V7"/><path d="M6.4 7l.9 12.2h9.4L17.6 7"/></svg>',
+  users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9.5" cy="8" r="3.2"/><path d="M3.8 19v-1.3A3.7 3.7 0 0 1 7.5 14h4a3.7 3.7 0 0 1 3.7 3.7V19"/><path d="M16.2 5.3a3.2 3.2 0 0 1 0 5.8"/><path d="M20.2 19v-1.3a3.7 3.7 0 0 0-2.6-3.5"/></svg>',
+  kick: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19v-1.3A3.7 3.7 0 0 1 7.2 14h3.3"/><path d="M15.5 12h6"/><path d="M18.8 9l2.8 3-2.8 3"/></svg>',
+  ban: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M6.4 6.4l11.2 11.2"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M8.4 12.2l2.6 2.6 4.6-5"/></svg>',
+};
+
+// ------------------------------------------------------------------ 主题
+// 初值跟系统走，用户手动切过就记住；data-theme 挂在 <html> 上，两套令牌在 CSS 里换。
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  $('themeBtn').textContent = theme === 'dark' ? '☀' : '◐';
+  localStorage.setItem(THEME_KEY, theme);
+}
+(function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(saved || (prefersDark ? 'dark' : 'light'));
+})();
+$('themeBtn').addEventListener('click', () => {
+  applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+});
+
+// ------------------------------------------------------------------ 全局提示
 function banner(msg, ok = false) {
   const el = $('banner');
   if (!msg) { el.style.display = 'none'; return; }
   el.textContent = msg;
   el.className = ok ? 'ok' : '';
   el.style.display = 'block';
+  clearTimeout(banner._t);
+  banner._t = setTimeout(() => { el.style.display = 'none'; }, 6000);
 }
 
 function setStatus(ok, text) {
-  $('statusDot').className = 'dot ' + (ok ? 'on' : 'off');
+  $('status').className = 'status ' + (ok ? 'on' : 'off');
   $('statusText').textContent = text;
 }
 
 function setLoggedIn(username) {
   const on = !!username;
-  $('whoami').style.display = on ? 'inline' : 'none';
-  $('whoami').textContent = on ? ('已登录：' + username) : '';
+  $('whoami').style.display = on ? 'inline-flex' : 'none';
+  $('whoami').textContent = on ? ('已登录 ' + username) : '';
+  $('whoami').title = on ? ('当前登录的管理员：' + username) : '';
   $('changePasswordBtn').style.display = on ? 'inline-block' : 'none';
   $('logoutBtn').style.display = on ? 'inline-block' : 'none';
-  ['changePasswordBtn', 'logoutBtn'].forEach((id) => {
-    const btn = $(id);
-    btn.disabled = !on;
-  });
+  $('changePasswordBtn').disabled = !on;
+  $('logoutBtn').disabled = !on;
 }
 
 function saveToken(value) {
@@ -323,7 +720,8 @@ function stopPolling() {
 
 function startPolling() {
   stopPolling();
-  timer = setInterval(loadAll, 10000);
+  // 只刷「概览 + 当前页签」，比原来每 10 秒把三块全拉一遍省下三分之二的请求
+  timer = setInterval(() => { refresh({ silent: true }); }, 10000);
 }
 
 // 管理接口统一走 Authorization: Bearer；旧版的 X-Admin-Token 已废弃，前端不再发
@@ -405,14 +803,14 @@ async function boot() {
   }
   setStatus(true, '已连接');
   setLoggedIn(status.username || 'admin');
-  await loadAll();
+  await refresh();
   startPolling();
 }
 
 function showSetup(legacyConfigured) {
   const hint = $('legacyHint');
   if (legacyConfigured) {
-    hint.innerHTML = '检测到旧版管理令牌 <span class="mono">OMIOCLINK_ADMIN_TOKEN</span>：'
+    hint.innerHTML = '检测到旧版管理令牌 <span class="mono-box">OMIOCLINK_ADMIN_TOKEN</span>：'
       + '设置管理员密码后它就失效了，建议顺手从 .env 里删掉这一行。';
     hint.style.display = 'block';
   } else {
@@ -440,110 +838,211 @@ function afterLogin(result, message) {
   boot();
 }
 
-// ---------------------------------------------------------------------------
-// 数据加载与渲染（与原版一致，只有鉴权头换了）
-// ---------------------------------------------------------------------------
-async function loadAll() {
-  try {
-    const [overview, rooms, users, subscription] = await Promise.all([
-      api('/overview'),
-      api('/rooms'),
-      api('/users?query=' + encodeURIComponent($('userQuery').value.trim())),
-      api('/music/plugin-subscription'),
-    ]);
-    setStatus(true, '已连接');
-    renderOverview(overview);
-    renderRooms(rooms.items);
-    renderUsers(users.items, users.total);
-    fillSubscriptions(subscription.urls);
-    if (currentRoomId) await loadMembers(currentRoomId);
-  } catch (e) {
-    /* 错误已在上面的 api() 里提示 */
-  }
+// ------------------------------------------------------------------ 状态与页签
+const state = {
+  tab: 'accounts',
+  accounts: { page: 1, size: 20, query: '', total: 0, loaded: false },
+  rooms: { page: 1, size: 20, total: 0, loaded: false },
+  plugins: { page: 1, size: 5 },
+};
+
+function pagesOf(section) {
+  return Math.max(1, Math.ceil((section.total || 0) / section.size));
 }
 
-// 订阅地址是**可编辑的**输入框，所以定时刷新（loadAll 每 10 秒一次）不能无条件重建
-// DOM，否则会把正在输入的人清空。这里记住上一次从服务器拿到的列表：
-// 只有服务端内容变了、且当前没有焦点在输入框里时才重建。
-let subscriptionSnapshot = null;
-
-function subscriptionInputs() {
-  return Array.from($('subscriptions').querySelectorAll('[data-subscription-input]'));
+function setTab(name) {
+  state.tab = name;
+  document.querySelectorAll('.tab').forEach((btn) => {
+    btn.setAttribute('aria-selected', String(btn.dataset.tab === name));
+  });
+  document.querySelectorAll('.panel').forEach((panel) => {
+    panel.dataset.active = String(panel.id === 'panel-' + name);
+  });
+  // 切页签时才去拉这一块：首屏不再把三块全要一遍
+  const section = state[name] || {};
+  if (name === 'plugins') { loadPlugins(); return; }
+  if (!section.loaded) { name === 'accounts' ? loadAccounts() : loadRooms(); return; }
+  refresh();
 }
 
-function isEditingSubscription() {
-  const active = document.activeElement;
-  return !!active && active.tagName === 'INPUT' && $('subscriptions').contains(active);
+document.querySelectorAll('.tab').forEach((btn) => {
+  btn.addEventListener('click', () => setTab(btn.dataset.tab));
+});
+document.querySelectorAll('[role="tablist"]').forEach((list) => {
+  list.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    const tabs = Array.from(list.querySelectorAll('.tab'));
+    const index = tabs.findIndex((t) => t.getAttribute('aria-selected') === 'true');
+    const next = tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+    next.focus(); next.click();
+  });
+});
+
+// ------------------------------------------------------------------ 概览与迷你折线
+// 只留最近 24 个采样（10 秒一个 ≈ 4 分钟），够看出「刚才是有人在的」就行。
+const spark = { peer: [], rooms: [] };
+function pushSample(series, value) {
+  series.push(Number(value) || 0);
+  if (series.length > 24) series.shift();
+}
+function sparkSvg(series) {
+  if (series.length < 2) return '<svg class="spark empty" viewBox="0 0 120 32" preserveAspectRatio="none"></svg>';
+  // 按「区间」缩放而不是按最大值：全是同一个数时画成中间那条横线，
+  // 否则 0→0 或 5→5 这种平稳数据会被画到框顶，看着像缺失。
+  const min = Math.min(...series);
+  const max = Math.max(...series);
+  const span = max - min;
+  const step = 120 / (series.length - 1);
+  const yOf = (v) => (span === 0 ? 16 : 26 - ((v - min) / span) * 20);
+  const points = series
+    .map((v, i) => `${(i * step).toFixed(1)},${yOf(v).toFixed(1)}`)
+    .join(' ');
+  return `<svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true">
+    <polyline points="${points}" /></svg>`;
 }
 
-function addSubscriptionRow(url = '') {
-  const row = document.createElement('div');
-  row.className = 'row';
-  row.dataset.subscriptionRow = '';
-  row.innerHTML = `<input type="text" class="grow" data-subscription-input spellcheck="false"
-      placeholder="https://example.com/plugin.json">
-    <button class="danger" data-remove-subscription>删除</button>`;
-  row.querySelector('[data-subscription-input]').value = url;
-  $('subscriptions').append(row);
-  return row;
-}
-
-function renderSubscriptions(urls) {
-  $('subscriptions').innerHTML = '';
-  // 空配置时留一个空白行，管理员可以直接开始填
-  (urls.length ? urls : ['']).forEach((url) => addSubscriptionRow(url));
-}
-
-function fillSubscriptions(urls) {
-  const snapshot = JSON.stringify(urls);
-  if (snapshot === subscriptionSnapshot) return;
-  subscriptionSnapshot = snapshot;
-  if (isEditingSubscription()) return; // 正在输入：等下一次刷新再同步
-  renderSubscriptions(urls);
-}
-
-function collectSubscriptions() {
-  return subscriptionInputs().map((input) => input.value.trim()).filter((url) => url);
-}
-
-async function saveSubscriptions() {
-  const urls = collectSubscriptions();
-  try {
-    const saved = await api('/music/plugin-subscription', {
-      method: 'PUT', body: JSON.stringify({ urls }),
-    });
-    subscriptionSnapshot = JSON.stringify(saved.urls);
-    renderSubscriptions(saved.urls);
-    banner(saved.urls.length ? `已保存 ${saved.urls.length} 条订阅地址` : '已清空订阅地址', true);
-  } catch (e) { /* api() 已提示 */ }
+function statCard({ label, value, sub, live, svg }) {
+  return `<div class="stat">
+    <div class="stat-top"><span class="mark ${live ? 'live' : ''}"></span>${esc(label)}</div>
+    <div class="stat-body">
+      <div>
+        <div class="stat-value">${esc(value)}</div>
+        <div class="stat-sub">${esc(sub || '')}</div>
+      </div>
+      ${svg || ''}
+    </div>
+  </div>`;
 }
 
 function renderOverview(o) {
+  pushSample(spark.peer, o.livePeerCount);
+  pushSample(spark.rooms, o.liveRoomCount);
   $('stats').innerHTML = [
-    ['账号', o.userCount], ['房间', o.roomCount],
-    ['在线人数', o.livePeerCount], ['通话中房间', o.liveRoomCount],
-  ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+    statCard({ label: '账号', value: o.userCount, sub: '注册用户总数' }),
+    statCard({ label: '房间', value: o.roomCount, sub: `公开 ${o.publicRoomCount ?? 0}` }),
+    statCard({ label: '房间内成员', value: o.livePeerCount, live: true, svg: sparkSvg(spark.peer) }),
+    statCard({ label: '通话中房间', value: o.liveRoomCount, live: true, svg: sparkSvg(spark.rooms) }),
+  ].join('');
+
   $('registrationToggle').checked = !!o.allowRegistration;
-  $('registrationLabel').textContent = o.allowRegistration ? '当前：允许注册' : '当前：不允许注册';
+  $('registrationLabel').textContent = o.allowRegistration ? '允许自助注册' : '自助注册已关闭';
+  $('serverName').textContent = o.serverName || 'OmiocLink';
+  $('serverVersion').textContent = 'v' + (o.version || '—');
+  $('countAccounts').textContent = o.userCount;
+  $('countRooms').textContent = o.roomCount;
+  $('headline').textContent =
+    `账号 ${o.userCount} · 房间 ${o.roomCount} · 房间内成员 ${o.livePeerCount} · 通话中 ${o.liveRoomCount}`;
 }
 
-function renderRooms(items) {
-  if (!items.length) { $('rooms').innerHTML = '<div class="empty">还没有房间</div>'; return; }
-  $('rooms').innerHTML = `<table><thead><tr>
-      <th>房间</th><th>房间号</th><th>成员</th><th>房主</th><th>属性</th><th></th>
-    </tr></thead><tbody>${items.map((r) => `
-    <tr>
-      <td>${esc(r.name)}</td>
-      <td class="mono">${esc(r.roomId)}</td>
-      <td>${r.memberCount}/${r.capacity}${r.online ? ' <span class="tag on">通话中</span>' : ''}</td>
-      <td>${esc(r.ownerName || '—')}</td>
-      <td>${r.isPublic ? '<span class="tag">公开</span>' : '<span class="tag lock">私有</span>'}${r.hasPassword ? ' <span class="tag lock">有密码</span>' : ''}</td>
-      <td style="text-align:right; white-space:nowrap">
-        <button data-members="${esc(r.roomId)}">成员</button>
-        <button class="danger" data-close="${esc(r.roomId)}">解散</button>
-      </td>
-    </tr>`).join('')}</tbody></table>`;
+// ------------------------------------------------------------------ 账号
+function renderAccounts(data) {
+  const section = state.accounts;
+  section.total = data.total || 0;
+  const page = Math.min(section.page, pagesOf(section));
+  if (page !== section.page) { section.page = page; loadAccounts(); return; }
 
+  if (!data.items.length) {
+    $('users').innerHTML = section.query
+      ? '<div class="empty"><b>没有匹配的账号</b>换个关键词试试，或者清空搜索框。</div>'
+      : '<div class="empty"><b>还没有账号</b>关掉自助注册时，可以用右上角「新建账号」直接建。</div>';
+  } else {
+    $('users').innerHTML = `<table><thead><tr>
+        <th scope="col">账号</th><th scope="col">昵称</th><th scope="col">状态</th>
+        <th scope="col" class="hide-md">创建时间</th><th scope="col" class="actions">操作</th>
+      </tr></thead><tbody>${data.items.map((u) => `
+      <tr>
+        <td><span class="strong">${esc(u.username)}</span> <span class="dim num">#${u.id}</span></td>
+        <td>${esc(u.displayName || '—')}</td>
+        <td>${u.disabled
+          ? '<span class="pill off">已禁用</span>'
+          : (u.online ? '<span class="pill on">在线</span>' : '<span class="pill">离线</span>')}</td>
+        <td class="dim hide-md">${u.createdAt ? esc(new Date(u.createdAt).toLocaleString()) : '—'}</td>
+        <td class="actions">
+          <button class="icon-action${u.disabled ? ' accent' : ''}" data-toggle="${u.id}" data-disabled="${u.disabled}" title="${u.disabled ? '启用该账号' : '禁用该账号'}">${u.disabled ? ICON.check : ICON.ban}</button>
+          <button class="icon-action danger" data-delete="${u.id}" title="删除账号">${ICON.trash}</button>
+        </td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+  $('usersSummary').textContent = section.query
+    ? `搜索「${section.query}」共 ${section.total} 个账号`
+    : `共 ${section.total} 个账号`;
+  renderPager('usersPager', section, pagesOf(section), loadAccounts);
+  bindAccountActions();
+}
+
+function bindAccountActions() {
+  $('users').querySelectorAll('[data-toggle]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const id = Number(btn.dataset.toggle);
+      const wasDisabled = btn.dataset.disabled === 'true';
+      const action = wasDisabled ? '启用' : '禁用';
+      const extra = wasDisabled ? '' : '\n该账号会被立即踢下线，已登录的客户端随之失效。';
+      if (!confirm(`确定${action}账号 #${id}？${extra}`)) return;
+      await api('/users/' + id, { method: 'PATCH', body: JSON.stringify({ disabled: !wasDisabled }) });
+      banner(`已${action}账号 #${id}`, true);
+      await refresh();
+    }));
+
+  $('users').querySelectorAll('[data-delete]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const id = Number(btn.dataset.delete);
+      const warn = `确定删除账号 #${id}？\n\n`
+        + '他名下的房间会被解散（房间内的人会收到通知），好友关系、进房记录会一并删除。此操作不可恢复。';
+      if (!confirm(warn)) return;
+      await api('/users/' + id, { method: 'DELETE' });
+      banner(`已删除账号 #${id}`, true);
+      await refresh();
+    }));
+}
+
+async function loadAccounts() {
+  const section = state.accounts;
+  section.query = $('userQuery').value.trim();
+  const offset = (section.page - 1) * section.size;
+  const params = new URLSearchParams({ limit: String(section.size), offset: String(offset) });
+  if (section.query) params.set('query', section.query);
+  const data = await api('/users?' + params.toString());
+  section.loaded = true;
+  renderAccounts(data);
+}
+
+// ------------------------------------------------------------------ 房间
+function renderRooms(data) {
+  const section = state.rooms;
+  section.total = data.total || 0;
+  const page = Math.min(section.page, pagesOf(section));
+  if (page !== section.page) { section.page = page; loadRooms(); return; }
+
+  if (!data.items.length) {
+    $('rooms').innerHTML = '<div class="empty"><b>还没有房间</b>客户端建房后会立刻出现在这里。</div>';
+  } else {
+    $('rooms').innerHTML = `<table><thead><tr>
+        <th scope="col">房间</th><th scope="col">房间号</th><th scope="col">成员</th>
+        <th scope="col">房主</th><th scope="col" class="hide-md">属性</th><th scope="col" class="actions">操作</th>
+      </tr></thead><tbody>${data.items.map((r) => {
+        const ratio = r.capacity ? Math.min(100, Math.round((r.memberCount / r.capacity) * 100)) : 0;
+        return `
+      <tr>
+        <td><span class="strong">${esc(r.name)}</span> ${r.online ? '<span class="pill on">通话中</span>' : ''}</td>
+        <td><span class="code mono">${esc(r.roomId)}</span></td>
+        <td><span class="cell-inline"><span class="num">${r.memberCount}/${r.capacity}</span>
+          <span class="meter"><i style="width:${ratio}%"></i></span></span></td>
+        <td>${esc(r.ownerName || '—')}</td>
+        <td class="hide-md">${r.isPublic ? '<span class="pill">公开</span>' : '<span class="pill warn">私有</span>'}
+            ${r.hasPassword ? '<span class="pill warn">有密码</span>' : ''}</td>
+        <td class="actions">
+          <button class="icon-action" data-members="${esc(r.roomId)}" title="查看成员">${ICON.users}</button>
+          <button class="icon-action danger" data-close="${esc(r.roomId)}" title="解散房间">${ICON.trash}</button>
+        </td>
+      </tr>`;
+      }).join('')}</tbody></table>`;
+  }
+  $('roomsSummary').textContent = `共 ${section.total} 个房间`;
+  renderPager('roomsPager', section, pagesOf(section), loadRooms);
+  bindRoomActions();
+}
+
+function bindRoomActions() {
   $('rooms').querySelectorAll('[data-members]').forEach((btn) =>
     btn.addEventListener('click', () => openMembers(btn.dataset.members)));
   $('rooms').querySelectorAll('[data-close]').forEach((btn) =>
@@ -552,8 +1051,16 @@ function renderRooms(items) {
       if (!confirm('确定解散房间 ' + id + '？房间内所有成员都会被断开。')) return;
       await api('/rooms/' + encodeURIComponent(id), { method: 'DELETE' });
       banner('已解散房间 ' + id, true);
-      await loadAll();
+      await refresh();
     }));
+}
+
+async function loadRooms() {
+  const section = state.rooms;
+  const offset = (section.page - 1) * section.size;
+  const data = await api(`/rooms?limit=${section.size}&offset=${offset}`);
+  section.loaded = true;
+  renderRooms(data);
 }
 
 async function openMembers(roomId) {
@@ -565,16 +1072,21 @@ async function openMembers(roomId) {
 async function loadMembers(roomId) {
   $('membersTitle').textContent = '房间成员 · ' + roomId;
   const data = await api('/rooms/' + encodeURIComponent(roomId) + '/members');
-  if (!data.items.length) { $('membersBody').innerHTML = '<div class="empty">当前没有人在这个房间里</div>'; return; }
+  if (!data.items.length) {
+    $('membersBody').innerHTML = '<div class="empty"><b>房间是空的</b>客户端可能刚离开。</div>';
+    return;
+  }
   $('membersBody').innerHTML = `<table><thead><tr>
-      <th>昵称</th><th>账号</th><th>会话 ID</th><th>状态</th><th></th>
+      <th scope="col">昵称</th><th scope="col">账号</th><th scope="col">会话 ID</th>
+      <th scope="col">状态</th><th scope="col" class="actions">操作</th>
     </tr></thead><tbody>${data.items.map((m) => `
     <tr>
       <td>${esc(m.displayName)}</td>
       <td>${esc(m.username)}</td>
-      <td class="mono">${esc(m.peerId)}</td>
-      <td>${m.sharing ? '<span class="tag on">共享屏幕</span> ' : ''}${m.muted ? '<span class="tag">已静音</span>' : '<span class="tag on">麦克风开</span>'}</td>
-      <td style="text-align:right"><button class="danger" data-kick="${esc(m.peerId)}">移出</button></td>
+      <td><span class="code mono">${esc(m.peerId)}</span></td>
+      <td>${m.sharing ? '<span class="pill on">共享屏幕</span> ' : ''}${m.muted
+        ? '<span class="pill">已静音</span>' : '<span class="pill on">麦克风开</span>'}</td>
+      <td class="actions"><button class="icon-action danger" data-kick="${esc(m.peerId)}" title="移出房间">${ICON.kick}</button></td>
     </tr>`).join('')}</tbody></table>`;
 
   $('membersBody').querySelectorAll('[data-kick]').forEach((btn) =>
@@ -585,73 +1097,234 @@ async function loadMembers(roomId) {
         method: 'POST', body: JSON.stringify({ peerId }),
       });
       banner('已移出 ' + peerId, true);
-      await loadAll();
+      await loadMembers(roomId);
+      await loadRooms();
     }));
 }
 
-function renderUsers(items, total) {
-  if (!items.length) { $('users').innerHTML = '<div class="empty">没有匹配的账号</div>'; return; }
-  $('users').innerHTML = `<table><thead><tr>
-      <th>ID</th><th>用户名</th><th>昵称</th><th>状态</th><th>创建时间</th><th></th>
-    </tr></thead><tbody>${items.map((u) => `
-    <tr>
-      <td>${u.id}</td>
-      <td>${esc(u.username)}</td>
-      <td>${esc(u.displayName)}</td>
-      <td>${u.disabled
-        ? '<span class="tag off">已禁用</span>'
-        : (u.online ? '<span class="tag on">在线</span>' : '<span class="tag">离线</span>')}</td>
-      <td class="hint">${u.createdAt ? esc(new Date(u.createdAt).toLocaleString()) : '—'}</td>
-      <td style="text-align:right; white-space:nowrap">
-        <button data-toggle="${u.id}" data-disabled="${u.disabled}">${u.disabled ? '启用' : '禁用'}</button>
-        <button class="danger" data-delete="${u.id}">删除</button>
-      </td>
-    </tr>`).join('')}</tbody></table>
-    <p class="hint" style="margin: 12px 0 0">共 ${total} 个账号</p>`;
+// ------------------------------------------------------------------ 插件订阅
+// 地址是**可编辑输入框**，所以定时刷新不能无条件重建 DOM（会把正在打字的人清空）。
+// 分页之后「页面只画当前这一页」，真实的列表只能放在 pluginUrls 里，输入时写回数组。
+let pluginUrls = [];
+let subscriptionSnapshot = JSON.stringify([]);
 
-  $('users').querySelectorAll('[data-toggle]').forEach((btn) =>
-    btn.addEventListener('click', async () => {
-      const id = Number(btn.dataset.toggle);
-      const wasDisabled = btn.dataset.disabled === 'true';
-      const action = wasDisabled ? '启用' : '禁用';
-      const extra = wasDisabled ? '' : '\n该账号会被立即踢下线，已登录的客户端随之失效。';
-      if (!confirm(`确定${action}账号 #${id}？${extra}`)) return;
-      await api('/users/' + id, {
-        method: 'PATCH',
-        body: JSON.stringify({ disabled: !wasDisabled }),
-      });
-      banner(`已${action}账号 #${id}`, true);
-      await loadAll();
-    }));
-
-  $('users').querySelectorAll('[data-delete]').forEach((btn) =>
-    btn.addEventListener('click', async () => {
-      const id = Number(btn.dataset.delete);
-      const warn = `确定删除账号 #${id}？\n\n`
-        + '他名下的房间会被解散（房间内的人会收到通知），'
-        + '好友关系、进房记录会一并删除。此操作不可恢复。';
-      if (!confirm(warn)) return;
-      await api('/users/' + id, { method: 'DELETE' });
-      banner(`已删除账号 #${id}`, true);
-      await loadAll();
-    }));
+function pluginPages() {
+  return Math.max(1, Math.ceil(Math.max(pluginUrls.length, 1) / state.plugins.size));
 }
 
-// ---------------------------------------------------------------------------
-// 登录 / 设置密码 / 改密码
-// ---------------------------------------------------------------------------
+function renderPlugins() {
+  const section = state.plugins;
+  const pages = pluginPages();
+  if (section.page > pages) section.page = pages;
+  const start = (section.page - 1) * section.size;
+  const slice = pluginUrls.slice(start, start + section.size);
+
+  if (!slice.length && !pluginUrls.length) {
+    $('subscriptions').innerHTML = '<div class="empty"><b>还没有订阅地址</b>'
+      + '点右上角「添加一条」开始填；也可以留空，客户端就不装任何插件。</div>';
+  } else {
+    $('subscriptions').innerHTML = slice.map((url, i) => `
+      <div class="sub-row" data-row="${start + i}">
+        <span class="sub-index num">${start + i + 1}</span>
+        <input type="text" data-subscription-input spellcheck="false"
+               placeholder="https://example.com/plugin.json" value="${esc(url)}">
+        <button class="icon-action danger" data-remove-subscription title="删除这条">${ICON.trash}</button>
+      </div>`).join('');
+  }
+  $('pluginsSummary').textContent = `共 ${pluginUrls.length} 条 · 最多 20 条`;
+  renderPager('pluginsPager', section, pages, () => renderPlugins());
+}
+
+function fillPlugins(urls) {
+  const snapshot = JSON.stringify(urls);
+  if (snapshot === subscriptionSnapshot) return;
+  subscriptionSnapshot = snapshot;
+  // 正在输入时不同步：等下次刷新（或保存）再说
+  if (document.activeElement && document.activeElement.hasAttribute('data-subscription-input')) return;
+  pluginUrls = urls.slice();
+  renderPlugins();
+}
+
+async function loadPlugins() {
+  const data = await api('/music/plugin-subscription');
+  if (JSON.stringify(data.urls) === subscriptionSnapshot) { renderPlugins(); return; }
+  fillPlugins(data.urls);
+}
+
+function addSubscriptionRow() {
+  if (pluginUrls.length >= 20) { banner('最多 20 条订阅地址'); return; }
+  pluginUrls.push('');
+  state.plugins.page = pluginPages();
+  renderPlugins();
+  const inputs = $('subscriptions').querySelectorAll('[data-subscription-input]');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+
+async function saveSubscriptions() {
+  const urls = pluginUrls.map((url) => url.trim()).filter((url) => url);
+  try {
+    const saved = await api('/music/plugin-subscription', {
+      method: 'PUT', body: JSON.stringify({ urls }),
+    });
+    pluginUrls = saved.urls.slice();
+    subscriptionSnapshot = JSON.stringify(saved.urls);
+    state.plugins.page = 1;
+    renderPlugins();
+    banner(saved.urls.length ? `已保存 ${saved.urls.length} 条订阅地址` : '已清空订阅地址', true);
+  } catch (e) { /* api() 已提示 */ }
+}
+
+$('subscriptions').addEventListener('input', (event) => {
+  const row = event.target.closest('[data-row]');
+  if (!row) return;
+  pluginUrls[Number(row.dataset.row)] = event.target.value;
+});
+$('subscriptions').addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-remove-subscription]');
+  if (!btn) return;
+  const row = btn.closest('[data-row]');
+  pluginUrls.splice(Number(row.dataset.row), 1);
+  renderPlugins();
+});
+
+// ------------------------------------------------------------------ 统一刷新
+// silent=true 时（定时器）不重绘正在编辑的那一块，避免把输入框里的内容清掉。
+async function refresh(options = {}) {
+  const silent = options.silent === true;
+  const tasks = [api('/overview').then(renderOverview)];
+  if (state.tab === 'accounts') {
+    if (!(silent && document.activeElement === $('userQuery'))) tasks.push(loadAccounts());
+  } else if (state.tab === 'rooms') {
+    tasks.push(loadRooms());
+    if (currentRoomId) tasks.push(loadMembers(currentRoomId));
+  } else {
+    if (!silent) tasks.push(loadPlugins());
+  }
+  try {
+    await Promise.all(tasks);
+    setStatus(true, '已连接');
+  } catch (e) {
+    /* 错误已在 api() 里提示 */
+  }
+}
+
+// ------------------------------------------------------------------ 分页与工具条
+// 分页：页码方块 + 上一页/下一页；页数多时中间用省略号
+function renderPager(id, section, pages, reload) {
+  const box = $(id);
+  if (!box) return;
+  const items = [`<button class="page-btn" data-go="prev" ${section.page <= 1 ? 'disabled' : ''} aria-label="上一页">‹</button>`];
+  let gap = false;
+  for (let p = 1; p <= pages; p += 1) {
+    const near = Math.abs(p - section.page) <= 1;
+    const edge = p <= 2 || p > pages - 2;
+    if (pages > 7 && !near && !edge) {
+      if (!gap) { items.push('<span class="page-gap">…</span>'); gap = true; }
+      continue;
+    }
+    gap = false;
+    items.push(`<button class="page-btn ${p === section.page ? 'active' : ''}" data-go="${p}">${p}</button>`);
+  }
+  items.push(`<button class="page-btn" data-go="next" ${section.page >= pages ? 'disabled' : ''} aria-label="下一页">›</button>`);
+  box.innerHTML = items.join('');
+  box.onclick = (event) => {
+    const btn = event.target.closest('[data-go]');
+    if (!btn || btn.disabled) return;
+    const go = btn.dataset.go;
+    if (go === 'prev') section.page = Math.max(1, section.page - 1);
+    else if (go === 'next') section.page = Math.min(pages, section.page + 1);
+    else section.page = Number(go);
+    reload();
+  };
+}
+
+// 自绘下拉：原生 <select> 展开的那张列表由系统渲染，改不出主题样式
+function makeSelect(id, options, initial, onChange) {
+  const host = $(id);
+  if (!host) return;
+  host.dataset.value = String(initial);
+  host.innerHTML = `<span class="select-value"></span>
+    <svg class="select-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+    <div class="select-menu" hidden>${options.map((o) => `<button type="button" class="select-option" data-option="${o}">${o}</button>`).join('')}</div>`;
+  const valueEl = host.querySelector('.select-value');
+  const menu = host.querySelector('.select-menu');
+  const sync = () => {
+    valueEl.textContent = host.dataset.value;
+    menu.querySelectorAll('.select-option').forEach((btn) => {
+      btn.setAttribute('aria-selected', String(btn.dataset.option === host.dataset.value));
+    });
+  };
+  const close = () => { menu.hidden = true; };
+  host.addEventListener('click', (event) => {
+    const option = event.target.closest('[data-option]');
+    if (option) {
+      host.dataset.value = option.dataset.option;
+      sync();
+      close();
+      onChange(Number(option.dataset.option));
+      return;
+    }
+    menu.hidden = !menu.hidden;
+  });
+  host.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { close(); return; }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      menu.hidden = !menu.hidden;
+    }
+  });
+  document.addEventListener('click', (event) => { if (!host.contains(event.target)) close(); });
+  sync();
+}
+makeSelect('usersPageSize', [20, 50, 100], 20, (size) => {
+  state.accounts.size = size; state.accounts.page = 1; loadAccounts();
+});
+makeSelect('roomsPageSize', [20, 50, 100], 20, (size) => {
+  state.rooms.size = size; state.rooms.page = 1; loadRooms();
+});
+makeSelect('pluginsPageSize', [5, 10, 20], 5, (size) => {
+  state.plugins.size = size; state.plugins.page = 1; renderPlugins();
+});
+// 清空按钮：只在有内容时出现，点了清空并重新加载列表
+function syncSearchClear() {
+  const btn = $('userQueryClear');
+  if (btn) btn.dataset.visible = $('userQuery').value ? 'true' : 'false';
+}
+$('userQuery').addEventListener('input', syncSearchClear);
+$('userQuery').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') { state.accounts.page = 1; loadAccounts(); }
+});
+$('userQueryClear').addEventListener('click', () => {
+  $('userQuery').value = '';
+  syncSearchClear();
+  state.accounts.page = 1;
+  loadAccounts();
+  $('userQuery').focus();
+});
+syncSearchClear();
+$('refreshBtn').addEventListener('click', () => refresh());
+$('closeMembers').addEventListener('click', () => { currentRoomId = null; $('membersDialog').close(); });
+$('addSubscriptionBtn').addEventListener('click', addSubscriptionRow);
+$('saveSubscriptionsBtn').addEventListener('click', saveSubscriptions);
+
+$('registrationToggle').addEventListener('change', async (event) => {
+  const allow = event.target.checked;
+  try {
+    const o = await api('/registration', { method: 'POST', body: JSON.stringify({ allow }) });
+    renderOverview(o);
+    banner(allow ? '已开放注册（重启后回到 .env 配置）' : '已关闭注册', true);
+  } catch (err) {
+    event.target.checked = !allow;
+  }
+});
+
+// ------------------------------------------------------------------ 登录 / 改密码 / 新建账号
 $('confirmSetup').addEventListener('click', async () => {
   const password = $('setupPassword').value;
   const again = $('setupPassword2').value;
   const error = $('setupError');
-  if (password.length < passwordMinLength) {
-    error.textContent = `密码至少 ${passwordMinLength} 位`;
-    return;
-  }
-  if (password !== again) {
-    error.textContent = '两次输入的密码不一致';
-    return;
-  }
+  if (password.length < passwordMinLength) { error.textContent = `密码至少 ${passwordMinLength} 位`; return; }
+  if (password !== again) { error.textContent = '两次输入的密码不一致'; return; }
   error.textContent = '';
   try {
     const result = await postPublic('/setup', { password });
@@ -690,14 +1363,8 @@ $('confirmPassword').addEventListener('click', async () => {
   const newPassword = $('newPassword2').value;
   const error = $('passwordError');
   if (!currentPassword) { error.textContent = '请输入当前密码'; return; }
-  if (newPassword.length < passwordMinLength) {
-    error.textContent = `新密码至少 ${passwordMinLength} 位`;
-    return;
-  }
-  if (newPassword !== $('newPassword3').value) {
-    error.textContent = '两次输入的新密码不一致';
-    return;
-  }
+  if (newPassword.length < passwordMinLength) { error.textContent = `新密码至少 ${passwordMinLength} 位`; return; }
+  if (newPassword !== $('newPassword3').value) { error.textContent = '两次输入的新密码不一致'; return; }
   error.textContent = '';
   try {
     const result = await api('/password', {
@@ -717,36 +1384,10 @@ $('logoutBtn').addEventListener('click', () => {
   handleUnauthorized('已退出登录');
 });
 
-// 设置密码 / 登录这两个框必须填完，别让人按 Esc 关掉就以为没救了
-['setupDialog', 'loginDialog'].forEach((id) =>
-  $(id).addEventListener('cancel', (event) => event.preventDefault()));
-
-// 密码框回车 = 点确认
-$('setupPassword2').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('confirmSetup').click(); });
-$('loginPassword').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('confirmLogin').click(); });
-$('newPassword3').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('confirmPassword').click(); });
-
-// ---------------------------------------------------------------------------
-// 其余交互（与原版一致）
-// ---------------------------------------------------------------------------
-$('registrationToggle').addEventListener('change', async (e) => {
-  const allow = e.target.checked;
-  try {
-    const o = await api('/registration', { method: 'POST', body: JSON.stringify({ allow }) });
-    renderOverview(o);
-    banner(allow ? '已开放注册（重启后回到 .env 配置）' : '已关闭注册', true);
-  } catch (err) {
-    e.target.checked = !allow;
-  }
-});
-
-$('searchBtn').addEventListener('click', loadAll);
-$('userQuery').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadAll(); });
-$('closeMembers').addEventListener('click', () => { currentRoomId = null; $('membersDialog').close(); });
-
 $('newUserBtn').addEventListener('click', () => {
   $('newUsername').value = ''; $('newDisplayName').value = ''; $('newPassword').value = '';
   $('newUserDialog').showModal();
+  $('newUsername').focus();
 });
 $('cancelNewUser').addEventListener('click', () => $('newUserDialog').close());
 $('confirmNewUser').addEventListener('click', async () => {
@@ -761,24 +1402,21 @@ $('confirmNewUser').addEventListener('click', async () => {
     });
     $('newUserDialog').close();
     banner('已创建账号 ' + username, true);
-    await loadAll();
+    await refresh();
   } catch (e) { /* api() 已提示 */ }
 });
 
-$('subscriptions').addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-remove-subscription]');
-  if (!btn) return;
-  btn.closest('[data-subscription-row]').remove();
-  if (!subscriptionInputs().length) addSubscriptionRow();
-});
-$('addSubscriptionBtn').addEventListener('click', () => {
-  addSubscriptionRow().querySelector('[data-subscription-input]').focus();
-});
-$('saveSubscriptionsBtn').addEventListener('click', saveSubscriptions);
-// 首屏先给一个空白行（把快照记成空列表），登录之前也能开始填
-subscriptionSnapshot = JSON.stringify([]);
-renderSubscriptions([]);
+// 设置密码 / 登录这两个框必须填完，别让人按 Esc 关掉就以为没救了
+['setupDialog', 'loginDialog'].forEach((id) =>
+  $(id).addEventListener('cancel', (event) => event.preventDefault()));
 
+// 密码框回车 = 点确认
+$('setupPassword2').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('confirmSetup').click(); });
+$('loginPassword').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('confirmLogin').click(); });
+$('newPassword3').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('confirmPassword').click(); });
+
+// 首屏：先画一版空骨架（登录之前也有内容，不会看到空白页）
+renderPlugins();
 boot();
 </script>
 </body>
