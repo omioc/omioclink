@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/admin/logo.png">
-<title>OmiocLink 管理</title>
+<title data-i18n="appTitle">OmiocLink 管理</title>
 <style>
   /* ---------------------------------------------------------------- 主题令牌
      浅色 / 暗色各一套。所有颜色只能从这里取：页面里不再出现写死的色值，
@@ -315,6 +315,12 @@
   .icon-action.accent { color: var(--accent); }
   .strong { font-weight: 600; }
   .dim { color: var(--muted); }
+  /* 账号列里「#编号」在前、用户名在后：编号占固定宽度，用户名首字才对齐
+     （40px 够 #9999 这种 4 位数，再宽也不会把后面的名字推歪） */
+  .uid {
+    display: inline-block; min-width: 40px; margin-right: 10px;
+    color: var(--muted); font-size: 12px;
+  }
 
   .pill {
     display: inline-flex; align-items: center; gap: 5px;
@@ -352,6 +358,12 @@
   .select-option:hover:not(:disabled) { background: var(--surface-3); }
   html[data-theme="dark"] .select-option:hover:not(:disabled) { background: var(--surface-2); }
   .select-option[aria-selected="true"] { color: var(--accent-ink); font-weight: 600; }
+
+  /* 语言菜单：外观复用 .select-menu，但它挂在头部按钮下方，所以改成向下弹 */
+  .lang-wrap { position: relative; display: inline-flex; }
+  .lang-wrap .select-menu { top: calc(100% + 6px); bottom: auto; min-width: 168px; }
+  /* 韩语的「시스템 설정 따르기」是最长的一项，宽度按它给，其余语言都放得下 */
+  .lang-wrap .select-option { white-space: nowrap; }
 
   .code {
     display: inline-block; padding: 1px 7px; border-radius: 6px;
@@ -434,77 +446,81 @@
   <div class="brand">
     <img src="/admin/logo.png" alt="OmiocLink">
     <div class="brand-text">
-      <b>OmiocLink 管理</b>
-      <span id="serverName">正在连接…</span>
+      <b data-i18n="appTitle">OmiocLink 管理</b>
+      <span id="serverName" data-i18n="connecting">正在连接…</span>
     </div>
   </div>
 
   <div class="rail-block">
-    <div><span class="k">服务端</span></div>
+    <div><span class="k" data-i18n="railServer">服务端</span></div>
     <div class="v num" id="serverVersion">—</div>
-    <div class="status" id="status"><span class="dot"></span><span id="statusText">未登录</span></div>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText" data-i18n="statusLoggedOut">未登录</span></div>
   </div>
 </aside>
 
 <main class="main">
   <div class="page-head">
     <div class="head-titles">
-      <h1>系统概览</h1>
-      <p id="headline">连接后这里显示这台服务器的实时状态</p>
+      <h1 data-i18n="headTitle">系统概览</h1>
+      <p id="headline" data-i18n="headIdle">连接后这里显示这台服务器的实时状态</p>
     </div>
     <div class="head-notice" id="banner"></div>
     <div class="head-actions">
       <span class="whoami" id="whoami" style="display: none"></span>
-      <button class="icon-btn ghost" id="themeBtn" title="切换浅色 / 深色" aria-label="切换主题">◐</button>
-      <button class="ghost small" id="changePasswordBtn" style="display: none">修改密码</button>
-      <button class="ghost small" id="logoutBtn" style="display: none">退出登录</button>
-      <button class="icon-btn ghost" id="refreshBtn" title="立即刷新" aria-label="立即刷新">⟳</button>
+      <div class="lang-wrap">
+        <button class="icon-btn ghost" id="langBtn" title="切换语言" data-i18n-title="langSwitch" aria-label="切换语言" data-i18n-aria="langSwitch" aria-haspopup="true" aria-expanded="false">中</button>
+        <div class="select-menu" id="langMenu" hidden></div>
+      </div>
+      <button class="icon-btn ghost" id="themeBtn" title="切换浅色 / 深色" data-i18n-title="themeTitle" aria-label="切换主题" data-i18n-aria="themeAria">◐</button>
+      <button class="ghost small" id="changePasswordBtn" style="display: none"><span data-i18n="authChangePassword">修改密码</span></button>
+      <button class="ghost small" id="logoutBtn" style="display: none"><span data-i18n="authLogout">退出登录</span></button>
+      <button class="icon-btn ghost" id="refreshBtn" title="立即刷新" data-i18n-title="refreshTitle" aria-label="立即刷新" data-i18n-aria="refreshAria">⟳</button>
     </div>
   </div>
 
   <section class="stats" id="stats"></section>
 
-  <div class="tabs" role="tablist" aria-label="管理区块">
+  <div class="tabs" role="tablist" aria-label="管理区块" data-i18n-aria="tabsAria">
     <button class="tab" id="tab-accounts" role="tab" aria-selected="true" aria-controls="panel-accounts" data-tab="accounts">
-      账号<span class="count" id="countAccounts"></span>
+      <span data-i18n="tabAccounts">账号</span><span class="count" id="countAccounts"></span>
     </button>
     <button class="tab" id="tab-rooms" role="tab" aria-selected="false" aria-controls="panel-rooms" data-tab="rooms">
-      房间<span class="count" id="countRooms"></span>
+      <span data-i18n="tabRooms">房间</span><span class="count" id="countRooms"></span>
     </button>
     <button class="tab" id="tab-plugins" role="tab" aria-selected="false" aria-controls="panel-plugins" data-tab="plugins">
-      插件
+      <span data-i18n="tabPlugins">插件</span>
     </button>
   </div>
 
   <!-- 账号 -->
   <section class="panel" id="panel-accounts" role="tabpanel" aria-labelledby="tab-accounts" data-active="true">
     <div class="panel-toolbar">
-      <label class="search-field" title="按用户名或昵称搜索，回车确认">
+      <label class="search-field" title="按用户名或昵称搜索，回车确认" data-i18n-title="searchTitle">
         <span class="search-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6"></circle><path d="M16 16l4.5 4.5"></path></svg>
         </span>
-        <input type="search" id="userQuery" placeholder="按用户名或昵称搜索">
-        <button type="button" class="search-clear" id="userQueryClear" aria-label="清空搜索" data-visible="false">
+        <input type="search" id="userQuery" placeholder="按用户名或昵称搜索" data-i18n-placeholder="searchPlaceholder">
+        <button type="button" class="search-clear" id="userQueryClear" aria-label="清空搜索" data-i18n-aria="searchClear" data-visible="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
         </button>
       </label>
       <div class="spacer"></div>
-      <label class="switch" title="重启容器后回到 .env 里的 OMIOCLINK_ALLOW_REGISTRATION">
+      <label class="switch" title="重启容器后回到 .env 里的 OMIOCLINK_ALLOW_REGISTRATION" data-i18n-title="regToggleTitle">
         <input type="checkbox" id="registrationToggle">
         <span class="track"></span>
-        <span id="registrationLabel">自助注册</span>
+        <span id="registrationLabel" data-i18n="regLabel">自助注册</span>
       </label>
       <button class="primary" id="newUserBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-        新建账号
+        <span data-i18n="newAccount">新建账号</span>
       </button>
     </div>
     <div class="panel-body" id="users"></div>
     <div class="panel-foot">
       <span id="usersSummary" class="dim">—</span>
       <div class="spacer"></div>
-      <div class="hint">每页</div>
-      <div class="select" id="usersPageSize" role="button" tabindex="0" aria-label="每页数量"></div>
+      <div class="hint" data-i18n="perPage">每页</div>
+      <div class="select" id="usersPageSize" role="button" tabindex="0" aria-label="每页数量" data-i18n-aria="perPageAria"></div>
       <div class="pager" id="usersPager"></div>
     </div>
   </section>
@@ -512,14 +528,14 @@
   <!-- 房间 -->
   <section class="panel" id="panel-rooms" role="tabpanel" aria-labelledby="tab-rooms">
     <div class="panel-toolbar">
-      <span class="hint hint-line">有人的房间排在前面，成员数实时刷新</span>
+      <span class="hint hint-line" data-i18n="roomsHint">有人的房间排在前面，成员数实时刷新</span>
     </div>
     <div class="panel-body" id="rooms"></div>
     <div class="panel-foot">
       <span id="roomsSummary" class="dim">—</span>
       <div class="spacer"></div>
-      <div class="hint">每页</div>
-      <div class="select" id="roomsPageSize" role="button" tabindex="0" aria-label="每页数量"></div>
+      <div class="hint" data-i18n="perPage">每页</div>
+      <div class="select" id="roomsPageSize" role="button" tabindex="0" aria-label="每页数量" data-i18n-aria="perPageAria"></div>
       <div class="pager" id="roomsPager"></div>
     </div>
   </section>
@@ -527,19 +543,17 @@
   <!-- 插件订阅 -->
   <section class="panel" id="panel-plugins" role="tabpanel" aria-labelledby="tab-plugins">
     <div class="panel-toolbar">
-      <span class="hint hint-line" title="每条必须是 http(s):// 开头、以 .js 或 .json 结尾的绝对地址，最多 20 条">
-        订阅地址（.js / .json，最多 20 条）
-      </span>
+      <span class="hint hint-line" title="每条必须是 http(s):// 开头、以 .js 或 .json 结尾的绝对地址，最多 20 条" data-i18n-title="pluginsHintTitle" data-i18n="pluginsHint">订阅地址（.js / .json，最多 20 条）</span>
       <div class="spacer"></div>
-      <button id="addSubscriptionBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>添加一条</button>
-      <button class="primary" id="saveSubscriptionsBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg>保存</button>
+      <button id="addSubscriptionBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg><span data-i18n="pluginsAdd">添加一条</span></button>
+      <button class="primary" id="saveSubscriptionsBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg><span data-i18n="commonSave">保存</span></button>
     </div>
     <div class="panel-body" id="subscriptions"></div>
     <div class="panel-foot">
       <span id="pluginsSummary" class="dim">—</span>
       <div class="spacer"></div>
-      <div class="hint">每页</div>
-      <div class="select" id="pluginsPageSize" role="button" tabindex="0" aria-label="每页数量"></div>
+      <div class="hint" data-i18n="perPage">每页</div>
+      <div class="select" id="pluginsPageSize" role="button" tabindex="0" aria-label="每页数量" data-i18n-aria="perPageAria"></div>
       <div class="pager" id="pluginsPager"></div>
     </div>
   </section>
@@ -547,93 +561,94 @@
 </main>
 
 <dialog id="membersDialog">
-  <h3 id="membersTitle">房间成员</h3>
+  <h3 id="membersTitle" data-i18n="membersTitle">房间成员</h3>
   <div class="body" id="membersBody"></div>
-  <div class="foot"><button id="closeMembers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>关闭</button></div>
+  <div class="foot"><button id="closeMembers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg><span data-i18n="commonClose">关闭</span></button></div>
 </dialog>
 
 <dialog id="newUserDialog">
-  <h3>新建账号</h3>
+  <h3 data-i18n="newUserTitle">新建账号</h3>
   <div class="grid-form">
     <div class="field">
-      <label>用户名（3~32 位字母、数字、_ 或 -）</label>
+      <label data-i18n="newUserUsername">用户名（3~32 位字母、数字、_ 或 -）</label>
       <input type="text" id="newUsername" autocomplete="off">
     </div>
     <div class="field">
-      <label>昵称（可选）</label>
+      <label data-i18n="newUserDisplayName">昵称（可选）</label>
       <input type="text" id="newDisplayName" autocomplete="off">
     </div>
     <div class="field">
-      <label>密码（至少 8 位）</label>
+      <label data-i18n="newUserPassword">密码（至少 8 位）</label>
       <input type="text" id="newPassword" autocomplete="off">
     </div>
   </div>
   <div class="foot">
-    <button id="cancelNewUser"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>取消</button>
-    <button class="primary" id="confirmNewUser"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>创建</button>
+    <button id="cancelNewUser"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg><span data-i18n="commonCancel">取消</span></button>
+    <button class="primary" id="confirmNewUser"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg><span data-i18n="newUserCreate">创建</span></button>
   </div>
 </dialog>
 
 <!-- 首次访问：库里还没有管理员，先让用户设一个密码 -->
 <dialog id="setupDialog">
-  <h3>设置管理员密码</h3>
+  <h3 data-i18n="setupTitle">设置管理员密码</h3>
   <p class="hint" style="margin: 0 0 14px">
-    这台服务器还没有管理员密码。设置之后用它登录管理台；密码只保存哈希，
-    忘了只能登录服务器清掉数据库里的 <span class="mono-box">admin_account</span> 一行再重新设置。
+    <span data-i18n="setupNoteA">这台服务器还没有管理员密码。设置之后用它登录管理台；密码只保存哈希，忘了只能登录服务器清掉数据库里的</span>
+    <span class="mono-box">admin_account</span>
+    <span data-i18n="setupNoteB">一行再重新设置。</span>
   </p>
   <div class="warn-box" id="legacyHint"></div>
   <div class="grid-form">
     <div class="field">
-      <label id="setupPasswordLabel">密码（至少 8 位）</label>
+      <label id="setupPasswordLabel" data-i18n="pwdMin">密码（至少 8 位）</label>
       <input type="password" id="setupPassword" autocomplete="new-password">
     </div>
     <div class="field">
-      <label>再输一次</label>
+      <label data-i18n="pwdRepeat">再输一次</label>
       <input type="password" id="setupPassword2" autocomplete="new-password">
     </div>
   </div>
   <div class="form-error" id="setupError"></div>
   <div class="foot">
-    <button class="primary" id="confirmSetup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg>设置并登录</button>
+    <button class="primary" id="confirmSetup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg><span data-i18n="setupSubmit">设置并登录</span></button>
   </div>
 </dialog>
 
 <!-- 已设过密码：登录 -->
 <dialog id="loginDialog">
-  <h3>管理员登录</h3>
-  <p class="hint" style="margin: 0 0 14px">输入管理员密码，登录后可以管理账号、房间与音乐插件订阅。</p>
+  <h3 data-i18n="loginTitle">管理员登录</h3>
+  <p class="hint" style="margin: 0 0 14px" data-i18n="loginNote">输入管理员密码，登录后可以管理账号、房间与音乐插件订阅。</p>
   <div class="field">
-    <label>管理员密码</label>
+    <label data-i18n="loginPassword">管理员密码</label>
     <input type="password" id="loginPassword" autocomplete="current-password">
   </div>
   <div class="form-error" id="loginError"></div>
   <div class="foot">
-    <button class="primary" id="confirmLogin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4.5"></path><path d="M14 8.5L17.5 12 14 15.5"></path><path d="M8 12h9.5"></path></svg>登录</button>
+    <button class="primary" id="confirmLogin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4.5"></path><path d="M14 8.5L17.5 12 14 15.5"></path><path d="M8 12h9.5"></path></svg><span data-i18n="loginSubmit">登录</span></button>
   </div>
 </dialog>
 
 <!-- 已登录：改密码 -->
 <dialog id="passwordDialog">
-  <h3>修改管理员密码</h3>
-  <p class="hint" style="margin: 0 0 14px">改完之后其他浏览器上的登录态会立即失效，这台会换一张新令牌。</p>
+  <h3 data-i18n="pwdTitle">修改管理员密码</h3>
+  <p class="hint" style="margin: 0 0 14px" data-i18n="pwdNote">改完之后其他浏览器上的登录态会立即失效，这台会换一张新令牌。</p>
   <div class="grid-form">
     <div class="field">
-      <label>当前密码</label>
+      <label data-i18n="pwdCurrent">当前密码</label>
       <input type="password" id="oldPassword" autocomplete="current-password">
     </div>
     <div class="field">
-      <label id="newPasswordLabel">新密码（至少 8 位）</label>
+      <label id="newPasswordLabel" data-i18n="pwdMinNew">新密码（至少 8 位）</label>
       <input type="password" id="newPassword2" autocomplete="new-password">
     </div>
     <div class="field">
-      <label>再输一次</label>
+      <label data-i18n="pwdRepeat">再输一次</label>
       <input type="password" id="newPassword3" autocomplete="new-password">
     </div>
   </div>
   <div class="form-error" id="passwordError"></div>
   <div class="foot">
-    <button id="cancelPassword"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>取消</button>
-    <button class="primary" id="confirmPassword"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg>保存</button>
+    <button id="cancelPassword"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg><span data-i18n="commonCancel">取消</span></button>
+    <button class="primary" id="confirmPassword"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"></path></svg><span data-i18n="commonSave">保存</span></button>
   </div>
 </dialog>
 
@@ -665,6 +680,747 @@ const ICON = {
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M8.4 12.2l2.6 2.6 4.6-5"/></svg>',
 };
 
+// ------------------------------------------------------------------ 多语言
+// 四语字典按语言分组、组内按 key：zh 是基准（页面原有文案逐字搬进来），
+// 其余三语缺 key 时自动退回 zh；四份的 key 集合必须一致，别只补一边。
+const I18N = {
+  zh: {
+    appTitle: 'OmiocLink 管理',
+    connecting: '正在连接…',
+    railServer: '服务端',
+    statusLoggedOut: '未登录',
+    statusConnected: '已连接',
+    statusExpired: '登录已失效',
+    statusNoPassword: '未设置密码',
+    statusOffline: '连不上服务器',
+    headTitle: '系统概览',
+    headIdle: '连接后这里显示这台服务器的实时状态',
+    headHeadline: '账号 {users} · 房间 {rooms} · 房间内成员 {peers} · 通话中 {live}',
+    themeTitle: '切换浅色 / 深色',
+    themeAria: '切换主题',
+    refreshTitle: '立即刷新',
+    refreshAria: '立即刷新',
+    authChangePassword: '修改密码',
+    authLogout: '退出登录',
+    authLoggedOut: '已退出登录',
+    tabsAria: '管理区块',
+    tabAccounts: '账号',
+    tabRooms: '房间',
+    tabPlugins: '插件',
+    searchTitle: '按用户名或昵称搜索，回车确认',
+    searchPlaceholder: '按用户名或昵称搜索',
+    searchClear: '清空搜索',
+    regToggleTitle: '重启容器后回到 .env 里的 OMIOCLINK_ALLOW_REGISTRATION',
+    regLabel: '自助注册',
+    regOn: '允许自助注册',
+    regOff: '自助注册已关闭',
+    regOpened: '已开放注册（重启后回到 .env 配置）',
+    regClosed: '已关闭注册',
+    newAccount: '新建账号',
+    perPage: '每页',
+    perPageAria: '每页数量',
+    roomsHint: '有人的房间排在前面，成员数实时刷新',
+    pluginsHint: '订阅地址（.js / .json，最多 20 条）',
+    pluginsHintTitle: '每条必须是 http(s):// 开头、以 .js 或 .json 结尾的绝对地址，最多 20 条',
+    pluginsAdd: '添加一条',
+    statAccountsSub: '注册用户总数',
+    statRoomsSub: '公开 {n}',
+    statPeers: '房间内成员',
+    statLiveRooms: '通话中房间',
+    commonCancel: '取消',
+    commonSave: '保存',
+    commonClose: '关闭',
+    colNickname: '昵称',
+    colStatus: '状态',
+    colCreatedAt: '创建时间',
+    colActions: '操作',
+    colRoomId: '房间号',
+    colMembers: '成员',
+    colOwner: '房主',
+    colAttrs: '属性',
+    colPeerId: '会话 ID',
+    userOnline: '在线',
+    userOffline: '离线',
+    userDisabled: '已禁用',
+    userEnableTitle: '启用该账号',
+    userDisableTitle: '禁用该账号',
+    userDeleteTitle: '删除账号',
+    userEnableConfirm: '确定启用账号 #{id}？',
+    userDisableConfirm: '确定禁用账号 #{id}？',
+    userDisableWarning: '\n该账号会被立即踢下线，已登录的客户端随之失效。',
+    userEnabled: '已启用账号 #{id}',
+    userDisabledBanner: '已禁用账号 #{id}',
+    userDeleted: '已删除账号 #{id}',
+    userDeleteConfirm: '确定删除账号 #{id}？',
+    userDeleteWarning: '他名下的房间会被解散（房间内的人会收到通知），好友关系、进房记录会一并删除。此操作不可恢复。',
+    accountsEmptyTitle: '还没有账号',
+    accountsEmptyBody: '关掉自助注册时，可以用右上角「新建账号」直接建。',
+    accountsEmptySearchTitle: '没有匹配的账号',
+    accountsEmptySearchBody: '换个关键词试试，或者清空搜索框。',
+    accountsSummary: '共 {n} 个账号',
+    accountsSummarySearch: '搜索「{q}」共 {n} 个账号',
+    roomsEmptyTitle: '还没有房间',
+    roomsEmptyBody: '客户端建房后会立刻出现在这里。',
+    roomsSummary: '共 {n} 个房间',
+    roomLive: '通话中',
+    roomPublic: '公开',
+    roomPrivate: '私有',
+    roomPassword: '有密码',
+    roomMembersTitle: '查看成员',
+    roomCloseTitle: '解散房间',
+    roomCloseConfirm: '确定解散房间 {id}？房间内所有成员都会被断开。',
+    roomClosed: '已解散房间 {id}',
+    membersTitle: '房间成员',
+    membersTitleWith: '房间成员 · {id}',
+    membersEmptyTitle: '房间是空的',
+    membersEmptyBody: '客户端可能刚离开。',
+    memberSharing: '共享屏幕',
+    memberMuted: '已静音',
+    memberMicOn: '麦克风开',
+    memberKickTitle: '移出房间',
+    memberKickConfirm: '把 {id} 移出房间？',
+    memberKicked: '已移出 {id}',
+    pluginsEmptyTitle: '还没有订阅地址',
+    pluginsEmptyBody: '点右上角「添加一条」开始填；也可以留空，客户端就不装任何插件。',
+    pluginsRemoveTitle: '删除这条',
+    pluginsSummary: '共 {n} 条 · 最多 20 条',
+    pluginsLimit: '最多 20 条订阅地址',
+    pluginsSaved: '已保存 {n} 条订阅地址',
+    pluginsCleared: '已清空订阅地址',
+    pagerPrev: '上一页',
+    pagerNext: '下一页',
+    newUserTitle: '新建账号',
+    newUserUsername: '用户名（3~32 位字母、数字、_ 或 -）',
+    newUserDisplayName: '昵称（可选）',
+    newUserPassword: '密码（至少 8 位）',
+    newUserCreate: '创建',
+    newUserMissing: '用户名和密码都要填',
+    newUserCreated: '已创建账号 {user}',
+    setupTitle: '设置管理员密码',
+    setupNoteA: '这台服务器还没有管理员密码。设置之后用它登录管理台；密码只保存哈希，忘了只能登录服务器清掉数据库里的',
+    setupNoteB: '一行再重新设置。',
+    setupLegacyA: '检测到旧版管理令牌 ',
+    setupLegacyB: '：设置管理员密码后它就失效了，建议顺手从 .env 里删掉这一行。',
+    setupSubmit: '设置并登录',
+    pwdMin: '密码（至少 {min} 位）',
+    pwdMinNew: '新密码（至少 {min} 位）',
+    pwdRepeat: '再输一次',
+    pwdTitle: '修改管理员密码',
+    pwdNote: '改完之后其他浏览器上的登录态会立即失效，这台会换一张新令牌。',
+    pwdCurrent: '当前密码',
+    pwdEmptyCurrent: '请输入当前密码',
+    pwdTooShort: '密码至少 {min} 位',
+    pwdNewTooShort: '新密码至少 {min} 位',
+    pwdMismatch: '两次输入的密码不一致',
+    pwdNewMismatch: '两次输入的新密码不一致',
+    pwdDone: '管理员密码已修改，其他浏览器的登录态已失效',
+    pwdFailed: '当前密码不正确或新密码不合法',
+    loginTitle: '管理员登录',
+    loginNote: '输入管理员密码，登录后可以管理账号、房间与音乐插件订阅。',
+    loginPassword: '管理员密码',
+    loginEmpty: '请输入管理员密码',
+    loginSubmit: '登录',
+    loginDone: '已登录',
+    bootOffline: '连不上服务器，请确认服务已经启动',
+    unauthorized: '登录已失效，请重新输入管理员密码',
+    whoamiOn: '已登录 {user}',
+    whoamiTitle: '当前登录的管理员：{user}',
+    setupDone: '管理员密码已设置，下次打开这个页面用密码登录',
+    langSwitch: '切换语言',
+    langAuto: '跟随系统',
+    langZh: '中文',
+    langEn: 'English',
+    langJa: '日本語',
+    langKo: '한국어',
+  },
+  en: {
+    appTitle: 'OmiocLink Admin',
+    connecting: 'Connecting…',
+    railServer: 'Server',
+    statusLoggedOut: 'Not logged in',
+    statusConnected: 'Connected',
+    statusExpired: 'Login expired',
+    statusNoPassword: 'No password set',
+    statusOffline: 'Server unreachable',
+    headTitle: 'System overview',
+    headIdle: 'Live status of this server shows up here once connected',
+    headHeadline: 'Accounts {users} · Rooms {rooms} · Members in rooms {peers} · Rooms on call {live}',
+    themeTitle: 'Switch light / dark',
+    themeAria: 'Switch theme',
+    refreshTitle: 'Refresh now',
+    refreshAria: 'Refresh now',
+    authChangePassword: 'Change password',
+    authLogout: 'Log out',
+    authLoggedOut: 'Logged out',
+    tabsAria: 'Admin sections',
+    tabAccounts: 'Accounts',
+    tabRooms: 'Rooms',
+    tabPlugins: 'Plugins',
+    searchTitle: 'Search by username or nickname, press Enter to apply',
+    searchPlaceholder: 'Search by username or nickname',
+    searchClear: 'Clear search',
+    regToggleTitle: 'Reverts to OMIOCLINK_ALLOW_REGISTRATION from .env when the container restarts',
+    regLabel: 'Self-registration',
+    regOn: 'Self-registration on',
+    regOff: 'Self-registration off',
+    regOpened: 'Self-registration enabled (reverts to .env on restart)',
+    regClosed: 'Self-registration disabled',
+    newAccount: 'New account',
+    perPage: 'Per page',
+    perPageAria: 'Items per page',
+    roomsHint: 'Rooms with people come first; member counts refresh live',
+    pluginsHint: 'Subscription URLs (.js / .json, up to 20)',
+    pluginsHintTitle: 'Each entry must be an absolute http(s):// URL ending in .js or .json, 20 at most',
+    pluginsAdd: 'Add one',
+    statAccountsSub: 'Registered accounts',
+    statRoomsSub: 'Public {n}',
+    statPeers: 'Members in rooms',
+    statLiveRooms: 'Rooms on call',
+    commonCancel: 'Cancel',
+    commonSave: 'Save',
+    commonClose: 'Close',
+    colNickname: 'Nickname',
+    colStatus: 'Status',
+    colCreatedAt: 'Created',
+    colActions: 'Actions',
+    colRoomId: 'Room ID',
+    colMembers: 'Members',
+    colOwner: 'Owner',
+    colAttrs: 'Attributes',
+    colPeerId: 'Session ID',
+    userOnline: 'Online',
+    userOffline: 'Offline',
+    userDisabled: 'Disabled',
+    userEnableTitle: 'Enable this account',
+    userDisableTitle: 'Disable this account',
+    userDeleteTitle: 'Delete account',
+    userEnableConfirm: 'Enable account #{id}?',
+    userDisableConfirm: 'Disable account #{id}?',
+    userDisableWarning: '\nThe account is kicked offline immediately and signed-in clients stop working.',
+    userEnabled: 'Enabled account #{id}',
+    userDisabledBanner: 'Disabled account #{id}',
+    userDeleted: 'Deleted account #{id}',
+    userDeleteConfirm: 'Delete account #{id}?',
+    userDeleteWarning: 'Rooms owned by this account are closed (members inside are notified); friendships and room history are deleted as well. This cannot be undone.',
+    accountsEmptyTitle: 'No accounts yet',
+    accountsEmptyBody: 'With self-registration off, use "New account" at the top right to create one.',
+    accountsEmptySearchTitle: 'No matching accounts',
+    accountsEmptySearchBody: 'Try another keyword, or clear the search box.',
+    accountsSummary: 'Total accounts: {n}',
+    accountsSummarySearch: 'Search "{q}" · total accounts: {n}',
+    roomsEmptyTitle: 'No rooms yet',
+    roomsEmptyBody: 'A room shows up here as soon as a client creates one.',
+    roomsSummary: 'Total rooms: {n}',
+    roomLive: 'On call',
+    roomPublic: 'Public',
+    roomPrivate: 'Private',
+    roomPassword: 'Password',
+    roomMembersTitle: 'View members',
+    roomCloseTitle: 'Close room',
+    roomCloseConfirm: 'Close room {id}? Everyone inside will be disconnected.',
+    roomClosed: 'Closed room {id}',
+    membersTitle: 'Room members',
+    membersTitleWith: 'Room members · {id}',
+    membersEmptyTitle: 'The room is empty',
+    membersEmptyBody: 'The client may have just left.',
+    memberSharing: 'Screen sharing',
+    memberMuted: 'Muted',
+    memberMicOn: 'Mic on',
+    memberKickTitle: 'Remove from room',
+    memberKickConfirm: 'Remove {id} from the room?',
+    memberKicked: 'Removed {id}',
+    pluginsEmptyTitle: 'No subscription URLs yet',
+    pluginsEmptyBody: 'Use "Add one" at the top right to start; leave it empty and the client installs no plugins.',
+    pluginsRemoveTitle: 'Remove this entry',
+    pluginsSummary: 'Entries: {n} · 20 at most',
+    pluginsLimit: 'At most 20 subscription URLs',
+    pluginsSaved: 'Saved subscription URLs: {n}',
+    pluginsCleared: 'Subscription URLs cleared',
+    pagerPrev: 'Previous page',
+    pagerNext: 'Next page',
+    newUserTitle: 'New account',
+    newUserUsername: 'Username (3-32 letters, digits, _ or -)',
+    newUserDisplayName: 'Nickname (optional)',
+    newUserPassword: 'Password (at least 8 characters)',
+    newUserCreate: 'Create',
+    newUserMissing: 'Username and password are both required',
+    newUserCreated: 'Created account {user}',
+    setupTitle: 'Set admin password',
+    setupNoteA: 'This server has no admin password yet. Set one to log in to this console; only a hash is stored. If you forget it, log in to the server and delete the',
+    setupNoteB: 'row from the database, then set it again.',
+    setupLegacyA: 'Legacy admin token detected: ',
+    setupLegacyB: ' Setting the admin password makes it void; you can then remove that line from .env.',
+    setupSubmit: 'Set and log in',
+    pwdMin: 'Password (at least {min} characters)',
+    pwdMinNew: 'New password (at least {min} characters)',
+    pwdRepeat: 'Repeat password',
+    pwdTitle: 'Change admin password',
+    pwdNote: 'Logins in other browsers stop working immediately; this one gets a new token.',
+    pwdCurrent: 'Current password',
+    pwdEmptyCurrent: 'Enter the current password',
+    pwdTooShort: 'Password must be at least {min} characters',
+    pwdNewTooShort: 'New password must be at least {min} characters',
+    pwdMismatch: 'The two passwords do not match',
+    pwdNewMismatch: 'The two new passwords do not match',
+    pwdDone: 'Admin password changed; logins in other browsers are now invalid',
+    pwdFailed: 'The current password is wrong or the new password is invalid',
+    loginTitle: 'Admin login',
+    loginNote: 'Enter the admin password to manage accounts, rooms and music plugin subscriptions.',
+    loginPassword: 'Admin password',
+    loginEmpty: 'Enter the admin password',
+    loginSubmit: 'Log in',
+    loginDone: 'Logged in',
+    bootOffline: 'Cannot reach the server; make sure the service is running',
+    unauthorized: 'Login expired, enter the admin password again',
+    whoamiOn: 'Logged in as {user}',
+    whoamiTitle: 'Logged-in admin: {user}',
+    setupDone: 'Admin password set; use it to log in the next time you open this page',
+    langSwitch: 'Switch language',
+    langAuto: 'Follow system',
+    langZh: '中文',
+    langEn: 'English',
+    langJa: '日本語',
+    langKo: '한국어',
+  },
+  ja: {
+    appTitle: 'OmiocLink 管理',
+    connecting: '接続中…',
+    railServer: 'サーバー',
+    statusLoggedOut: '未ログイン',
+    statusConnected: '接続済み',
+    statusExpired: 'ログインの有効期限切れ',
+    statusNoPassword: 'パスワード未設定',
+    statusOffline: 'サーバーに接続できません',
+    headTitle: 'システム概要',
+    headIdle: '接続するとここにこのサーバーの状態が表示されます',
+    headHeadline: 'アカウント {users} · ルーム {rooms} · ルーム内メンバー {peers} · 通話中 {live}',
+    themeTitle: 'ライト / ダークを切り替え',
+    themeAria: 'テーマを切り替え',
+    refreshTitle: '今すぐ更新',
+    refreshAria: '今すぐ更新',
+    authChangePassword: 'パスワード変更',
+    authLogout: 'ログアウト',
+    authLoggedOut: 'ログアウトしました',
+    tabsAria: '管理セクション',
+    tabAccounts: 'アカウント',
+    tabRooms: 'ルーム',
+    tabPlugins: 'プラグイン',
+    searchTitle: 'ユーザー名またはニックネームで検索（Enter で確定）',
+    searchPlaceholder: 'ユーザー名またはニックネームで検索',
+    searchClear: '検索をクリア',
+    regToggleTitle: 'コンテナ再起動後は .env の OMIOCLINK_ALLOW_REGISTRATION に戻ります',
+    regLabel: 'セルフ登録',
+    regOn: 'セルフ登録を許可',
+    regOff: 'セルフ登録は停止中',
+    regOpened: 'セルフ登録を有効にしました（再起動後は .env の設定に戻ります）',
+    regClosed: 'セルフ登録を無効にしました',
+    newAccount: 'アカウント作成',
+    perPage: '1 ページ',
+    perPageAria: '1 ページあたりの件数',
+    roomsHint: '参加者がいるルームが先頭に並び、メンバー数はリアルタイムに更新されます',
+    pluginsHint: '購読 URL（.js / .json、最大 20 件）',
+    pluginsHintTitle: '各項目は http(s):// で始まり .js または .json で終わる絶対 URL で、最大 20 件です',
+    pluginsAdd: '1 件追加',
+    statAccountsSub: '登録ユーザー数',
+    statRoomsSub: '公開 {n}',
+    statPeers: 'ルーム内メンバー',
+    statLiveRooms: '通話中のルーム',
+    commonCancel: 'キャンセル',
+    commonSave: '保存',
+    commonClose: '閉じる',
+    colNickname: 'ニックネーム',
+    colStatus: '状態',
+    colCreatedAt: '作成日時',
+    colActions: '操作',
+    colRoomId: 'ルーム ID',
+    colMembers: 'メンバー',
+    colOwner: 'ホスト',
+    colAttrs: '属性',
+    colPeerId: 'セッション ID',
+    userOnline: 'オンライン',
+    userOffline: 'オフライン',
+    userDisabled: '無効',
+    userEnableTitle: 'このアカウントを有効化',
+    userDisableTitle: 'このアカウントを無効化',
+    userDeleteTitle: 'アカウントを削除',
+    userEnableConfirm: 'アカウント #{id} を有効化しますか？',
+    userDisableConfirm: 'アカウント #{id} を無効化しますか？',
+    userDisableWarning: '\nこのアカウントは即座に切断され、ログイン中のクライアントも無効になります。',
+    userEnabled: 'アカウント #{id} を有効化しました',
+    userDisabledBanner: 'アカウント #{id} を無効化しました',
+    userDeleted: 'アカウント #{id} を削除しました',
+    userDeleteConfirm: 'アカウント #{id} を削除しますか？',
+    userDeleteWarning: 'このアカウントが所有するルームは解散され（ルーム内のメンバーに通知されます）、フレンド関係と入室履歴も削除されます。この操作は元に戻せません。',
+    accountsEmptyTitle: 'アカウントがありません',
+    accountsEmptyBody: 'セルフ登録を停止している場合は、右上の「アカウント作成」から作成できます。',
+    accountsEmptySearchTitle: '一致するアカウントがありません',
+    accountsEmptySearchBody: '別のキーワードを試すか、検索欄をクリアしてください。',
+    accountsSummary: 'アカウント {n} 件',
+    accountsSummarySearch: '「{q}」の検索結果 {n} 件',
+    roomsEmptyTitle: 'ルームがありません',
+    roomsEmptyBody: 'クライアントがルームを作成するとすぐにここに表示されます。',
+    roomsSummary: 'ルーム {n} 件',
+    roomLive: '通話中',
+    roomPublic: '公開',
+    roomPrivate: '非公開',
+    roomPassword: 'パスワードあり',
+    roomMembersTitle: 'メンバーを表示',
+    roomCloseTitle: 'ルームを解散',
+    roomCloseConfirm: 'ルーム {id} を解散しますか？ルーム内の全メンバーが切断されます。',
+    roomClosed: 'ルーム {id} を解散しました',
+    membersTitle: 'ルームメンバー',
+    membersTitleWith: 'ルームメンバー · {id}',
+    membersEmptyTitle: 'ルームは空です',
+    membersEmptyBody: 'クライアントが今しがた退出した可能性があります。',
+    memberSharing: '画面共有中',
+    memberMuted: 'ミュート中',
+    memberMicOn: 'マイクオン',
+    memberKickTitle: 'ルームから退出させる',
+    memberKickConfirm: '{id} をルームから退出させますか？',
+    memberKicked: '{id} を退出させました',
+    pluginsEmptyTitle: '購読 URL がありません',
+    pluginsEmptyBody: '右上の「1 件追加」から入力を始めてください。空のままにすると、クライアントはプラグインをインストールしません。',
+    pluginsRemoveTitle: 'この行を削除',
+    pluginsSummary: '{n} 件 · 最大 20 件',
+    pluginsLimit: '購読 URL は最大 20 件までです',
+    pluginsSaved: '購読 URL を {n} 件保存しました',
+    pluginsCleared: '購読 URL をクリアしました',
+    pagerPrev: '前のページ',
+    pagerNext: '次のページ',
+    newUserTitle: 'アカウント作成',
+    newUserUsername: 'ユーザー名（3〜32 文字の英数字、_ または -）',
+    newUserDisplayName: 'ニックネーム（任意）',
+    newUserPassword: 'パスワード（8 文字以上）',
+    newUserCreate: '作成',
+    newUserMissing: 'ユーザー名とパスワードは必須です',
+    newUserCreated: 'アカウント {user} を作成しました',
+    setupTitle: '管理者パスワードを設定',
+    setupNoteA: 'このサーバーにはまだ管理者パスワードがありません。設定するとこの管理画面にログインできます。保存されるのはハッシュのみです。忘れた場合はサーバーにログインしてデータベースの',
+    setupNoteB: 'の行を削除し、設定し直してください。',
+    setupLegacyA: '旧バージョンの管理トークンを検出しました: ',
+    setupLegacyB: ' 管理者パスワードを設定すると無効になります。.env からこの行を削除することをおすすめします。',
+    setupSubmit: '設定してログイン',
+    pwdMin: 'パスワード（{min} 文字以上）',
+    pwdMinNew: '新しいパスワード（{min} 文字以上）',
+    pwdRepeat: 'もう一度入力',
+    pwdTitle: '管理者パスワードの変更',
+    pwdNote: '変更後は他のブラウザのログインが即座に無効になり、この画面には新しいトークンが発行されます。',
+    pwdCurrent: '現在のパスワード',
+    pwdEmptyCurrent: '現在のパスワードを入力してください',
+    pwdTooShort: 'パスワードは {min} 文字以上にしてください',
+    pwdNewTooShort: '新しいパスワードは {min} 文字以上にしてください',
+    pwdMismatch: '入力したパスワードが一致しません',
+    pwdNewMismatch: '新しいパスワードが一致しません',
+    pwdDone: '管理者パスワードを変更しました。他のブラウザのログインは無効になりました',
+    pwdFailed: '現在のパスワードが正しくないか、新しいパスワードが不正です',
+    loginTitle: '管理者ログイン',
+    loginNote: '管理者パスワードを入力してください。ログイン後、アカウント・ルーム・音楽プラグインの購読を管理できます。',
+    loginPassword: '管理者パスワード',
+    loginEmpty: '管理者パスワードを入力してください',
+    loginSubmit: 'ログイン',
+    loginDone: 'ログインしました',
+    bootOffline: 'サーバーに接続できません。サービスが起動しているか確認してください',
+    unauthorized: 'ログインの有効期限が切れました。管理者パスワードをもう一度入力してください',
+    whoamiOn: '{user} でログイン中',
+    whoamiTitle: 'ログイン中の管理者: {user}',
+    setupDone: '管理者パスワードを設定しました。次回このページを開いたらパスワードでログインしてください',
+    langSwitch: '言語を切り替え',
+    langAuto: 'システムに従う',
+    langZh: '中文',
+    langEn: 'English',
+    langJa: '日本語',
+    langKo: '한국어',
+  },
+  ko: {
+    appTitle: 'OmiocLink 관리',
+    connecting: '연결 중…',
+    railServer: '서버',
+    statusLoggedOut: '로그아웃됨',
+    statusConnected: '연결됨',
+    statusExpired: '로그인 만료됨',
+    statusNoPassword: '비밀번호 미설정',
+    statusOffline: '서버에 연결할 수 없음',
+    headTitle: '시스템 개요',
+    headIdle: '연결되면 이 서버의 실시간 상태가 여기에 표시됩니다',
+    headHeadline: '계정 {users} · 룸 {rooms} · 룸 멤버 {peers} · 통화 중 {live}',
+    themeTitle: '라이트 / 다크 전환',
+    themeAria: '테마 전환',
+    refreshTitle: '지금 새로고침',
+    refreshAria: '지금 새로고침',
+    authChangePassword: '비밀번호 변경',
+    authLogout: '로그아웃',
+    authLoggedOut: '로그아웃되었습니다',
+    tabsAria: '관리 섹션',
+    tabAccounts: '계정',
+    tabRooms: '룸',
+    tabPlugins: '플러그인',
+    searchTitle: '사용자 이름 또는 닉네임으로 검색, Enter 로 확정',
+    searchPlaceholder: '사용자 이름 또는 닉네임으로 검색',
+    searchClear: '검색 지우기',
+    regToggleTitle: '컨테이너를 다시 시작하면 .env 의 OMIOCLINK_ALLOW_REGISTRATION 값으로 돌아갑니다',
+    regLabel: '자가 등록',
+    regOn: '자가 등록 허용',
+    regOff: '자가 등록 꺼짐',
+    regOpened: '자가 등록을 켰습니다 (재시작하면 .env 설정으로 돌아갑니다)',
+    regClosed: '자가 등록을 껐습니다',
+    newAccount: '계정 만들기',
+    perPage: '페이지당',
+    perPageAria: '페이지당 개수',
+    roomsHint: '사람이 있는 룸이 앞에 오고, 멤버 수는 실시간으로 갱신됩니다',
+    pluginsHint: '구독 주소 (.js / .json, 최대 20개)',
+    pluginsHintTitle: '각 항목은 http(s):// 로 시작해 .js 또는 .json 으로 끝나는 절대 주소여야 하며, 최대 20개입니다',
+    pluginsAdd: '하나 추가',
+    statAccountsSub: '등록된 사용자 수',
+    statRoomsSub: '공개 {n}',
+    statPeers: '룸 안 멤버',
+    statLiveRooms: '통화 중인 룸',
+    commonCancel: '취소',
+    commonSave: '저장',
+    commonClose: '닫기',
+    colNickname: '닉네임',
+    colStatus: '상태',
+    colCreatedAt: '생성 시각',
+    colActions: '작업',
+    colRoomId: '룸 ID',
+    colMembers: '멤버',
+    colOwner: '방장',
+    colAttrs: '속성',
+    colPeerId: '세션 ID',
+    userOnline: '온라인',
+    userOffline: '오프라인',
+    userDisabled: '비활성화됨',
+    userEnableTitle: '이 계정 활성화',
+    userDisableTitle: '이 계정 비활성화',
+    userDeleteTitle: '계정 삭제',
+    userEnableConfirm: '계정 #{id} 활성화할까요?',
+    userDisableConfirm: '계정 #{id} 비활성화할까요?',
+    userDisableWarning: '\n이 계정은 즉시 접속이 끊기고 로그인된 클라이언트도 함께 무효화됩니다.',
+    userEnabled: '계정 #{id} 활성화됨',
+    userDisabledBanner: '계정 #{id} 비활성화됨',
+    userDeleted: '계정 #{id} 삭제됨',
+    userDeleteConfirm: '계정 #{id} 삭제할까요?',
+    userDeleteWarning: '이 계정이 소유한 룸은 해산되고(룸 안의 멤버에게 알림이 갑니다) 친구 관계와 입장 기록도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
+    accountsEmptyTitle: '아직 계정이 없습니다',
+    accountsEmptyBody: '자가 등록을 껐다면 오른쪽 위 "계정 만들기" 로 바로 만들 수 있습니다.',
+    accountsEmptySearchTitle: '일치하는 계정이 없습니다',
+    accountsEmptySearchBody: '다른 키워드를 입력하거나 검색창을 비워 보세요.',
+    accountsSummary: '계정 {n}개',
+    accountsSummarySearch: '"{q}" 검색 결과 계정 {n}개',
+    roomsEmptyTitle: '아직 룸이 없습니다',
+    roomsEmptyBody: '클라이언트가 룸을 만들면 바로 여기에 나타납니다.',
+    roomsSummary: '룸 {n}개',
+    roomLive: '통화 중',
+    roomPublic: '공개',
+    roomPrivate: '비공개',
+    roomPassword: '비밀번호 있음',
+    roomMembersTitle: '멤버 보기',
+    roomCloseTitle: '룸 해산',
+    roomCloseConfirm: '룸 {id} 해산할까요? 룸 안의 모든 멤버 연결이 끊깁니다.',
+    roomClosed: '룸 {id} 해산됨',
+    membersTitle: '룸 멤버',
+    membersTitleWith: '룸 멤버 · {id}',
+    membersEmptyTitle: '룸이 비어 있습니다',
+    membersEmptyBody: '클라이언트가 방금 떠났을 수 있습니다.',
+    memberSharing: '화면 공유',
+    memberMuted: '음소거됨',
+    memberMicOn: '마이크 켜짐',
+    memberKickTitle: '룸에서 내보내기',
+    memberKickConfirm: '{id} 룸에서 내보낼까요?',
+    memberKicked: '{id} 내보냄',
+    pluginsEmptyTitle: '아직 구독 주소가 없습니다',
+    pluginsEmptyBody: '오른쪽 위 "하나 추가" 로 입력을 시작하세요. 비워 두면 클라이언트는 어떤 플러그인도 설치하지 않습니다.',
+    pluginsRemoveTitle: '이 항목 삭제',
+    pluginsSummary: '{n}개 · 최대 20개',
+    pluginsLimit: '구독 주소는 최대 20개입니다',
+    pluginsSaved: '구독 주소 {n}개 저장됨',
+    pluginsCleared: '구독 주소를 비웠습니다',
+    pagerPrev: '이전 페이지',
+    pagerNext: '다음 페이지',
+    newUserTitle: '계정 만들기',
+    newUserUsername: '사용자 이름 (3~32자 영문/숫자, _ 또는 -)',
+    newUserDisplayName: '닉네임 (선택)',
+    newUserPassword: '비밀번호 (8자 이상)',
+    newUserCreate: '만들기',
+    newUserMissing: '사용자 이름과 비밀번호를 모두 입력해야 합니다',
+    newUserCreated: '계정 {user} 생성됨',
+    setupTitle: '관리자 비밀번호 설정',
+    setupNoteA: '이 서버에는 아직 관리자 비밀번호가 없습니다. 설정하면 이 관리 콘솔에 로그인할 수 있습니다. 해시만 저장되며, 잊어버리면 서버에 로그인해 데이터베이스의',
+    setupNoteB: '행을 지우고 다시 설정해야 합니다.',
+    setupLegacyA: '구버전 관리 토큰이 감지되었습니다: ',
+    setupLegacyB: ' 관리자 비밀번호를 설정하면 무효가 됩니다. .env 에서 해당 줄을 지우는 것을 권합니다.',
+    setupSubmit: '설정하고 로그인',
+    pwdMin: '비밀번호 ({min}자 이상)',
+    pwdMinNew: '새 비밀번호 ({min}자 이상)',
+    pwdRepeat: '다시 입력',
+    pwdTitle: '관리자 비밀번호 변경',
+    pwdNote: '변경하면 다른 브라우저의 로그인이 즉시 무효가 되고, 이 브라우저는 새 토큰을 받습니다.',
+    pwdCurrent: '현재 비밀번호',
+    pwdEmptyCurrent: '현재 비밀번호를 입력하세요',
+    pwdTooShort: '비밀번호는 {min}자 이상이어야 합니다',
+    pwdNewTooShort: '새 비밀번호는 {min}자 이상이어야 합니다',
+    pwdMismatch: '두 비밀번호가 일치하지 않습니다',
+    pwdNewMismatch: '두 새 비밀번호가 일치하지 않습니다',
+    pwdDone: '관리자 비밀번호가 변경되었습니다. 다른 브라우저의 로그인은 무효가 되었습니다',
+    pwdFailed: '현재 비밀번호가 틀렸거나 새 비밀번호가 올바르지 않습니다',
+    loginTitle: '관리자 로그인',
+    loginNote: '관리자 비밀번호를 입력하세요. 로그인하면 계정, 룸, 음악 플러그인 구독을 관리할 수 있습니다.',
+    loginPassword: '관리자 비밀번호',
+    loginEmpty: '관리자 비밀번호를 입력하세요',
+    loginSubmit: '로그인',
+    loginDone: '로그인되었습니다',
+    bootOffline: '서버에 연결할 수 없습니다. 서비스가 실행 중인지 확인하세요',
+    unauthorized: '로그인이 만료되었습니다. 관리자 비밀번호를 다시 입력하세요',
+    whoamiOn: '{user} 로 로그인됨',
+    whoamiTitle: '로그인한 관리자: {user}',
+    setupDone: '관리자 비밀번호가 설정되었습니다. 다음에 이 페이지를 열면 비밀번호로 로그인하세요',
+    langSwitch: '언어 전환',
+    langAuto: '시스템 설정 따르기',
+    langZh: '中文',
+    langEn: 'English',
+    langJa: '日本語',
+    langKo: '한국어',
+  },
+};
+
+const LANG_KEY = 'omioclink.adminLang';
+// 「跟随系统」也是一个可选值：没选过语言时，系统语言变了页面要跟着变
+const LANGS = [
+  { code: 'auto', label: 'langAuto' },
+  { code: 'zh', label: 'langZh' },
+  { code: 'en', label: 'langEn' },
+  { code: 'ja', label: 'langJa' },
+  { code: 'ko', label: 'langKo' },
+];
+// <html lang> 与请求头 Accept-Language 用同一套标签
+const LANG_TAG = { zh: 'zh-CN', en: 'en', ja: 'ja', ko: 'ko' };
+// 语言按钮是 32×32 的 .icon-btn，只放得下两个字符以内的短标记
+const LANG_BADGE = { zh: '中', en: 'EN', ja: '日', ko: '한' };
+
+let langPref = 'auto';
+let lang = 'zh';
+// 切语言要原地重画而不是重新请求：各块最近一次拿到的数据和最近一次状态都留一份
+let lastOverview = null;
+let lastAccounts = null;
+let lastRooms = null;
+let membersData = null;
+let loggedInUser = null;
+let lastStatus = null;
+
+function t(key, params) {
+  const table = I18N[lang] || I18N.zh;
+  let text = table[key];
+  if (text === undefined) text = I18N.zh[key];
+  if (text === undefined) return key;
+  if (params) {
+    text = text.replace(/\{(\w+)\}/g, (whole, name) => (
+      params[name] === undefined ? whole : String(params[name])
+    ));
+  }
+  return text;
+}
+
+// 少数文案带运行时才知道的参数（密码最小长度由服务端给），统一在这里取
+const I18N_PARAMS = {
+  pwdMin: () => ({ min: passwordMinLength }),
+  pwdMinNew: () => ({ min: passwordMinLength }),
+};
+
+function i18nParams(key) {
+  return I18N_PARAMS[key] ? I18N_PARAMS[key]() : undefined;
+}
+
+// 静态文案：data-i18n 写 textContent，data-i18n-title / -placeholder / -aria 写对应属性。
+// 带图标的按钮把文字包在 <span data-i18n> 里，否则 textContent 会把图标一起冲掉。
+function applyStaticTexts() {
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n');
+    el.textContent = t(key, i18nParams(key));
+  });
+  [['data-i18n-title', 'title'], ['data-i18n-placeholder', 'placeholder'], ['data-i18n-aria', 'aria-label']]
+    .forEach(([attr, target]) => {
+      document.querySelectorAll('[' + attr + ']').forEach((el) => {
+        const key = el.getAttribute(attr);
+        el.setAttribute(target, t(key, i18nParams(key)));
+      });
+    });
+}
+
+function acceptLanguage() {
+  return LANG_TAG[lang];
+}
+
+// 没选过语言时跟浏览器走，认不出就用中文
+function detectLang() {
+  const tag = (navigator.language || '').toLowerCase().slice(0, 2);
+  return LANG_TAG[tag] ? tag : 'zh';
+}
+
+function renderLangMenu() {
+  $('langMenu').innerHTML = LANGS.map((item) => (
+    `<button type="button" class="select-option" data-lang="${item.code}" aria-selected="${item.code === langPref}">${esc(t(item.label))}</button>`
+  )).join('');
+}
+
+function applyLanguage() {
+  document.documentElement.lang = LANG_TAG[lang];
+  $('langBtn').textContent = LANG_BADGE[lang];
+  applyStaticTexts();
+  renderLangMenu();
+}
+
+// 表格行、分页、页签数字都是按数据画出来的：切语言时拿同一份数据重画，不重新请求
+function redrawTexts() {
+  if (lastOverview) drawOverview(lastOverview);
+  if (lastAccounts) renderAccounts(lastAccounts);
+  if (lastRooms) renderRooms(lastRooms);
+  renderPlugins();
+  if (currentRoomId && membersData) renderMembers();
+  setLoggedIn(loggedInUser);
+  if (lastStatus) setStatus(lastStatus.ok, lastStatus.key);
+  // 还挂着的提示条是上一种语言下生成的一次性消息，留着会两种语言混排
+  clearTimeout(banner._t);
+  $('banner').style.display = 'none';
+}
+
+function setLangPref(pref) {
+  langPref = (pref === 'auto' || LANG_TAG[pref]) ? pref : 'auto';
+  lang = langPref === 'auto' ? detectLang() : langPref;
+  localStorage.setItem(LANG_KEY, langPref);
+  applyLanguage();
+  redrawTexts();
+}
+
+function closeLangMenu() {
+  $('langMenu').hidden = true;
+  $('langBtn').setAttribute('aria-expanded', 'false');
+}
+
+$('langBtn').addEventListener('click', () => {
+  const menu = $('langMenu');
+  menu.hidden = !menu.hidden;
+  $('langBtn').setAttribute('aria-expanded', String(!menu.hidden));
+});
+$('langMenu').addEventListener('click', (event) => {
+  const option = event.target.closest('[data-lang]');
+  if (!option) return;
+  closeLangMenu();
+  setLangPref(option.dataset.lang);
+});
+// 点空白处 / 按 Esc 收起，跟分页下拉的行为保持一致
+document.addEventListener('click', (event) => {
+  if (!$('langMenu').hidden && !document.querySelector('.lang-wrap').contains(event.target)) closeLangMenu();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeLangMenu();
+});
+
+(function initLang() {
+  const saved = localStorage.getItem(LANG_KEY) || 'auto';
+  langPref = (saved === 'auto' || LANG_TAG[saved]) ? saved : 'auto';
+  lang = langPref === 'auto' ? detectLang() : langPref;
+  applyLanguage();
+})();
+
 // ------------------------------------------------------------------ 主题
 // 初值跟系统走，用户手动切过就记住；data-theme 挂在 <html> 上，两套令牌在 CSS 里换。
 function applyTheme(theme) {
@@ -692,16 +1448,18 @@ function banner(msg, ok = false) {
   banner._t = setTimeout(() => { el.style.display = 'none'; }, 6000);
 }
 
-function setStatus(ok, text) {
+function setStatus(ok, key) {
+  lastStatus = { ok, key };
   $('status').className = 'status ' + (ok ? 'on' : 'off');
-  $('statusText').textContent = text;
+  $('statusText').textContent = t(key);
 }
 
 function setLoggedIn(username) {
+  loggedInUser = username || null;
   const on = !!username;
   $('whoami').style.display = on ? 'inline-flex' : 'none';
-  $('whoami').textContent = on ? ('已登录 ' + username) : '';
-  $('whoami').title = on ? ('当前登录的管理员：' + username) : '';
+  $('whoami').textContent = on ? t('whoamiOn', { user: username }) : '';
+  $('whoami').title = on ? t('whoamiTitle', { user: username }) : '';
   $('changePasswordBtn').style.display = on ? 'inline-block' : 'none';
   $('logoutBtn').style.display = on ? 'inline-block' : 'none';
   $('changePasswordBtn').disabled = !on;
@@ -730,14 +1488,16 @@ async function api(path, options = {}) {
   const res = await fetch(API + path, {
     ...options,
     headers: {
+      // 服务端的错误消息是按 Accept-Language 出的，界面语言变了请求头也跟着变
+      'Accept-Language': acceptLanguage(),
       ...(token ? { Authorization: 'Bearer ' + token } : {}),
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       ...(options.headers || {}),
     },
   });
   if (res.status === 401) {
-    setStatus(false, '登录已失效');
-    handleUnauthorized('登录已失效，请重新输入管理员密码');
+    setStatus(false, 'statusExpired');
+    handleUnauthorized(t('unauthorized'));
     throw new Error('unauthorized');
   }
   if (res.status === 204) return null;
@@ -750,7 +1510,7 @@ async function api(path, options = {}) {
 async function postPublic(path, body) {
   const res = await fetch(API + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Accept-Language': acceptLanguage() },
     body: JSON.stringify(body || {}),
   });
   const data = await res.json().catch(() => null);
@@ -775,34 +1535,37 @@ async function boot() {
   reauthing = true;
   let status = null;
   try {
-    const res = await fetch(API + '/session', {
-      headers: token ? { Authorization: 'Bearer ' + token } : {},
-    });
+  const res = await fetch(API + '/session', {
+    headers: {
+      'Accept-Language': acceptLanguage(),
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
+    },
+  });
     status = await res.json();
   } catch (e) {
-    setStatus(false, '连不上服务器');
-    banner('连不上服务器，请确认服务已经启动');
+    setStatus(false, 'statusOffline');
+    banner(t('bootOffline'));
     reauthing = false;
     return;
   }
   passwordMinLength = status.passwordMinLength || 8;
-  $('setupPasswordLabel').textContent = '密码（至少 ' + passwordMinLength + ' 位）';
-  $('newPasswordLabel').textContent = '新密码（至少 ' + passwordMinLength + ' 位）';
+  // 两个密码标签带着最小长度，这个数服务端才知道：拿到后把带参文案重套一遍
+  applyStaticTexts();
   reauthing = false;
 
   if (!status.initialized) {
-    setStatus(false, '未设置密码');
+    setStatus(false, 'statusNoPassword');
     setLoggedIn(null);
     showSetup(status.legacyTokenConfigured);
     return;
   }
   if (!status.authenticated) {
-    setStatus(false, '未登录');
+    setStatus(false, 'statusLoggedOut');
     setLoggedIn(null);
     showLogin();
     return;
   }
-  setStatus(true, '已连接');
+  setStatus(true, 'statusConnected');
   setLoggedIn(status.username || 'admin');
   await refresh();
   startPolling();
@@ -811,8 +1574,9 @@ async function boot() {
 function showSetup(legacyConfigured) {
   const hint = $('legacyHint');
   if (legacyConfigured) {
-    hint.innerHTML = '检测到旧版管理令牌 <span class="mono-box">OMIOCLINK_ADMIN_TOKEN</span>：'
-      + '设置管理员密码后它就失效了，建议顺手从 .env 里删掉这一行。';
+    // 令牌名是代码标识不翻译，各语言语序不同，所以拆成前后两段把它夹在中间
+    hint.innerHTML = esc(t('setupLegacyA')) + '<span class="mono-box">OMIOCLINK_ADMIN_TOKEN</span>'
+      + esc(t('setupLegacyB'));
     hint.style.display = 'block';
   } else {
     hint.style.display = 'none';
@@ -916,27 +1680,35 @@ function statCard({ label, value, sub, live, svg }) {
 }
 
 function renderOverview(o) {
+  lastOverview = o;
   pushSample(spark.peer, o.livePeerCount);
   pushSample(spark.rooms, o.liveRoomCount);
+  drawOverview(o);
+}
+
+// 只画、不记采样：切语言时拿同一份数据重画，不能让折线被同一个数重复挤歪
+function drawOverview(o) {
   $('stats').innerHTML = [
-    statCard({ label: '账号', value: o.userCount, sub: '注册用户总数' }),
-    statCard({ label: '房间', value: o.roomCount, sub: `公开 ${o.publicRoomCount ?? 0}` }),
-    statCard({ label: '房间内成员', value: o.livePeerCount, live: true, svg: sparkSvg(spark.peer) }),
-    statCard({ label: '通话中房间', value: o.liveRoomCount, live: true, svg: sparkSvg(spark.rooms) }),
+    statCard({ label: t('tabAccounts'), value: o.userCount, sub: t('statAccountsSub') }),
+    statCard({ label: t('tabRooms'), value: o.roomCount, sub: t('statRoomsSub', { n: o.publicRoomCount ?? 0 }) }),
+    statCard({ label: t('statPeers'), value: o.livePeerCount, live: true, svg: sparkSvg(spark.peer) }),
+    statCard({ label: t('statLiveRooms'), value: o.liveRoomCount, live: true, svg: sparkSvg(spark.rooms) }),
   ].join('');
 
   $('registrationToggle').checked = !!o.allowRegistration;
-  $('registrationLabel').textContent = o.allowRegistration ? '允许自助注册' : '自助注册已关闭';
+  $('registrationLabel').textContent = o.allowRegistration ? t('regOn') : t('regOff');
   $('serverName').textContent = o.serverName || 'OmiocLink';
   $('serverVersion').textContent = 'v' + (o.version || '—');
   $('countAccounts').textContent = o.userCount;
   $('countRooms').textContent = o.roomCount;
-  $('headline').textContent =
-    `账号 ${o.userCount} · 房间 ${o.roomCount} · 房间内成员 ${o.livePeerCount} · 通话中 ${o.liveRoomCount}`;
+  $('headline').textContent = t('headHeadline', {
+    users: o.userCount, rooms: o.roomCount, peers: o.livePeerCount, live: o.liveRoomCount,
+  });
 }
 
 // ------------------------------------------------------------------ 账号
 function renderAccounts(data) {
+  lastAccounts = data;
   const section = state.accounts;
   section.total = data.total || 0;
   const page = Math.min(section.page, pagesOf(section));
@@ -944,29 +1716,29 @@ function renderAccounts(data) {
 
   if (!data.items.length) {
     $('users').innerHTML = section.query
-      ? '<div class="empty"><b>没有匹配的账号</b>换个关键词试试，或者清空搜索框。</div>'
-      : '<div class="empty"><b>还没有账号</b>关掉自助注册时，可以用右上角「新建账号」直接建。</div>';
+      ? `<div class="empty"><b>${esc(t('accountsEmptySearchTitle'))}</b>${esc(t('accountsEmptySearchBody'))}</div>`
+      : `<div class="empty"><b>${esc(t('accountsEmptyTitle'))}</b>${esc(t('accountsEmptyBody'))}</div>`;
   } else {
     $('users').innerHTML = `<table><thead><tr>
-        <th scope="col">账号</th><th scope="col">昵称</th><th scope="col">状态</th>
-        <th scope="col" class="hide-md">创建时间</th><th scope="col" class="actions">操作</th>
+        <th scope="col">${esc(t('tabAccounts'))}</th><th scope="col">${esc(t('colNickname'))}</th><th scope="col">${esc(t('colStatus'))}</th>
+        <th scope="col" class="hide-md">${esc(t('colCreatedAt'))}</th><th scope="col" class="actions">${esc(t('colActions'))}</th>
       </tr></thead><tbody>${data.items.map((u) => `
       <tr>
-        <td><span class="strong">${esc(u.username)}</span> <span class="dim num">#${u.id}</span></td>
+        <td><span class="uid num">#${u.id}</span><span class="strong">${esc(u.username)}</span></td>
         <td>${esc(u.displayName || '—')}</td>
         <td>${u.disabled
-          ? '<span class="pill off">已禁用</span>'
-          : (u.online ? '<span class="pill on">在线</span>' : '<span class="pill">离线</span>')}</td>
-        <td class="dim hide-md">${u.createdAt ? esc(new Date(u.createdAt).toLocaleString()) : '—'}</td>
+          ? `<span class="pill off">${esc(t('userDisabled'))}</span>`
+          : (u.online ? `<span class="pill on">${esc(t('userOnline'))}</span>` : `<span class="pill">${esc(t('userOffline'))}</span>`)}</td>
+        <td class="dim hide-md">${u.createdAt ? esc(new Date(u.createdAt).toLocaleString(LANG_TAG[lang])) : '—'}</td>
         <td class="actions">
-          <button class="icon-action${u.disabled ? ' accent' : ''}" data-toggle="${u.id}" data-disabled="${u.disabled}" title="${u.disabled ? '启用该账号' : '禁用该账号'}">${u.disabled ? ICON.check : ICON.ban}</button>
-          <button class="icon-action danger" data-delete="${u.id}" title="删除账号">${ICON.trash}</button>
+          <button class="icon-action${u.disabled ? ' accent' : ''}" data-toggle="${u.id}" data-disabled="${u.disabled}" title="${t(u.disabled ? 'userEnableTitle' : 'userDisableTitle')}">${u.disabled ? ICON.check : ICON.ban}</button>
+          <button class="icon-action danger" data-delete="${u.id}" title="${t('userDeleteTitle')}">${ICON.trash}</button>
         </td>
       </tr>`).join('')}</tbody></table>`;
   }
   $('usersSummary').textContent = section.query
-    ? `搜索「${section.query}」共 ${section.total} 个账号`
-    : `共 ${section.total} 个账号`;
+    ? t('accountsSummarySearch', { q: section.query, n: section.total })
+    : t('accountsSummary', { n: section.total });
   renderPager('usersPager', section, pagesOf(section), loadAccounts);
   bindAccountActions();
 }
@@ -976,22 +1748,21 @@ function bindAccountActions() {
     btn.addEventListener('click', async () => {
       const id = Number(btn.dataset.toggle);
       const wasDisabled = btn.dataset.disabled === 'true';
-      const action = wasDisabled ? '启用' : '禁用';
-      const extra = wasDisabled ? '' : '\n该账号会被立即踢下线，已登录的客户端随之失效。';
-      if (!confirm(`确定${action}账号 #${id}？${extra}`)) return;
+      // 禁用会把在线的人踢下线，确认框里要单独提醒；启用则不必
+      const extra = wasDisabled ? '' : t('userDisableWarning');
+      const ask = wasDisabled ? 'userEnableConfirm' : 'userDisableConfirm';
+      if (!confirm(t(ask, { id }) + extra)) return;
       await api('/users/' + id, { method: 'PATCH', body: JSON.stringify({ disabled: !wasDisabled }) });
-      banner(`已${action}账号 #${id}`, true);
+      banner(t(wasDisabled ? 'userEnabled' : 'userDisabledBanner', { id }), true);
       await refresh();
     }));
 
   $('users').querySelectorAll('[data-delete]').forEach((btn) =>
     btn.addEventListener('click', async () => {
       const id = Number(btn.dataset.delete);
-      const warn = `确定删除账号 #${id}？\n\n`
-        + '他名下的房间会被解散（房间内的人会收到通知），好友关系、进房记录会一并删除。此操作不可恢复。';
-      if (!confirm(warn)) return;
+      if (!confirm(t('userDeleteConfirm', { id }) + '\n\n' + t('userDeleteWarning'))) return;
       await api('/users/' + id, { method: 'DELETE' });
-      banner(`已删除账号 #${id}`, true);
+      banner(t('userDeleted', { id }), true);
       await refresh();
     }));
 }
@@ -1009,36 +1780,37 @@ async function loadAccounts() {
 
 // ------------------------------------------------------------------ 房间
 function renderRooms(data) {
+  lastRooms = data;
   const section = state.rooms;
   section.total = data.total || 0;
   const page = Math.min(section.page, pagesOf(section));
   if (page !== section.page) { section.page = page; loadRooms(); return; }
 
   if (!data.items.length) {
-    $('rooms').innerHTML = '<div class="empty"><b>还没有房间</b>客户端建房后会立刻出现在这里。</div>';
+    $('rooms').innerHTML = `<div class="empty"><b>${esc(t('roomsEmptyTitle'))}</b>${esc(t('roomsEmptyBody'))}</div>`;
   } else {
     $('rooms').innerHTML = `<table><thead><tr>
-        <th scope="col">房间</th><th scope="col">房间号</th><th scope="col">成员</th>
-        <th scope="col">房主</th><th scope="col" class="hide-md">属性</th><th scope="col" class="actions">操作</th>
+        <th scope="col">${esc(t('tabRooms'))}</th><th scope="col">${esc(t('colRoomId'))}</th><th scope="col">${esc(t('colMembers'))}</th>
+        <th scope="col">${esc(t('colOwner'))}</th><th scope="col" class="hide-md">${esc(t('colAttrs'))}</th><th scope="col" class="actions">${esc(t('colActions'))}</th>
       </tr></thead><tbody>${data.items.map((r) => {
         const ratio = r.capacity ? Math.min(100, Math.round((r.memberCount / r.capacity) * 100)) : 0;
         return `
       <tr>
-        <td><span class="strong">${esc(r.name)}</span> ${r.online ? '<span class="pill on">通话中</span>' : ''}</td>
+        <td><span class="strong">${esc(r.name)}</span> ${r.online ? `<span class="pill on">${esc(t('roomLive'))}</span>` : ''}</td>
         <td><span class="code mono">${esc(r.roomId)}</span></td>
         <td><span class="cell-inline"><span class="num">${r.memberCount}/${r.capacity}</span>
           <span class="meter"><i style="width:${ratio}%"></i></span></span></td>
         <td>${esc(r.ownerName || '—')}</td>
-        <td class="hide-md">${r.isPublic ? '<span class="pill">公开</span>' : '<span class="pill warn">私有</span>'}
-            ${r.hasPassword ? '<span class="pill warn">有密码</span>' : ''}</td>
+        <td class="hide-md">${r.isPublic ? `<span class="pill">${esc(t('roomPublic'))}</span>` : `<span class="pill warn">${esc(t('roomPrivate'))}</span>`}
+            ${r.hasPassword ? `<span class="pill warn">${esc(t('roomPassword'))}</span>` : ''}</td>
         <td class="actions">
-          <button class="icon-action" data-members="${esc(r.roomId)}" title="查看成员">${ICON.users}</button>
-          <button class="icon-action danger" data-close="${esc(r.roomId)}" title="解散房间">${ICON.trash}</button>
+          <button class="icon-action" data-members="${esc(r.roomId)}" title="${t('roomMembersTitle')}">${ICON.users}</button>
+          <button class="icon-action danger" data-close="${esc(r.roomId)}" title="${t('roomCloseTitle')}">${ICON.trash}</button>
         </td>
       </tr>`;
       }).join('')}</tbody></table>`;
   }
-  $('roomsSummary').textContent = `共 ${section.total} 个房间`;
+  $('roomsSummary').textContent = t('roomsSummary', { n: section.total });
   renderPager('roomsPager', section, pagesOf(section), loadRooms);
   bindRoomActions();
 }
@@ -1049,9 +1821,9 @@ function bindRoomActions() {
   $('rooms').querySelectorAll('[data-close]').forEach((btn) =>
     btn.addEventListener('click', async () => {
       const id = btn.dataset.close;
-      if (!confirm('确定解散房间 ' + id + '？房间内所有成员都会被断开。')) return;
+      if (!confirm(t('roomCloseConfirm', { id }))) return;
       await api('/rooms/' + encodeURIComponent(id), { method: 'DELETE' });
-      banner('已解散房间 ' + id, true);
+      banner(t('roomClosed', { id }), true);
       await refresh();
     }));
 }
@@ -1066,38 +1838,47 @@ async function loadRooms() {
 
 async function openMembers(roomId) {
   currentRoomId = roomId;
+  membersData = null;
   $('membersDialog').showModal();
   await loadMembers(roomId);
 }
 
 async function loadMembers(roomId) {
-  $('membersTitle').textContent = '房间成员 · ' + roomId;
-  const data = await api('/rooms/' + encodeURIComponent(roomId) + '/members');
+  // 只负责取数据，画交给 renderMembers()：切语言时要能不重新请求就重画一遍
+  membersData = await api('/rooms/' + encodeURIComponent(roomId) + '/members');
+  renderMembers();
+}
+
+function renderMembers() {
+  const roomId = currentRoomId;
+  const data = membersData;
+  if (!roomId || !data) return;
+  $('membersTitle').textContent = t('membersTitleWith', { id: roomId });
   if (!data.items.length) {
-    $('membersBody').innerHTML = '<div class="empty"><b>房间是空的</b>客户端可能刚离开。</div>';
+    $('membersBody').innerHTML = `<div class="empty"><b>${esc(t('membersEmptyTitle'))}</b>${esc(t('membersEmptyBody'))}</div>`;
     return;
   }
   $('membersBody').innerHTML = `<table><thead><tr>
-      <th scope="col">昵称</th><th scope="col">账号</th><th scope="col">会话 ID</th>
-      <th scope="col">状态</th><th scope="col" class="actions">操作</th>
+      <th scope="col">${esc(t('colNickname'))}</th><th scope="col">${esc(t('tabAccounts'))}</th><th scope="col">${esc(t('colPeerId'))}</th>
+      <th scope="col">${esc(t('colStatus'))}</th><th scope="col" class="actions">${esc(t('colActions'))}</th>
     </tr></thead><tbody>${data.items.map((m) => `
     <tr>
       <td>${esc(m.displayName)}</td>
       <td>${esc(m.username)}</td>
       <td><span class="code mono">${esc(m.peerId)}</span></td>
-      <td>${m.sharing ? '<span class="pill on">共享屏幕</span> ' : ''}${m.muted
-        ? '<span class="pill">已静音</span>' : '<span class="pill on">麦克风开</span>'}</td>
-      <td class="actions"><button class="icon-action danger" data-kick="${esc(m.peerId)}" title="移出房间">${ICON.kick}</button></td>
+      <td>${m.sharing ? `<span class="pill on">${esc(t('memberSharing'))}</span> ` : ''}${m.muted
+        ? `<span class="pill">${esc(t('memberMuted'))}</span>` : `<span class="pill on">${esc(t('memberMicOn'))}</span>`}</td>
+      <td class="actions"><button class="icon-action danger" data-kick="${esc(m.peerId)}" title="${t('memberKickTitle')}">${ICON.kick}</button></td>
     </tr>`).join('')}</tbody></table>`;
 
   $('membersBody').querySelectorAll('[data-kick]').forEach((btn) =>
     btn.addEventListener('click', async () => {
       const peerId = btn.dataset.kick;
-      if (!confirm('把 ' + peerId + ' 移出房间？')) return;
+      if (!confirm(t('memberKickConfirm', { id: peerId }))) return;
       await api('/rooms/' + encodeURIComponent(roomId) + '/kick', {
         method: 'POST', body: JSON.stringify({ peerId }),
       });
-      banner('已移出 ' + peerId, true);
+      banner(t('memberKicked', { id: peerId }), true);
       await loadMembers(roomId);
       await loadRooms();
     }));
@@ -1121,18 +1902,17 @@ function renderPlugins() {
   const slice = pluginUrls.slice(start, start + section.size);
 
   if (!slice.length && !pluginUrls.length) {
-    $('subscriptions').innerHTML = '<div class="empty"><b>还没有订阅地址</b>'
-      + '点右上角「添加一条」开始填；也可以留空，客户端就不装任何插件。</div>';
+    $('subscriptions').innerHTML = `<div class="empty"><b>${esc(t('pluginsEmptyTitle'))}</b>${esc(t('pluginsEmptyBody'))}</div>`;
   } else {
     $('subscriptions').innerHTML = slice.map((url, i) => `
       <div class="sub-row" data-row="${start + i}">
         <span class="sub-index num">${start + i + 1}</span>
         <input type="text" data-subscription-input spellcheck="false"
                placeholder="https://example.com/plugin.json" value="${esc(url)}">
-        <button class="icon-action danger" data-remove-subscription title="删除这条">${ICON.trash}</button>
+        <button class="icon-action danger" data-remove-subscription title="${t('pluginsRemoveTitle')}">${ICON.trash}</button>
       </div>`).join('');
   }
-  $('pluginsSummary').textContent = `共 ${pluginUrls.length} 条 · 最多 20 条`;
+  $('pluginsSummary').textContent = t('pluginsSummary', { n: pluginUrls.length });
   renderPager('pluginsPager', section, pages, () => renderPlugins());
 }
 
@@ -1153,7 +1933,7 @@ async function loadPlugins() {
 }
 
 function addSubscriptionRow() {
-  if (pluginUrls.length >= 20) { banner('最多 20 条订阅地址'); return; }
+  if (pluginUrls.length >= 20) { banner(t('pluginsLimit')); return; }
   pluginUrls.push('');
   state.plugins.page = pluginPages();
   renderPlugins();
@@ -1171,7 +1951,7 @@ async function saveSubscriptions() {
     subscriptionSnapshot = JSON.stringify(saved.urls);
     state.plugins.page = 1;
     renderPlugins();
-    banner(saved.urls.length ? `已保存 ${saved.urls.length} 条订阅地址` : '已清空订阅地址', true);
+    banner(saved.urls.length ? t('pluginsSaved', { n: saved.urls.length }) : t('pluginsCleared'), true);
   } catch (e) { /* api() 已提示 */ }
 }
 
@@ -1203,7 +1983,7 @@ async function refresh(options = {}) {
   }
   try {
     await Promise.all(tasks);
-    setStatus(true, '已连接');
+    setStatus(true, 'statusConnected');
   } catch (e) {
     /* 错误已在 api() 里提示 */
   }
@@ -1214,7 +1994,7 @@ async function refresh(options = {}) {
 function renderPager(id, section, pages, reload) {
   const box = $(id);
   if (!box) return;
-  const items = [`<button class="page-btn" data-go="prev" ${section.page <= 1 ? 'disabled' : ''} aria-label="上一页">‹</button>`];
+  const items = [`<button class="page-btn" data-go="prev" ${section.page <= 1 ? 'disabled' : ''} aria-label="${t('pagerPrev')}">‹</button>`];
   let gap = false;
   for (let p = 1; p <= pages; p += 1) {
     const near = Math.abs(p - section.page) <= 1;
@@ -1226,7 +2006,7 @@ function renderPager(id, section, pages, reload) {
     gap = false;
     items.push(`<button class="page-btn ${p === section.page ? 'active' : ''}" data-go="${p}">${p}</button>`);
   }
-  items.push(`<button class="page-btn" data-go="next" ${section.page >= pages ? 'disabled' : ''} aria-label="下一页">›</button>`);
+  items.push(`<button class="page-btn" data-go="next" ${section.page >= pages ? 'disabled' : ''} aria-label="${t('pagerNext')}">›</button>`);
   box.innerHTML = items.join('');
   box.onclick = (event) => {
     const btn = event.target.closest('[data-go]');
@@ -1313,7 +2093,7 @@ $('registrationToggle').addEventListener('change', async (event) => {
   try {
     const o = await api('/registration', { method: 'POST', body: JSON.stringify({ allow }) });
     renderOverview(o);
-    banner(allow ? '已开放注册（重启后回到 .env 配置）' : '已关闭注册', true);
+    banner(allow ? t('regOpened') : t('regClosed'), true);
   } catch (err) {
     event.target.checked = !allow;
   }
@@ -1324,12 +2104,12 @@ $('confirmSetup').addEventListener('click', async () => {
   const password = $('setupPassword').value;
   const again = $('setupPassword2').value;
   const error = $('setupError');
-  if (password.length < passwordMinLength) { error.textContent = `密码至少 ${passwordMinLength} 位`; return; }
-  if (password !== again) { error.textContent = '两次输入的密码不一致'; return; }
+  if (password.length < passwordMinLength) { error.textContent = t('pwdTooShort', { min: passwordMinLength }); return; }
+  if (password !== again) { error.textContent = t('pwdMismatch'); return; }
   error.textContent = '';
   try {
     const result = await postPublic('/setup', { password });
-    afterLogin(result, '管理员密码已设置，下次打开这个页面用密码登录');
+    afterLogin(result, t('setupDone'));
   } catch (e) {
     if (e.code === 'admin_already_initialized') { showLogin(); return; }
     error.textContent = e.message;
@@ -1339,11 +2119,11 @@ $('confirmSetup').addEventListener('click', async () => {
 $('confirmLogin').addEventListener('click', async () => {
   const password = $('loginPassword').value;
   const error = $('loginError');
-  if (!password) { error.textContent = '请输入管理员密码'; return; }
+  if (!password) { error.textContent = t('loginEmpty'); return; }
   error.textContent = '';
   try {
     const result = await postPublic('/login', { password });
-    afterLogin(result, '已登录');
+    afterLogin(result, t('loginDone'));
   } catch (e) {
     if (e.code === 'admin_not_initialized') { showSetup(false); return; }
     error.textContent = e.message;
@@ -1363,9 +2143,9 @@ $('confirmPassword').addEventListener('click', async () => {
   const currentPassword = $('oldPassword').value;
   const newPassword = $('newPassword2').value;
   const error = $('passwordError');
-  if (!currentPassword) { error.textContent = '请输入当前密码'; return; }
-  if (newPassword.length < passwordMinLength) { error.textContent = `新密码至少 ${passwordMinLength} 位`; return; }
-  if (newPassword !== $('newPassword3').value) { error.textContent = '两次输入的新密码不一致'; return; }
+  if (!currentPassword) { error.textContent = t('pwdEmptyCurrent'); return; }
+  if (newPassword.length < passwordMinLength) { error.textContent = t('pwdNewTooShort', { min: passwordMinLength }); return; }
+  if (newPassword !== $('newPassword3').value) { error.textContent = t('pwdNewMismatch'); return; }
   error.textContent = '';
   try {
     const result = await api('/password', {
@@ -1374,15 +2154,15 @@ $('confirmPassword').addEventListener('click', async () => {
     });
     saveToken(result.accessToken);
     $('passwordDialog').close();
-    banner('管理员密码已修改，其他浏览器的登录态已失效', true);
+    banner(t('pwdDone'), true);
   } catch (e) {
-    error.textContent = e.message === 'api' ? '当前密码不正确或新密码不合法' : e.message;
+    error.textContent = e.message === 'api' ? t('pwdFailed') : e.message;
   }
 });
 
 $('logoutBtn').addEventListener('click', () => {
   saveToken('');
-  handleUnauthorized('已退出登录');
+  handleUnauthorized(t('authLoggedOut'));
 });
 
 $('newUserBtn').addEventListener('click', () => {
@@ -1395,14 +2175,14 @@ $('confirmNewUser').addEventListener('click', async () => {
   const username = $('newUsername').value.trim();
   const password = $('newPassword').value;
   const displayName = $('newDisplayName').value.trim();
-  if (!username || !password) { banner('用户名和密码都要填'); return; }
+  if (!username || !password) { banner(t('newUserMissing')); return; }
   try {
     await api('/users', {
       method: 'POST',
       body: JSON.stringify({ username, password, displayName: displayName || undefined }),
     });
     $('newUserDialog').close();
-    banner('已创建账号 ' + username, true);
+    banner(t('newUserCreated', { user: username }), true);
     await refresh();
   } catch (e) { /* api() 已提示 */ }
 });
