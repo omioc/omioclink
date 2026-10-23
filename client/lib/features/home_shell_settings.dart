@@ -7,6 +7,7 @@ class _ServerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final l10n = context.l10n;
     final endpoint = state.endpoint;
     final info = state.serverInfo;
     final connected = state.isConnectedToServer;
@@ -36,7 +37,7 @@ class _ServerCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  info?.name ?? '我的服务器',
+                  info?.name ?? l10n.settingsServerFallbackName,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 12,
@@ -45,7 +46,7 @@ class _ServerCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  endpoint?.display ?? '未配置',
+                  endpoint?.display ?? l10n.settingsServerNotConfigured,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: context.palette.textMuted,
@@ -81,6 +82,7 @@ class _SettingsPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final l10n = context.l10n;
     final session = state.session;
     final info = state.serverInfo;
     final library = state.music;
@@ -93,7 +95,7 @@ class _SettingsPane extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
           child: Row(
             children: [
-              const Text('设置', style: AppText.pageTitle),
+              Text(l10n.settingsTitle, style: AppText.pageTitle),
             ],
           ),
         ),
@@ -117,7 +119,7 @@ class _SettingsPane extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SectionLabel(text: '音频设备'),
+              SectionLabel(text: l10n.settingsAudioDevices),
               const SizedBox(height: AppSpacing.sm),
               _DeviceRow(
                 media: state.media,
@@ -148,27 +150,34 @@ class _SettingsPane extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: AppSpacing.sm),
-              _kv(context, '地址', state.endpoint?.display ?? '未连接'),
-              _kv(context, '名称', info?.name ?? '—'),
               _kv(
                 context,
-                '版本',
+                l10n.shellServerAddress,
+                state.endpoint?.display ?? l10n.shellNotConnected,
+              ),
+              _kv(context, l10n.shellServerName, info?.name ?? '—'),
+              _kv(
+                context,
+                l10n.connectFactVersion,
                 info == null
                     ? '—'
-                    : 'v${info.version} · 协议 v${info.protocolVersion}',
+                    : l10n.connectProtocolLine(
+                        info.version,
+                        '${info.protocolVersion}',
+                      ),
               ),
               _kv(
                 context,
-                'ICE 服务器',
+                l10n.settingsIceServers,
                 info == null || info.iceServers.isEmpty
                     ? '—'
-                    : info.iceServers.join('、'),
+                    : info.iceServers.join(l10n.connectListSeparator),
               ),
               const SizedBox(height: AppSpacing.sm),
               OutlinedButton.icon(
                 onPressed: () => showDiagnosticsDialog(context),
                 icon: const Icon(Icons.health_and_safety_rounded, size: 16),
-                label: const Text('运行网络诊断'),
+                label: Text(l10n.settingsRunDiagnostics),
               ),
             ],
           ),
@@ -178,32 +187,45 @@ class _SettingsPane extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SectionLabel(text: '当前连接'),
+              SectionLabel(text: l10n.settingsCurrentConnection),
               const SizedBox(height: AppSpacing.sm),
               if (session == null || !session.phase.isActive)
                 Text(
-                  '尚未进入房间',
+                  l10n.settingsNotInRoom,
                   style: TextStyle(color: context.palette.textMuted, fontSize: 12),
                 )
               else ...[
                 _kv(
                   context,
-                  '房间',
-                  '${session.room?.name ?? ''}（${session.room?.roomId ?? ''}）',
+                  l10n.callRoomFallbackName,
+                  l10n.settingsRoomValue(
+                    session.room?.name ?? '',
+                    session.room?.roomId ?? '',
+                  ),
                 ),
                 _kv(
                   context,
-                  '已直连',
-                  '${session.connectedPeerCount}/${session.peerCount} 位成员',
+                  l10n.shellDirectConnected,
+                  l10n.shellDirectConnectedValue(
+                    session.connectedPeerCount,
+                    session.peerCount,
+                  ),
                 ),
-                _kv(context, '上行码率', formatKbps(session.stats.outgoingKbps)),
-                _kv(context, '下行码率', formatKbps(session.stats.incomingKbps)),
+                _kv(
+                  context,
+                  l10n.settingsUplinkRate,
+                  formatKbps(session.stats.outgoingKbps),
+                ),
+                _kv(
+                  context,
+                  l10n.settingsDownlinkRate,
+                  formatKbps(session.stats.incomingKbps),
+                ),
                 if (session.hasPunchFailure)
                   Padding(
                     padding: EdgeInsets.only(top: AppSpacing.sm),
                     child: Text(
-                      '有成员无法直连：多为对称型 NAT 或网络封锁 UDP，'
-                      '建议双方切换到手机热点或家庭宽带后重试',
+                      l10n.shellPunchFailure,
                       style: TextStyle(
                         color: context.palette.warning,
                         fontSize: 11,
@@ -223,7 +245,7 @@ class _SettingsPane extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SectionLabel(text: '账号'),
+                SectionLabel(text: l10n.connectAccountSection),
                 const SizedBox(height: AppSpacing.sm),
                 SizedBox(
                   width: double.infinity,
@@ -231,17 +253,16 @@ class _SettingsPane extends StatelessWidget {
                     onPressed: () async {
                       final confirmed = await showConfirmDialog(
                         context,
-                        title: '退出登录',
-                        message: '退出后会回到「连接服务器」页面，房间与通话都会断开。'
-                            '本地记住的账号密码仍会保留，下次可以直接登录。',
-                        confirmText: '退出登录',
+                        title: l10n.shellSignOut,
+                        message: l10n.settingsLogoutMessage,
+                        confirmText: l10n.shellSignOut,
                       );
                       if (confirmed && context.mounted) {
                         await context.read<AppState>().logout();
                       }
                     },
                     icon: const Icon(Icons.logout_rounded, size: 16),
-                    label: const Text('退出登录'),
+                    label: Text(l10n.shellSignOut),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: context.palette.danger,
                       side: BorderSide(color: context.palette.hairline),
@@ -251,7 +272,7 @@ class _SettingsPane extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  '退出后服务器地址与账号密码仍会保留，可以换一台服务器重新登录',
+                  l10n.settingsLogoutHint,
                   style: TextStyle(
                     color: context.palette.textMuted,
                     fontSize: 11,
@@ -303,6 +324,7 @@ class _AccountCardState extends State<_AccountCard> {
   Future<void> _save() async {
     final state = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = context.l10n;
     setState(() {
       _busy = true;
       _nameError = null;
@@ -312,7 +334,9 @@ class _AccountCardState extends State<_AccountCard> {
       if (!mounted) {
         return;
       }
-      messenger.showSnackBar(const SnackBar(content: Text('昵称已更新')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.settingsDisplayNameUpdated)),
+      );
     } on ApiException catch (failure) {
       if (mounted) {
         setState(() => _nameError = failure.message);
@@ -328,13 +352,14 @@ class _AccountCardState extends State<_AccountCard> {
   Future<void> _uploadAvatar() async {
     final state = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = context.l10n;
     // 选图分两端：桌面走应用内选图框（系统文件框在无边框窗口上会把主窗口
     // 压住又禁用），手机走系统相册（安卓分区存储下列不出照片目录），
     // 见 pickImagePath 的注释。
     final path = await pickImagePath(
       context,
-      title: '选择头像图片',
-      confirmLabel: '用这张当头像',
+      title: l10n.imagePickerAvatarTitle,
+      confirmLabel: l10n.imagePickerAvatarConfirm,
       initialDirectory: _avatarDir,
     );
     if (path == null || !mounted) {
@@ -362,7 +387,9 @@ class _AccountCardState extends State<_AccountCard> {
       if (!mounted) {
         return;
       }
-      messenger.showSnackBar(const SnackBar(content: Text('头像已更新')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.settingsAvatarUpdated)),
+      );
     } on ApiException catch (failure) {
       if (mounted) {
         setState(() => _avatarError = failure.message);
@@ -377,6 +404,7 @@ class _AccountCardState extends State<_AccountCard> {
   Future<void> _removeAvatar() async {
     final state = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = context.l10n;
     setState(() {
       _avatarBusy = true;
       _avatarError = null;
@@ -386,7 +414,9 @@ class _AccountCardState extends State<_AccountCard> {
       if (!mounted) {
         return;
       }
-      messenger.showSnackBar(const SnackBar(content: Text('头像已移除')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.settingsAvatarRemoved)),
+      );
     } on ApiException catch (failure) {
       if (mounted) {
         setState(() => _avatarError = failure.message);
@@ -402,6 +432,7 @@ class _AccountCardState extends State<_AccountCard> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final user = state.user;
+    final l10n = context.l10n;
     if (user == null) {
       return const SizedBox.shrink();
     }
@@ -415,7 +446,7 @@ class _AccountCardState extends State<_AccountCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionLabel(text: '账号'),
+          SectionLabel(text: l10n.connectAccountSection),
           const SizedBox(height: AppSpacing.md),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -433,12 +464,16 @@ class _AccountCardState extends State<_AccountCard> {
                     const SizedBox(height: AppSpacing.sm),
                     TextButton(
                       onPressed: _avatarBusy ? null : _uploadAvatar,
-                      child: Text(user.avatar == null ? '上传头像' : '更换头像'),
+                      child: Text(
+                        user.avatar == null
+                            ? l10n.settingsAvatarUpload
+                            : l10n.settingsAvatarChange,
+                      ),
                     ),
                     if (user.avatar != null)
                       TextButton(
                         onPressed: _avatarBusy ? null : _removeAvatar,
-                        child: const Text('移除头像'),
+                        child: Text(l10n.settingsAvatarRemove),
                       ),
                   ],
                 ),
@@ -448,14 +483,14 @@ class _AccountCardState extends State<_AccountCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _kv(context, '用户名', user.username),
+                    _kv(context, l10n.settingsUsername, user.username),
                     const SizedBox(height: 6),
                     Row(
                       children: [
                         SizedBox(
                           width: 84,
                           child: Text(
-                            '昵称',
+                            l10n.settingsDisplayName,
                             style: TextStyle(
                               color: context.palette.textMuted,
                               fontSize: 11.5,
@@ -475,10 +510,10 @@ class _AccountCardState extends State<_AccountCard> {
                                   maxLength: 48,
                                   style: const TextStyle(fontSize: 12.5),
                                   cursorHeight: 15,
-                                  decoration: const InputDecoration(
+                                  decoration: InputDecoration(
                                     isDense: true,
                                     counterText: '',
-                                    hintText: '通话时其他人看到的名字',
+                                    hintText: l10n.settingsDisplayNameHint,
                                   ),
                                   onSubmitted: (_) {
                                     if (!_busy) {
@@ -509,12 +544,16 @@ class _AccountCardState extends State<_AccountCard> {
                       children: [
                         FilledButton(
                           onPressed: _busy ? null : _save,
-                          child: Text(_busy ? '保存中…' : '保存昵称'),
+                          child: Text(
+                            _busy
+                                ? l10n.settingsSaving
+                                : l10n.settingsSaveDisplayName,
+                          ),
                         ),
                         OutlinedButton.icon(
                           onPressed: () => showChangePasswordDialog(context),
                           icon: const Icon(Icons.lock_reset_rounded, size: 16),
-                          label: const Text('修改密码'),
+                          label: Text(l10n.settingsChangePassword),
                         ),
                       ],
                     ),
@@ -532,7 +571,7 @@ class _AccountCardState extends State<_AccountCard> {
           ],
           const SizedBox(height: AppSpacing.md),
           Text(
-            '头像会先在本机缩到 256px 再上传；通话中改昵称或头像会立刻同步给同一房间的人',
+            l10n.settingsAvatarHint,
             style: TextStyle(
               color: context.palette.textMuted,
               fontSize: 11,
@@ -622,22 +661,23 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
   }
 
   Future<void> _confirmUninstall(MusicFreePlugin plugin) async {
+    final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('卸载插件'),
+        title: Text(l10n.settingsPluginUninstallTitle),
         content: Text(
-          '确定卸载「${plugin.platform}」吗？卸载后需要重新同步订阅才能再用。',
+          l10n.settingsPluginUninstallMessage(plugin.platform),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(l10n.commonCancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: context.palette.danger),
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('卸载'),
+            child: Text(l10n.settingsPluginUninstall),
           ),
         ],
       ),
@@ -649,6 +689,7 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
 
   /// 插件的用户自定义变量（MusicFree 的 `IUserVariable`）。
   Future<void> _editVariables(MusicFreePlugin plugin) async {
+    final l10n = context.l10n;
     final current = library.userVariablesOf(plugin.platform);
     final controllers = <String, TextEditingController>{
       for (final variable in plugin.userVariables)
@@ -657,7 +698,7 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
     final saved = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('配置 ${plugin.platform}'),
+        title: Text(l10n.settingsPluginConfigure(plugin.platform)),
         content: SizedBox(
           // 手机弹窗可用宽只有屏宽减去边距：420 会被压扁，按可用宽封顶
           width: MediaQuery.sizeOf(context).width > 500
@@ -707,11 +748,11 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(l10n.commonCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('保存'),
+            child: Text(l10n.commonSave),
           ),
         ],
       ),
@@ -732,13 +773,14 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
     return AnimatedBuilder(
       animation: library,
       builder: (context, _) {
+        final l10n = context.l10n;
         final plugins = library.plugins;
         return PanelCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SectionLabel(
-                text: '音乐插件',
+                text: l10n.settingsMusicPlugins,
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -755,14 +797,18 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
                           : const Icon(Icons.sync, size: 16),
                       // 装载期间把文案也换掉：只把按钮变灰不够明显，
                       // 用户会以为「点了没反应」，然后继续点
-                      label: Text(_busy ? '装载中…' : '刷新订阅'),
+                      label: Text(
+                        _busy
+                            ? l10n.settingsPluginsLoading
+                            : l10n.settingsPluginsRefreshSubscription,
+                      ),
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     TextButton(
                       onPressed: _busy || plugins.isEmpty
                           ? null
                           : () => unawaited(library.updateAllPlugins()),
-                      child: const Text('更新全部'),
+                      child: Text(l10n.settingsPluginsUpdateAll),
                     ),
                   ],
                 ),
@@ -770,23 +816,29 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
               const SizedBox(height: AppSpacing.sm),
               _kv(
                 context,
-                '插件',
+                l10n.pluginWord,
                 plugins.isEmpty
-                    ? '还没有安装插件'
-                    : '共 ${plugins.length} 个（启用 ${library.enabledPlugins.length} 个）',
+                    ? l10n.settingsPluginsNone
+                    : l10n.settingsPluginsCount(
+                        plugins.length,
+                        library.enabledPlugins.length,
+                      ),
               ),
               _kv(
                 context,
-                '订阅地址',
+                l10n.settingsSubscriptionUrls,
                 widget.subscriptionUrls.isEmpty
-                    ? '服务器没有下发'
-                    : widget.subscriptionUrls.join('、'),
+                    ? l10n.settingsSubscriptionNotProvided
+                    : widget.subscriptionUrls.join(l10n.connectListSeparator),
               ),
               _qualityRow(),
               if (library.syncMessage != null)
                 _hintText(library.syncMessage!, context.palette.textMuted),
               if (library.syncError != null)
-                _hintText('同步失败：${library.syncError}', context.palette.danger),
+                _hintText(
+                  l10n.settingsPluginsSyncFailed(library.syncError!),
+                  context.palette.danger,
+                ),
               const SizedBox(height: AppSpacing.sm),
               if (plugins.isEmpty)
                 _emptyHint()
@@ -795,10 +847,7 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
                   _pluginBlock(plugins[i], i, plugins.length),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                '插件由服务器下发的订阅地址统一管理；单个插件加载失败不影响其它插件，'
-                '点歌台会把失败原因标出来。点「刷新订阅」会先列出订阅里的插件，'
-                '只装你勾选的（默认前 ${MusicFreePlugins.defaultSelectionSize} 个），'
-                '没勾的不下载也不编译。',
+                l10n.settingsPluginsHint(MusicFreePlugins.defaultSelectionSize),
                 style: TextStyle(
                   color: context.palette.textMuted,
                   fontSize: 11,
@@ -813,12 +862,13 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
   }
 
   Widget _qualityRow() {
+    final l10n = context.l10n;
     return Row(
       children: [
         SizedBox(
           width: 84,
           child: Text(
-            '音质',
+            l10n.settingsQuality,
             style: TextStyle(color: context.palette.textMuted, fontSize: 11),
           ),
         ),
@@ -843,7 +893,7 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
         const SizedBox(width: AppSpacing.sm),
         Expanded(
           child: Text(
-            '解析播放地址时向插件要的音质，越高越吃带宽',
+            l10n.settingsQualityHint,
             style: TextStyle(color: context.palette.textMuted, fontSize: 11),
           ),
         ),
@@ -852,9 +902,11 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
   }
 
   Widget _emptyHint() {
+    final l10n = context.l10n;
+    // 两种空态各写一句完整的句子：把「前缀 + 后缀」拼起来在日 / 韩里语序不成立
     final message = widget.subscriptionUrls.isEmpty
-        ? '服务器还没有配置插件订阅地址'
-        : '还没有安装插件';
+        ? l10n.settingsPluginsNoSubscription
+        : l10n.settingsPluginsEmptyHint;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
       child: Row(
@@ -867,9 +919,7 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              widget.subscriptionUrls.isEmpty
-                  ? message
-                  : '$message，点「刷新订阅」重新拉取',
+              message,
               style: TextStyle(
                 color: context.palette.textSecondary,
                 fontSize: 12,
@@ -882,11 +932,12 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
   }
 
   Widget _pluginBlock(MusicFreePlugin plugin, int index, int total) {
+    final l10n = context.l10n;
     final source = _sourceOf(plugin);
     final details = <String>[
       plugin.subtitle,
       if (source.isNotEmpty) source,
-      '${plugin.supportedMethods.length} 项能力',
+      l10n.settingsPluginMethodsCount(plugin.supportedMethods.length),
     ].join(' · ');
     return Container(
       margin: const EdgeInsets.only(top: AppSpacing.xs),
@@ -926,7 +977,7 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
                         if (!plugin.enabled) ...[
                           const SizedBox(width: 6),
                           Text(
-                            '已停用',
+                            l10n.settingsPluginDisabled,
                             style: TextStyle(
                               color: context.palette.warning,
                               fontSize: 11,
@@ -959,7 +1010,7 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
                   width: 32,
                   height: 32,
                 ),
-                tooltip: '上移',
+                tooltip: l10n.settingsPluginMoveUp,
                 icon: const Icon(Icons.arrow_upward),
               ),
               IconButton(
@@ -972,7 +1023,7 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
                   width: 32,
                   height: 32,
                 ),
-                tooltip: '下移',
+                tooltip: l10n.settingsPluginMoveDown,
                 icon: const Icon(Icons.arrow_downward),
               ),
               if (plugin.userVariables.isNotEmpty)
@@ -982,7 +1033,10 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: const Size(0, 32),
                   ),
-                  child: const Text('配置', style: TextStyle(fontSize: 11)),
+                  child: Text(
+                    l10n.settingsPluginConfigureAction,
+                    style: const TextStyle(fontSize: 11),
+                  ),
                 ),
               TextButton(
                 onPressed: _busy ? null : () => unawaited(_confirmUninstall(plugin)),
@@ -991,7 +1045,7 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
                   minimumSize: const Size(0, 32),
                 ),
                 child: Text(
-                  '卸载',
+                  l10n.settingsPluginUninstall,
                   style: TextStyle(fontSize: 11, color: context.palette.danger),
                 ),
               ),
@@ -1009,7 +1063,7 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text(
-                '加载失败：${plugin.loadError}',
+                l10n.settingsPluginLoadFailed(plugin.loadError!),
                 style: TextStyle(color: context.palette.danger, fontSize: 11),
               ),
             ),
@@ -1022,7 +1076,7 @@ class _MusicPluginSettingsCardState extends State<MusicPluginSettingsCard> {
   String _sourceOf(MusicFreePlugin plugin) {
     final url = plugin.srcUrl.trim();
     if (url.isEmpty) {
-      return '本地安装';
+      return context.l10n.settingsPluginLocalInstall;
     }
     return Uri.tryParse(url)?.host ?? url;
   }
@@ -1052,11 +1106,12 @@ class _VolumeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final l10n = context.l10n;
     return PanelCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionLabel(text: '音量'),
+          SectionLabel(text: l10n.settingsVolume),
           const SizedBox(height: AppSpacing.sm),
           AnimatedBuilder(
             animation: Listenable.merge(<Listenable>[
@@ -1067,24 +1122,25 @@ class _VolumeCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 VolumeSliderTile(
-                  label: '麦克风音量（对方听到我的大小）',
+                  label: l10n.settingsMicVolume,
                   value: state.micVolume,
                   max: 100,
                   icon: Icons.mic_rounded,
-                  subtitle: '直接调本机当前默认录音设备的系统音量，与成员、音乐音量互不影响',
+                  subtitle: l10n.settingsMicVolumeHint,
                   notice: state.micVolumeSupported
                       ? null
-                      : (state.micVolumeNotice ?? '本机没有可调的录音设备'),
+                      : (state.micVolumeNotice ??
+                            l10n.settingsMicVolumeUnsupported),
                   sliderKey: const Key('mic-volume-slider'),
                   onChanged: state.setMicVolume,
                 ),
                 const SizedBox(height: AppSpacing.md),
                 VolumeSliderTile(
-                  label: '音乐音量（只影响本机）',
+                  label: l10n.settingsMusicVolume,
                   value: state.musicVolume,
                   max: 100,
                   icon: Icons.music_note_rounded,
-                  subtitle: '音乐调到 0 也不会影响任何成员的声音，反之亦然',
+                  subtitle: l10n.settingsMusicVolumeHint,
                   sliderKey: const Key('music-volume-slider'),
                   onChanged: state.setMusicVolume,
                 ),
@@ -1135,13 +1191,14 @@ class _MicCheckCardState extends State<_MicCheckCard> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final l10n = context.l10n;
     final inCall = state.session?.phase.isActive ?? false;
 
     return PanelCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionLabel(text: '麦克风'),
+          SectionLabel(text: l10n.settingsMicrophone),
           const SizedBox(height: AppSpacing.sm),
           ValueListenableBuilder<MicLevel>(
             valueListenable: state.media.micLevel,
@@ -1162,8 +1219,8 @@ class _MicCheckCardState extends State<_MicCheckCard> {
                 ],
                 Text(
                   mic.healthy
-                      ? '对着麦克风说话，绿条应随音量起伏；不说话时应几乎不动'
-                      : '点下面的按钮开始试麦，不需要进房间',
+                      ? l10n.settingsMicCheckHealthyHint
+                      : l10n.settingsMicCheckIdleHint,
                   style: TextStyle(
                     color: context.palette.textMuted,
                     fontSize: 11,
@@ -1173,7 +1230,7 @@ class _MicCheckCardState extends State<_MicCheckCard> {
                 const SizedBox(height: AppSpacing.sm),
                 if (inCall)
                   Text(
-                    '通话中麦克风已打开，无需单独试麦',
+                    l10n.settingsMicCheckInCall,
                     style: TextStyle(color: context.palette.textMuted, fontSize: 11),
                   )
                 else
@@ -1183,7 +1240,11 @@ class _MicCheckCardState extends State<_MicCheckCard> {
                       mic.capturing ? Icons.stop_rounded : Icons.mic_rounded,
                       size: 16,
                     ),
-                    label: Text(mic.capturing ? '停止试麦' : '测试麦克风'),
+                    label: Text(
+                      mic.capturing
+                          ? l10n.settingsMicCheckStop
+                          : l10n.settingsMicCheckStart,
+                    ),
                   ),
               ],
             ),
@@ -1202,14 +1263,15 @@ class _LogCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final path = AppLog.filePath;
+    final l10n = context.l10n;
     return PanelCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionLabel(text: '运行日志'),
+          SectionLabel(text: l10n.settingsLogs),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            path ?? '本次运行没有落盘（日志目录不可写）',
+            path ?? l10n.settingsLogsNotWritten,
             style: TextStyle(
               color: context.palette.textMuted,
               fontSize: 11,
@@ -1220,11 +1282,11 @@ class _LogCard extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: path == null ? null : () => _openDirectory(context, path),
             icon: const Icon(Icons.folder_open_rounded, size: 16),
-            label: const Text('打开日志文件夹'),
+            label: Text(l10n.settingsOpenLogFolder),
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            '遇到闪退时把最新的 client-*.log 发出来即可；同目录里若有 crash-*.log（原生崩溃报告）也一起发',
+            l10n.settingsLogsHint,
             style: TextStyle(
               color: context.palette.textMuted,
               fontSize: 11,
@@ -1238,6 +1300,7 @@ class _LogCard extends StatelessWidget {
 
   Future<void> _openDirectory(BuildContext context, String filePath) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = context.l10n;
     final directory = File(filePath).parent.path;
     try {
       if (isDesktopPlatform) {
@@ -1248,7 +1311,9 @@ class _LogCard extends StatelessWidget {
       }
     } on Object catch (error) {
       AppLog.warn('打开日志目录失败', error: error);
-      messenger.showSnackBar(SnackBar(content: Text('打开失败：$directory')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.settingsOpenLogFailed(directory))),
+      );
     }
   }
 }
@@ -1334,6 +1399,7 @@ class _DeviceRowState extends State<_DeviceRow> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final current = widget.input
         ? widget.media.activeAudioInputId
         : widget.media.activeAudioOutputId;
@@ -1350,7 +1416,7 @@ class _DeviceRowState extends State<_DeviceRow> {
             SizedBox(
               width: 84,
               child: Text(
-                widget.input ? '麦克风' : '扬声器',
+                widget.input ? l10n.settingsMicrophone : l10n.settingsSpeaker,
                 style: TextStyle(
                   color: context.palette.textMuted,
                   fontSize: 11.5,
@@ -1365,9 +1431,12 @@ class _DeviceRowState extends State<_DeviceRow> {
                   isDense: true,
                   decoration: const InputDecoration(),
                   items: <DropdownMenuItem<String>>[
-                    const DropdownMenuItem<String>(
+                    DropdownMenuItem<String>(
                       value: _systemDefault,
-                      child: Text('系统默认设备', style: TextStyle(fontSize: 12)),
+                      child: Text(
+                        l10n.settingsSystemDefaultDevice,
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
                     for (final device in _devices)
                       DropdownMenuItem<String>(
@@ -1403,7 +1472,7 @@ class _DeviceRowState extends State<_DeviceRow> {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  '没有检测到设备，请检查系统声音设置后重新检测',
+                  l10n.settingsNoDevices,
                   style: TextStyle(color: context.palette.textMuted, fontSize: 11),
                 ),
               ),
@@ -1413,7 +1482,7 @@ class _DeviceRowState extends State<_DeviceRow> {
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
-                child: const Text('重新检测'),
+                child: Text(l10n.settingsRedetect),
               ),
             ],
           ),

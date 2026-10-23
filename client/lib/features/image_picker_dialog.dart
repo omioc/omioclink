@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
+import '../core/l10n_ext.dart';
+import '../l10n/generated/app_l10n.dart';
 
 /// 选图框里认哪些扩展名（小写，带点）。
 const Set<String> imagePickerExtensions = <String>{
@@ -27,19 +29,28 @@ const Set<String> imagePickerExtensions = <String>{
 /// 不碰原生模态框。
 Future<String?> showImagePickerDialog(
   BuildContext context, {
-  String title = '选择图片',
-  String confirmLabel = '用这张',
+  String? title,
+  String? confirmLabel,
   String? initialDirectory,
 }) {
+  // 默认标题与确认按钮文案要跟着当前语言走，而默认参数必须是编译期常量，
+  // 所以放在这里补默认值。
+  final l10n = context.l10n;
   return showDialog<String>(
     context: context,
     builder: (_) => _ImagePickerDialog(
-      title: title,
-      confirmLabel: confirmLabel,
+      title: title ?? l10n.imagePickerTitle,
+      confirmLabel: confirmLabel ?? l10n.imagePickerConfirm,
       initialDirectory: initialDirectory,
     ),
   );
 }
+
+/// 选图框里「目录读不出来」的三种原因。
+///
+/// 只记原因、不记文案：`_reload` 在 `initState` 里就会跑一次，那时还取不到
+/// 本地化（`context.l10n` 走 InheritedWidget，initState 期间不能用）。
+enum _DirError { missing, openFailed, listFailed }
 
 class _ImagePickerDialog extends StatefulWidget {
   const _ImagePickerDialog({
@@ -70,7 +81,8 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
   late final TextEditingController _pathField;
   List<Directory> _folders = const [];
   List<File> _images = const [];
-  String? _error;
+  _DirError? _errorKind;
+  String? _errorDetail;
   String? _selected;
 
   @override
@@ -103,17 +115,20 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
   }
 
   /// 常用位置：这几个目录覆盖了绝大多数「我的图片放哪儿」。
-  List<({String label, String path})> _quickPlaces() {
+  ///
+  /// 文案存成取值函数：`_resolveStart` 在 `initState` 里也要遍历这份列表，
+  /// 那时还取不到本地化。
+  List<({String Function(AppL10n) label, String path})> _quickPlaces() {
     final home = Platform.environment['USERPROFILE'];
     if (home == null || home.isEmpty) {
       return const [];
     }
     final sep = Platform.pathSeparator;
-    final candidates = <({String label, String path})>[
-      (label: '图片', path: '$home${sep}Pictures'),
-      (label: '桌面', path: '$home${sep}Desktop'),
-      (label: '下载', path: '$home${sep}Downloads'),
-      (label: '文档', path: '$home${sep}Documents'),
+    final candidates = <({String Function(AppL10n) label, String path})>[
+      (label: (l10n) => l10n.imagePlacePictures, path: '$home${sep}Pictures'),
+      (label: (l10n) => l10n.imagePlaceDesktop, path: '$home${sep}Desktop'),
+      (label: (l10n) => l10n.imagePlaceDownloads, path: '$home${sep}Downloads'),
+      (label: (l10n) => l10n.imagePlaceDocuments, path: '$home${sep}Documents'),
     ];
     return [
       for (final place in candidates)
@@ -124,11 +139,12 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
   void _reload({bool notify = true}) {
     final folders = <Directory>[];
     final images = <File>[];
-    String? error;
+    _DirError? errorKind;
+    String? errorDetail;
     try {
       final dir = Directory(_path);
       if (!dir.existsSync()) {
-        error = '这个目录不存在了';
+        errorKind = _DirError.missing;
       } else {
         final entries = dir.listSync(followLinks: false);
         for (final entity in entries) {
@@ -146,14 +162,17 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
         images.sort((a, b) => _baseName(a.path).compareTo(_baseName(b.path)));
       }
     } on FileSystemException catch (e) {
-      error = '打不开这个目录：${e.message}';
+      errorKind = _DirError.openFailed;
+      errorDetail = e.message;
     } on Object catch (e) {
-      error = '列出目录失败：$e';
+      errorKind = _DirError.listFailed;
+      errorDetail = '$e';
     }
     void apply() {
       _folders = folders.take(_maxEntries).toList();
       _images = images.take(_maxEntries).toList();
-      _error = error;
+      _errorKind = errorKind;
+      _errorDetail = errorDetail;
       _selected = null;
     }
 
@@ -166,10 +185,21 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
 
   String _baseName(String path) => path.split(Platform.pathSeparator).last;
 
+  /// 目录错误的显示文案：留到构建时再取本地化。
+  String? _errorText() => switch (_errorKind) {
+    null => null,
+    _DirError.missing => context.l10n.imageErrorMissingDirectory,
+    _DirError.openFailed => context.l10n.imageErrorOpenFailed(_errorDetail ?? ''),
+    _DirError.listFailed => context.l10n.imageErrorListFailed(_errorDetail ?? ''),
+  };
+
   void _open(String path) {
     final target = Directory(path);
     if (!target.existsSync()) {
-      setState(() => _error = '这个目录不存在了');
+      setState(() {
+        _errorKind = _DirError.missing;
+        _errorDetail = null;
+      });
       return;
     }
     setState(() {
@@ -191,6 +221,7 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final l10n = context.l10n;
     final places = _quickPlaces();
 
     return AlertDialog(
@@ -214,7 +245,7 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
                 children: [
                   for (final place in places)
                     _PlaceChip(
-                      label: place.label,
+                      label: place.label(l10n),
                       selected: place.path == _path,
                       onTap: () => _open(place.path),
                     ),
@@ -236,21 +267,24 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
                       ),
                       cursorHeight: 15,
                       onSubmitted: _open,
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.folder_open_rounded, size: 15),
-                        hintText: '目录路径，回车跳转',
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(
+                          Icons.folder_open_rounded,
+                          size: 15,
+                        ),
+                        hintText: l10n.imagePathHint,
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 IconButton(
-                  tooltip: '上一级',
+                  tooltip: l10n.imageUp,
                   onPressed: _up,
                   icon: const Icon(Icons.arrow_upward_rounded, size: 16),
                 ),
                 IconButton(
-                  tooltip: '刷新',
+                  tooltip: l10n.imageRefresh,
                   onPressed: _reload,
                   icon: const Icon(Icons.refresh_rounded, size: 16),
                 ),
@@ -273,7 +307,7 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(l10n.commonCancel),
         ),
         FilledButton(
           onPressed: _selected == null
@@ -286,7 +320,7 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
   }
 
   Widget _list(AppPalette palette) {
-    final error = _error;
+    final error = _errorText();
     final rows = <Widget>[
       for (final folder in _folders)
         _EntryRow(
@@ -329,7 +363,7 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
           : rows.isEmpty
           ? Center(
               child: Text(
-                '这个目录里没有图片',
+                context.l10n.imageEmptyFolder,
                 style: TextStyle(
                   color: palette.textMuted,
                   fontSize: 12,
@@ -356,7 +390,7 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
       child: selected == null
           ? Center(
               child: Text(
-                '选一张图片看预览',
+                context.l10n.imagePreviewHint,
                 style: TextStyle(
                   color: palette.textMuted,
                   fontSize: 12,
@@ -376,7 +410,7 @@ class _ImagePickerDialogState extends State<_ImagePickerDialog> {
                       cacheWidth: 480,
                       errorBuilder: (_, _, _) => Center(
                         child: Text(
-                          '这张图看不了',
+                          context.l10n.imagePreviewFailed,
                           style: TextStyle(
                             color: palette.textMuted,
                             fontSize: 12,

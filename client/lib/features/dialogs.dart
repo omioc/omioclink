@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../core/app_theme.dart';
 import '../core/formatting.dart';
+import '../core/l10n_ext.dart';
 import '../data/api_client.dart';
 import '../media/media_engine.dart';
 import '../media/media_models.dart';
@@ -20,7 +21,7 @@ Future<bool> showConfirmDialog(
   BuildContext context, {
   required String title,
   required String message,
-  String confirmText = '确定',
+  String? confirmText,
 }) async {
   final result = await showDialog<bool>(
     context: context,
@@ -40,11 +41,11 @@ Future<bool> showConfirmDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('取消'),
+          child: Text(context.l10n.commonCancel),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(true),
-          child: Text(confirmText),
+          child: Text(confirmText ?? context.l10n.commonConfirm),
         ),
       ],
     ),
@@ -58,6 +59,7 @@ Future<bool> showConfirmDialog(
 Future<void> showChangePasswordDialog(BuildContext context) async {
   final state = context.read<AppState>();
   final messenger = ScaffoldMessenger.of(context);
+  final l10n = context.l10n;
   final currentController = TextEditingController();
   final nextController = TextEditingController();
   final confirmController = TextEditingController();
@@ -71,11 +73,11 @@ Future<void> showChangePasswordDialog(BuildContext context) async {
         Future<void> submit() async {
           final next = nextController.text;
           if (next.length < 8) {
-            setState(() => error = '新密码至少 8 位');
+            setState(() => error = l10n.settingsPasswordTooShort);
             return;
           }
           if (next != confirmController.text) {
-            setState(() => error = '两次输入的新密码不一致');
+            setState(() => error = l10n.settingsPasswordMismatch);
             return;
           }
           setState(() {
@@ -92,7 +94,7 @@ Future<void> showChangePasswordDialog(BuildContext context) async {
             }
             Navigator.of(dialogContext).pop();
             messenger.showSnackBar(
-              const SnackBar(content: Text('密码已修改，其他设备需要重新登录')),
+              SnackBar(content: Text(l10n.settingsPasswordChanged)),
             );
           } on ApiException catch (failure) {
             if (dialogContext.mounted) {
@@ -105,9 +107,9 @@ Future<void> showChangePasswordDialog(BuildContext context) async {
         }
 
         return AlertDialog(
-          title: const Text(
-            '修改密码',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          title: Text(
+            l10n.settingsChangePassword,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
           ),
           content: SizedBox(
             width: 360,
@@ -120,16 +122,18 @@ Future<void> showChangePasswordDialog(BuildContext context) async {
                   controller: currentController,
                   autofocus: true,
                   obscureText: true,
-                  decoration: const InputDecoration(labelText: '当前密码'),
+                  decoration: InputDecoration(
+                    labelText: l10n.settingsCurrentPassword,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 TextField(
                   textAlignVertical: TextAlignVertical.center,
                   controller: nextController,
                   obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: '新密码',
-                    helperText: '至少 8 位',
+                  decoration: InputDecoration(
+                    labelText: l10n.settingsNewPassword,
+                    helperText: l10n.settingsPasswordMinHint,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -137,7 +141,9 @@ Future<void> showChangePasswordDialog(BuildContext context) async {
                   textAlignVertical: TextAlignVertical.center,
                   controller: confirmController,
                   obscureText: true,
-                  decoration: const InputDecoration(labelText: '确认新密码'),
+                  decoration: InputDecoration(
+                    labelText: l10n.settingsConfirmNewPassword,
+                  ),
                   onSubmitted: (_) {
                     if (!busy) {
                       submit();
@@ -161,11 +167,15 @@ Future<void> showChangePasswordDialog(BuildContext context) async {
           actions: [
             TextButton(
               onPressed: busy ? null : () => Navigator.of(dialogContext).pop(),
-              child: const Text('取消'),
+              child: Text(l10n.commonCancel),
             ),
             FilledButton(
               onPressed: busy ? null : submit,
-              child: Text(busy ? '提交中…' : '确认修改'),
+              child: Text(
+                busy
+                    ? l10n.settingsPasswordSubmitting
+                    : l10n.settingsPasswordSubmit,
+              ),
             ),
           ],
         );
@@ -181,6 +191,7 @@ Future<void> showChangePasswordDialog(BuildContext context) async {
 /// 创建房间。
 Future<void> showCreateRoomDialog(BuildContext context) async {
   final state = context.read<AppState>();
+  final l10n = context.l10n;
   final nameController = TextEditingController();
   final passwordController = TextEditingController();
   var capacity = state.serverInfo?.roomCapacity ?? 5;
@@ -190,9 +201,9 @@ Future<void> showCreateRoomDialog(BuildContext context) async {
     context: context,
     builder: (dialogContext) => StatefulBuilder(
       builder: (dialogContext, setState) => AlertDialog(
-        title: const Text(
-          '创建房间',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        title: Text(
+          l10n.roomsCreateRoom,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         ),
         content: SizedBox(
           width: 360,
@@ -204,14 +215,17 @@ Future<void> showCreateRoomDialog(BuildContext context) async {
                 textAlignVertical: TextAlignVertical.center,
                 controller: nameController,
                 autofocus: true,
-                decoration: const InputDecoration(hintText: '房间名称，例如 游戏开黑'),
+                decoration: InputDecoration(hintText: l10n.roomsCreateNameHint),
               ),
               const SizedBox(height: AppSpacing.md),
               Row(
                 children: [
-                  const SizedBox(
+                  SizedBox(
                     width: 64,
-                    child: Text('人数上限', style: TextStyle(fontSize: 12)),
+                    child: Text(
+                      l10n.roomsCreateCapacity,
+                      style: const TextStyle(fontSize: 12),
+                    ),
                   ),
                   Expanded(
                     child: Slider(
@@ -219,12 +233,15 @@ Future<void> showCreateRoomDialog(BuildContext context) async {
                       min: 2,
                       max: (state.serverInfo?.maxRoomCapacity ?? 8).toDouble(),
                       divisions: (state.serverInfo?.maxRoomCapacity ?? 8) - 2,
-                      label: '$capacity 人',
+                      label: l10n.roomsCreateCapacityValue(capacity),
                       onChanged: (value) =>
                           setState(() => capacity = value.round()),
                     ),
                   ),
-                  Text('$capacity 人', style: const TextStyle(fontSize: 12)),
+                  Text(
+                    l10n.roomsCreateCapacityValue(capacity),
+                    style: const TextStyle(fontSize: 12),
+                  ),
                 ],
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -232,7 +249,7 @@ Future<void> showCreateRoomDialog(BuildContext context) async {
                 textAlignVertical: TextAlignVertical.center,
                 controller: passwordController,
                 obscureText: true,
-                decoration: const InputDecoration(hintText: '房间密码（可选）'),
+                decoration: InputDecoration(hintText: l10n.roomsCreatePasswordHint),
               ),
               const SizedBox(height: AppSpacing.sm),
               Row(
@@ -243,7 +260,7 @@ Future<void> showCreateRoomDialog(BuildContext context) async {
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   Text(
-                    isPublic ? '公开展示在房间列表' : '仅凭房间号加入',
+                    isPublic ? l10n.roomsCreatePublic : l10n.roomsCreatePrivate,
                     style: TextStyle(
                       fontSize: 12,
                       color: context.palette.textSecondary,
@@ -253,8 +270,7 @@ Future<void> showCreateRoomDialog(BuildContext context) async {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                '共享屏幕时，5 人房间建议把码率降到 2 Mbps / 720p，'
-                '8 人房间必须启用自适应降档',
+                l10n.roomsCreateCapacityHint,
                 style: TextStyle(
                   color: context.palette.textMuted,
                   fontSize: 11,
@@ -267,7 +283,7 @@ Future<void> showCreateRoomDialog(BuildContext context) async {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
+            child: Text(l10n.commonCancel),
           ),
           FilledButton(
             onPressed: () async {
@@ -293,7 +309,7 @@ Future<void> showCreateRoomDialog(BuildContext context) async {
                 );
               }
             },
-            child: const Text('创建并进入'),
+            child: Text(l10n.roomsCreateAndJoin),
           ),
         ],
       ),
@@ -306,20 +322,21 @@ Future<void> showCreateRoomDialog(BuildContext context) async {
 
 /// 房间号（邀请好友）。
 Future<void> showRoomCodeDialog(BuildContext context, String roomId) async {
+  final l10n = context.l10n;
   final code = roomId.isEmpty ? '——' : roomId.toUpperCase();
   await showDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text(
-        '邀请好友',
-        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      title: Text(
+        l10n.callInviteFriend,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '把房间号发给好友，他们在「房间列表」里输入或直接进入即可',
+            l10n.roomsInviteHint,
             style: TextStyle(
               color: context.palette.textSecondary,
               fontSize: 12,
@@ -345,15 +362,16 @@ Future<void> showRoomCodeDialog(BuildContext context, String roomId) async {
           onPressed: () async {
             await Clipboard.setData(ClipboardData(text: code));
             if (dialogContext.mounted) {
-              ScaffoldMessenger.of(dialogContext)
-                  .showSnackBar(const SnackBar(content: Text('房间号已复制')));
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                SnackBar(content: Text(l10n.roomsCodeCopied)),
+              );
             }
           },
-          child: const Text('复制房间号'),
+          child: Text(l10n.roomsCopyRoomId),
         ),
         FilledButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
-          child: const Text('知道了'),
+          child: Text(l10n.shellGotIt),
         ),
       ],
     ),
@@ -374,6 +392,7 @@ showScreenSourceDialog(BuildContext context, MediaEngine media) async {
     return null;
   }
 
+  final l10n = context.l10n;
   ScreenSource? selected = sources.isEmpty ? null : sources.first;
   // 默认把系统声音一起分享：共享的游戏/视频本来就是为了让对方听到
   var withSystemAudio = true;
@@ -383,9 +402,9 @@ showScreenSourceDialog(BuildContext context, MediaEngine media) async {
     context: context,
     builder: (dialogContext) => StatefulBuilder(
       builder: (dialogContext, setState) => AlertDialog(
-        title: const Text(
-          '选择共享内容',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        title: Text(
+          l10n.callShareSourceTitle,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         ),
         content: SizedBox(
           // 手机上 620×420 会被压成一条：按可用空间收窄，网格另降到 2 列
@@ -485,7 +504,7 @@ showScreenSourceDialog(BuildContext context, MediaEngine media) async {
                   SizedBox(
                     width: 56,
                     child: Text(
-                      '优先保证',
+                      l10n.callSharePriority,
                       style: TextStyle(
                         color: context.palette.textSecondary,
                         fontSize: 12,
@@ -507,7 +526,7 @@ showScreenSourceDialog(BuildContext context, MediaEngine media) async {
               ),
               const SizedBox(height: 2),
               Text(
-                '码率不用手调：按观众人数自动分配，单路上行不超过 30 Mbps',
+                l10n.callShareBitrateHint,
                 style: TextStyle(
                   color: context.palette.textMuted,
                   fontSize: 11,
@@ -547,7 +566,7 @@ showScreenSourceDialog(BuildContext context, MediaEngine media) async {
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
-                      '同时共享系统声音（游戏/播放器声音）。外放时远端可能听到回声，建议戴耳机',
+                      l10n.callShareSystemAudioHint,
                       style: TextStyle(
                         color: context.palette.textSecondary,
                         fontSize: 11,
@@ -563,7 +582,7 @@ showScreenSourceDialog(BuildContext context, MediaEngine media) async {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
+            child: Text(l10n.commonCancel),
           ),
           FilledButton(
             onPressed: selected == null
@@ -579,7 +598,7 @@ showScreenSourceDialog(BuildContext context, MediaEngine media) async {
                       policy: policy,
                     ));
                   },
-            child: const Text('开始共享'),
+            child: Text(l10n.callStartSharing),
           ),
         ],
       ),
@@ -722,6 +741,7 @@ class _DiagnosticsBodyState extends State<_DiagnosticsBody> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final session = context.watch<AppState>().session;
 
     return Padding(
@@ -737,9 +757,9 @@ class _DiagnosticsBodyState extends State<_DiagnosticsBody> {
                 color: context.palette.accent,
               ),
               const SizedBox(width: AppSpacing.sm),
-              const Text(
-                '网络诊断',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              Text(
+                l10n.callDiagnostics,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
               ),
               const Spacer(),
               OutlinedButton.icon(
@@ -751,7 +771,7 @@ class _DiagnosticsBodyState extends State<_DiagnosticsBody> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.refresh_rounded, size: 15),
-                label: const Text('重新检测'),
+                label: Text(l10n.settingsRedetect),
               ),
               IconButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -764,13 +784,13 @@ class _DiagnosticsBodyState extends State<_DiagnosticsBody> {
             child: ListView(
               children: [
                 _section(
-                  'NAT 与 UDP 可达性',
+                  l10n.settingsDiagnosticsNatSection,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (_diagnosis == null)
                         Text(
-                          '正在探测…',
+                          l10n.settingsDiagnosticsProbing,
                           style: TextStyle(
                             color: context.palette.textMuted,
                             fontSize: 12,
@@ -778,16 +798,22 @@ class _DiagnosticsBodyState extends State<_DiagnosticsBody> {
                         )
                       else ...[
                         _badge(switch (_diagnosis!.type) {
-                          NatType.cone => ('锥型 NAT · 可打洞直连', context.palette.success),
+                          NatType.cone => (
+                            l10n.settingsDiagnosticsCone,
+                            context.palette.success,
+                          ),
                           NatType.symmetric => (
-                            '对称型 NAT · 无法直连',
+                            l10n.settingsDiagnosticsSymmetric,
                             context.palette.danger,
                           ),
                           NatType.blocked => (
-                            'UDP 不可达 · 无法通话',
+                            l10n.settingsDiagnosticsBlocked,
                             context.palette.danger,
                           ),
-                          NatType.unknown => ('未知', context.palette.textMuted),
+                          NatType.unknown => (
+                            l10n.settingsDiagnosticsUnknown,
+                            context.palette.textMuted,
+                          ),
                         }),
                         const SizedBox(height: AppSpacing.sm),
                         Text(
@@ -822,7 +848,14 @@ class _DiagnosticsBodyState extends State<_DiagnosticsBody> {
                                 ),
                                 Text(
                                   result.ok
-                                      ? '公网映射 ${result.mapped}${result.roundTrip == null ? '' : ' · ${result.roundTrip!.inMilliseconds}ms'}'
+                                      ? (result.roundTrip == null
+                                            ? l10n.settingsDiagnosticsMapped(
+                                                result.mapped,
+                                              )
+                                            : l10n.settingsDiagnosticsMappedRtt(
+                                                result.mapped,
+                                                result.roundTrip!.inMilliseconds,
+                                              ))
                                       : result.mapped,
                                   style: TextStyle(
                                     fontSize: 11,
@@ -840,10 +873,10 @@ class _DiagnosticsBodyState extends State<_DiagnosticsBody> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 _section(
-                  '成员连接',
+                  l10n.settingsDiagnosticsMembers,
                   child: session == null || !session.phase.isActive
                       ? Text(
-                          '尚未进入房间',
+                          l10n.settingsNotInRoom,
                           style: TextStyle(
                             color: context.palette.textMuted,
                             fontSize: 12,
@@ -862,14 +895,16 @@ class _DiagnosticsBodyState extends State<_DiagnosticsBody> {
                                     Expanded(
                                       child: Text(
                                         view.local
-                                            ? '${view.info.displayName}（我）'
+                                            ? l10n.shellMemberSelf(
+                                                view.info.displayName,
+                                              )
                                             : view.info.displayName,
                                         style: const TextStyle(fontSize: 12),
                                       ),
                                     ),
                                     if (view.local)
                                       Text(
-                                        '本机',
+                                        l10n.settingsDiagnosticsLocal,
                                         style: TextStyle(
                                           color: context.palette.textMuted,
                                           fontSize: 11,
@@ -907,8 +942,10 @@ class _DiagnosticsBodyState extends State<_DiagnosticsBody> {
                               ),
                             const SizedBox(height: AppSpacing.sm),
                             Text(
-                              '上行 ${formatKbps(session.stats.outgoingKbps)} · '
-                              '下行 ${formatKbps(session.stats.incomingKbps)}',
+                              l10n.settingsDiagnosticsRates(
+                                formatKbps(session.stats.outgoingKbps),
+                                formatKbps(session.stats.incomingKbps),
+                              ),
                               style: TextStyle(
                                 color: context.palette.textMuted,
                                 fontSize: 11,
@@ -966,6 +1003,7 @@ Future<Set<String>?> showPluginPickerDialog(
   required Set<String> preselected,
   String? subscriptionUrl,
 }) {
+  final l10n = context.l10n;
   // 用副本：勾选过程中不要把调用方的集合改了（它可能就是「上次的选择」）
   final selected = <String>{...preselected};
   final source = (subscriptionUrl ?? '').trim();
@@ -979,9 +1017,9 @@ Future<Set<String>?> showPluginPickerDialog(
         final allSelected =
             entries.isNotEmpty && selected.length == entries.length;
         return AlertDialog(
-          title: const Text(
-            '选择要安装的插件',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          title: Text(
+            l10n.settingsPluginsPickTitle,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
           ),
           content: SizedBox(
             // 手机上按可用宽收窄；高度也不硬顶，几十项不能把弹框撑出屏幕
@@ -995,8 +1033,7 @@ Future<Set<String>?> showPluginPickerDialog(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '订阅里共 ${entries.length} 个插件，已选 ${selected.length} 个。'
-                  '没选中的不会下载、也不会编译。',
+                  l10n.settingsPluginsPickSummary(entries.length, selected.length),
                   style: TextStyle(
                     color: context.palette.textSecondary,
                     fontSize: 12,
@@ -1029,11 +1066,18 @@ Future<Set<String>?> showPluginPickerDialog(
                             ..addAll(entries.map((entry) => entry.url));
                         }
                       }),
-                      child: Text(allSelected ? '全不选' : '全选'),
+                      child: Text(
+                        allSelected
+                            ? l10n.settingsPluginsSelectNone
+                            : l10n.settingsPluginsSelectAll,
+                      ),
                     ),
                     const Spacer(),
                     Text(
-                      '已选 ${selected.length} / ${entries.length}',
+                      l10n.settingsPluginsSelectedCount(
+                        selected.length,
+                        entries.length,
+                      ),
                       style: TextStyle(
                         color: context.palette.textMuted,
                         fontSize: 11,
@@ -1084,7 +1128,7 @@ Future<Set<String>?> showPluginPickerDialog(
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('取消'),
+              child: Text(l10n.commonCancel),
             ),
             FilledButton(
               // 一个都不选等于「把这条订阅的插件全删了」，太容易误触；
@@ -1092,7 +1136,7 @@ Future<Set<String>?> showPluginPickerDialog(
               onPressed: selected.isEmpty
                   ? null
                   : () => Navigator.of(dialogContext).pop(<String>{...selected}),
-              child: Text('安装 ${selected.length} 个'),
+              child: Text(l10n.settingsPluginsInstallCount(selected.length)),
             ),
           ],
         );

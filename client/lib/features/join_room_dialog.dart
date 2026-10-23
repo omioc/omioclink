@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../core/app_theme.dart';
 import '../core/formatting.dart';
+import '../core/l10n_ext.dart';
 import '../data/api_client.dart';
 import '../data/models.dart';
 import '../widgets/common.dart';
@@ -65,11 +66,11 @@ class _JoinRoomDialogState extends State<_JoinRoomDialog> {
     final api = widget.state.api;
     final code = _code;
     if (api == null) {
-      setState(() => _error = '请先连接服务器');
+      setState(() => _error = context.l10n.roomsJoinNotConnected);
       return;
     }
     if (code.isEmpty) {
-      setState(() => _error = '请输入房间号');
+      setState(() => _error = context.l10n.roomsJoinEnterCode);
       return;
     }
     setState(() {
@@ -98,7 +99,7 @@ class _JoinRoomDialogState extends State<_JoinRoomDialog> {
       setState(() {
         _busy = false;
         _error = error.code == 'room_not_found'
-            ? '没有找到房间 $code，检查一下房间号'
+            ? context.l10n.roomsJoinNotFound(code)
             : error.message;
       });
     }
@@ -129,20 +130,21 @@ class _JoinRoomDialogState extends State<_JoinRoomDialog> {
     // 失败原因已经写在 state.error 里，这里取过来内联显示，并把顶部横幅清掉避免重复
     setState(() {
       _busy = false;
-      _error = widget.state.error ?? '进入房间失败';
+      _error = widget.state.error ?? context.l10n.roomsJoinFailed;
     });
     widget.state.clearMessages();
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final room = _room;
     final full = room != null && room.isFull;
 
     return AlertDialog(
-      title: const Text(
-        '加入房间',
-        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      title: Text(
+        l10n.roomsJoinRoom,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
       ),
       content: SizedBox(
         width: 380,
@@ -151,7 +153,7 @@ class _JoinRoomDialogState extends State<_JoinRoomDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              '输入房间号加入。私有房间不会出现在公开列表里，只能这样进来',
+              l10n.roomsJoinCodeHint,
               style: TextStyle(
                 color: context.palette.textSecondary,
                 fontSize: 12,
@@ -188,7 +190,7 @@ class _JoinRoomDialogState extends State<_JoinRoomDialog> {
                 const SizedBox(width: AppSpacing.sm),
                 FilledButton(
                   onPressed: _busy ? null : _lookup,
-                  child: const Text('查询'),
+                  child: Text(l10n.roomsJoinLookup),
                 ),
               ],
             ),
@@ -220,8 +222,12 @@ class _JoinRoomDialogState extends State<_JoinRoomDialog> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${formatCapacity(room.memberCount, room.capacity)}'
-                      '${room.ownerName == null ? '' : ' · 房主 ${room.ownerName}'}',
+                      room.ownerName == null
+                          ? formatCapacity(room.memberCount, room.capacity)
+                          : l10n.roomsJoinOwnerLine(
+                              formatCapacity(room.memberCount, room.capacity),
+                              room.ownerName!,
+                            ),
                       style: TextStyle(
                         color: context.palette.textMuted,
                         fontSize: 11,
@@ -238,14 +244,14 @@ class _JoinRoomDialogState extends State<_JoinRoomDialog> {
                   enabled: !_busy,
                   obscureText: true,
                   onSubmitted: (_) => _join(),
-                  decoration: const InputDecoration(
-                    hintText: '房间密码',
-                    prefixIcon: Icon(Icons.key_rounded, size: 16),
+                  decoration: InputDecoration(
+                    hintText: l10n.roomsPasswordHint,
+                    prefixIcon: const Icon(Icons.key_rounded, size: 16),
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '密码会被记住，下次进这个房间不用再输',
+                  l10n.roomsPasswordRememberNote,
                   style: TextStyle(color: context.palette.textMuted, fontSize: 11),
                 ),
               ],
@@ -278,11 +284,11 @@ class _JoinRoomDialogState extends State<_JoinRoomDialog> {
       actions: [
         TextButton(
           onPressed: _busy ? null : () => Navigator.of(context).pop(false),
-          child: const Text('取消'),
+          child: Text(l10n.commonCancel),
         ),
         FilledButton(
           onPressed: room == null || full || _busy ? null : _join,
-          child: Text(full ? '房间已满' : '进入房间'),
+          child: Text(full ? l10n.roomsRoomFull : l10n.roomsEnterRoom),
         ),
       ],
     );

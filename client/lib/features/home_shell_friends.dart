@@ -23,6 +23,7 @@ class _FriendsPaneState extends State<_FriendsPane> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final l10n = context.l10n;
     final incoming = state.friendRequests
         .where((r) => r.direction == FriendRequestDirection.incoming)
         .toList();
@@ -38,10 +39,10 @@ class _FriendsPaneState extends State<_FriendsPane> {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
           child: Row(
             children: [
-              const Text('好友', style: AppText.pageTitle),
+              Text(l10n.friendsTitle, style: AppText.pageTitle),
               const SizedBox(width: 10),
               Text(
-                '${state.friends.length} 位',
+                l10n.friendsCount(state.friends.length),
                 style: TextStyle(
                   color: context.palette.textMuted,
                   fontSize: 11.5,
@@ -59,7 +60,7 @@ class _FriendsPaneState extends State<_FriendsPane> {
               ),
               const SizedBox(width: 10),
               Text(
-                '${state.onlineFriends.length} 在线',
+                l10n.friendsOnlineCount(state.onlineFriends.length),
                 style: TextStyle(
                   color: state.onlineFriends.isEmpty
                       ? context.palette.textMuted
@@ -72,7 +73,7 @@ class _FriendsPaneState extends State<_FriendsPane> {
               // 手机上没有下拉刷新，页头这个按钮就是唯一的「手动拉一次」入口：
               // 首次登录那次请求抖掉时，用户不用等 15 秒轮询，也不用重启应用
               IconButton(
-                tooltip: '刷新好友',
+                tooltip: l10n.friendsRefresh,
                 onPressed: () => state.refreshFriends(),
                 icon: Icon(
                   Icons.refresh_rounded,
@@ -109,8 +110,8 @@ class _FriendsPaneState extends State<_FriendsPane> {
                             cursorHeight: 15,
                             onSubmitted: (value) =>
                                 state.sendFriendRequest(value.trim()),
-                            decoration: const InputDecoration(
-                              hintText: '输入用户名添加好友',
+                            decoration: InputDecoration(
+                              hintText: l10n.friendsAddHint,
                               prefixIcon: Icon(
                                 Icons.person_add_alt_1_rounded,
                                 size: 14,
@@ -128,13 +129,13 @@ class _FriendsPaneState extends State<_FriendsPane> {
                         onPressed: () => state.sendFriendRequest(
                           _usernameController.text.trim(),
                         ),
-                        child: const Text('添加'),
+                        child: Text(l10n.friendsAdd),
                       ),
                     ],
                   ),
                   if (incoming.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.xl),
-                    const SectionLabel(text: '待处理的好友申请'),
+                    SectionLabel(text: l10n.friendsIncomingTitle),
                     const SizedBox(height: 8),
                     PanelCard(
                       padding: EdgeInsets.zero,
@@ -173,7 +174,7 @@ class _FriendsPaneState extends State<_FriendsPane> {
                                           incoming[i].id,
                                           accept: false,
                                         ),
-                                    child: const Text('拒绝'),
+                                    child: Text(l10n.friendsReject),
                                   ),
                                   const SizedBox(width: 4),
                                   FilledButton(
@@ -182,7 +183,7 @@ class _FriendsPaneState extends State<_FriendsPane> {
                                           incoming[i].id,
                                           accept: true,
                                         ),
-                                    child: const Text('同意'),
+                                    child: Text(l10n.friendsAccept),
                                   ),
                                 ],
                               ),
@@ -194,7 +195,7 @@ class _FriendsPaneState extends State<_FriendsPane> {
                   ],
                   if (outgoing.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.xl),
-                    const SectionLabel(text: '已发出的申请'),
+                    SectionLabel(text: l10n.friendsOutgoingTitle),
                     const SizedBox(height: 8),
                     PanelCard(
                       padding: EdgeInsets.zero,
@@ -220,7 +221,7 @@ class _FriendsPaneState extends State<_FriendsPane> {
                                     ),
                                   ),
                                   Text(
-                                    '等待对方处理',
+                                    l10n.friendsOutgoingWaiting,
                                     style: TextStyle(
                                       color: context.palette.textMuted,
                                       fontSize: 11,
@@ -236,13 +237,13 @@ class _FriendsPaneState extends State<_FriendsPane> {
                     ),
                   ],
                   const SizedBox(height: AppSpacing.xl),
-                  SectionLabel(text: '好友列表'),
+                  SectionLabel(text: l10n.friendsListTitle),
                   const SizedBox(height: 8),
                   if (state.friends.isEmpty)
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: 18),
                       child: Text(
-                        '还没有好友，输入用户名添加',
+                        l10n.friendsEmpty,
                         style: TextStyle(
                           color: context.palette.textMuted,
                           fontSize: 11.5,
@@ -268,10 +269,11 @@ class _FriendsPaneState extends State<_FriendsPane> {
                             onRemove: () async {
                               final confirmed = await showConfirmDialog(
                                 context,
-                                title: '删除好友',
-                                message:
-                                    '确定删除好友「${friend.user.displayName}」吗',
-                                confirmText: '删除',
+                                title: l10n.friendsRemove,
+                                message: l10n.friendsRemoveMessage(
+                                  friend.user.displayName,
+                                ),
+                                confirmText: l10n.friendsRemoveConfirm,
                               );
                               if (confirmed) {
                                 await state.api?.removeFriend(
@@ -314,6 +316,7 @@ class _FriendRowState extends State<_FriendRow> {
   @override
   Widget build(BuildContext context) {
     final friend = widget.friend;
+    final l10n = context.l10n;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
@@ -346,7 +349,7 @@ class _FriendRowState extends State<_FriendRow> {
             ),
             const SizedBox(width: 6),
             Text(
-              friend.online ? '在线' : '离线',
+              friend.online ? l10n.shellOnline : l10n.shellOffline,
               style: TextStyle(
                 fontSize: 11,
                 height: 1.3,
@@ -361,7 +364,7 @@ class _FriendRowState extends State<_FriendRow> {
               // 红色本身已经是「危险动作」的信号，平时压到 0.6 够看清但不抢戏
               opacity: _hovering ? 1 : 0.6,
               child: IconButton(
-                tooltip: '删除好友',
+                tooltip: l10n.friendsRemove,
                 onPressed: () => widget.onRemove(),
                 icon: Icon(
                   Icons.delete_outline_rounded,

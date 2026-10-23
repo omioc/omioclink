@@ -840,5 +840,389 @@
         "type": "String"
       }
     }
-  }
+  },
+  "friendsTitle": "好友",
+  "@friendsTitle": {
+    "description": "好友页顶部标题"
+  },
+  "friendsCount": "{count} 位",
+  "@friendsCount": {
+    "description": "好友页标题右侧的好友数量",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "friendsOnlineCount": "{count} 在线",
+  "@friendsOnlineCount": {
+    "description": "好友页标题右侧的在线人数",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "friendsRefresh": "刷新好友",
+  "@friendsRefresh": {
+    "description": "好友页页头的刷新按钮"
+  },
+  "friendsAddHint": "输入用户名添加好友",
+  "@friendsAddHint": {
+    "description": "添加好友输入框的占位文案"
+  },
+  "friendsAdd": "添加",
+  "@friendsAdd": {
+    "description": "添加好友按钮"
+  },
+  "friendsIncomingTitle": "待处理的好友申请",
+  "friendsReject": "拒绝",
+  "friendsAccept": "同意",
+  "friendsOutgoingTitle": "已发出的申请",
+  "friendsOutgoingWaiting": "等待对方处理",
+  "friendsListTitle": "好友列表",
+  "friendsEmpty": "还没有好友，输入用户名添加",
+  "friendsRemove": "删除好友",
+  "@friendsRemove": {
+    "description": "删除好友：确认框标题与好友行内的图标提示"
+  },
+  "friendsRemoveMessage": "确定删除好友「{name}」吗",
+  "@friendsRemoveMessage": {
+    "description": "删除好友确认框的正文",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsRemoveConfirm": "删除",
+  "settingsTitle": "设置",
+  "@settingsTitle": {
+    "description": "设置页顶部标题"
+  },
+  "settingsServerFallbackName": "我的服务器",
+  "settingsServerNotConfigured": "未配置",
+  "settingsAudioDevices": "音频设备",
+  "settingsIceServers": "ICE 服务器",
+  "settingsRunDiagnostics": "运行网络诊断",
+  "settingsCurrentConnection": "当前连接",
+  "settingsNotInRoom": "尚未进入房间",
+  "settingsRoomValue": "{name}（{roomId}）",
+  "@settingsRoomValue": {
+    "description": "当前连接里的房间一行：房间名与房间号",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "roomId": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsUplinkRate": "上行码率",
+  "settingsDownlinkRate": "下行码率",
+  "settingsLogoutMessage": "退出后会回到「连接服务器」页面，房间与通话都会断开。本地记住的账号密码仍会保留，下次可以直接登录。",
+  "settingsLogoutHint": "退出后服务器地址与账号密码仍会保留，可以换一台服务器重新登录",
+  "settingsAvatarUpload": "上传头像",
+  "settingsAvatarChange": "更换头像",
+  "settingsAvatarRemove": "移除头像",
+  "settingsAvatarHint": "头像会先在本机缩到 256px 再上传；通话中改昵称或头像会立刻同步给同一房间的人",
+  "settingsUsername": "用户名",
+  "settingsDisplayName": "昵称",
+  "settingsDisplayNameHint": "通话时其他人看到的名字",
+  "settingsSaving": "保存中…",
+  "settingsSaveDisplayName": "保存昵称",
+  "settingsDisplayNameUpdated": "昵称已更新",
+  "settingsAvatarUpdated": "头像已更新",
+  "settingsAvatarRemoved": "头像已移除",
+  "settingsChangePassword": "修改密码",
+  "settingsCurrentPassword": "当前密码",
+  "settingsNewPassword": "新密码",
+  "settingsPasswordMinHint": "至少 8 位",
+  "settingsConfirmNewPassword": "确认新密码",
+  "settingsPasswordSubmitting": "提交中…",
+  "settingsPasswordSubmit": "确认修改",
+  "settingsPasswordTooShort": "新密码至少 8 位",
+  "settingsPasswordMismatch": "两次输入的新密码不一致",
+  "settingsPasswordChanged": "密码已修改，其他设备需要重新登录",
+  "settingsMusicPlugins": "音乐插件",
+  "settingsPluginsLoading": "装载中…",
+  "settingsPluginsRefreshSubscription": "刷新订阅",
+  "settingsPluginsUpdateAll": "更新全部",
+  "settingsPluginsNone": "还没有安装插件",
+  "settingsPluginsCount": "共 {count} 个（启用 {enabled} 个）",
+  "@settingsPluginsCount": {
+    "description": "已安装插件数量：总数与启用数",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "enabled": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsSubscriptionUrls": "订阅地址",
+  "settingsSubscriptionNotProvided": "服务器没有下发",
+  "settingsQuality": "音质",
+  "settingsQualityHint": "解析播放地址时向插件要的音质，越高越吃带宽",
+  "settingsPluginsSyncFailed": "同步失败：{reason}",
+  "@settingsPluginsSyncFailed": {
+    "description": "插件订阅同步失败的原因",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsPluginsHint": "插件由服务器下发的订阅地址统一管理；单个插件加载失败不影响其它插件，点歌台会把失败原因标出来。点「刷新订阅」会先列出订阅里的插件，只装你勾选的（默认前 {count} 个），没勾的不下载也不编译。",
+  "@settingsPluginsHint": {
+    "description": "插件卡片的说明段落，带上默认勾选数量",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsPluginsNoSubscription": "服务器还没有配置插件订阅地址",
+  "settingsPluginsEmptyHint": "还没有安装插件，点「刷新订阅」重新拉取",
+  "settingsPluginMethodsCount": "{count} 项能力",
+  "@settingsPluginMethodsCount": {
+    "description": "插件支持的方法数量",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsPluginDisabled": "已停用",
+  "settingsPluginMoveUp": "上移",
+  "settingsPluginMoveDown": "下移",
+  "settingsPluginConfigureAction": "配置",
+  "settingsPluginConfigure": "配置 {platform}",
+  "@settingsPluginConfigure": {
+    "description": "配置某个插件的自定义变量",
+    "placeholders": {
+      "platform": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsPluginUninstallTitle": "卸载插件",
+  "settingsPluginUninstallMessage": "确定卸载「{platform}」吗？卸载后需要重新同步订阅才能再用。",
+  "@settingsPluginUninstallMessage": {
+    "description": "卸载插件确认框的正文",
+    "placeholders": {
+      "platform": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsPluginUninstall": "卸载",
+  "settingsPluginLoadFailed": "加载失败：{reason}",
+  "@settingsPluginLoadFailed": {
+    "description": "插件加载失败的原因",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsPluginLocalInstall": "本地安装",
+  "settingsVolume": "音量",
+  "settingsMicVolume": "麦克风音量（对方听到我的大小）",
+  "settingsMicVolumeHint": "直接调本机当前默认录音设备的系统音量，与成员、音乐音量互不影响",
+  "settingsMicVolumeUnsupported": "本机没有可调的录音设备",
+  "settingsMusicVolume": "音乐音量（只影响本机）",
+  "settingsMusicVolumeHint": "音乐调到 0 也不会影响任何成员的声音，反之亦然",
+  "settingsMicrophone": "麦克风",
+  "settingsSpeaker": "扬声器",
+  "settingsSystemDefaultDevice": "系统默认设备",
+  "settingsNoDevices": "没有检测到设备，请检查系统声音设置后重新检测",
+  "settingsRedetect": "重新检测",
+  "settingsMicCheckHealthyHint": "对着麦克风说话，绿条应随音量起伏；不说话时应几乎不动",
+  "settingsMicCheckIdleHint": "点下面的按钮开始试麦，不需要进房间",
+  "settingsMicCheckInCall": "通话中麦克风已打开，无需单独试麦",
+  "settingsMicCheckStop": "停止试麦",
+  "settingsMicCheckStart": "测试麦克风",
+  "settingsLogs": "运行日志",
+  "settingsLogsNotWritten": "本次运行没有落盘（日志目录不可写）",
+  "settingsOpenLogFolder": "打开日志文件夹",
+  "settingsLogsHint": "遇到闪退时把最新的 client-*.log 发出来即可；同目录里若有 crash-*.log（原生崩溃报告）也一起发",
+  "settingsOpenLogFailed": "打开失败：{path}",
+  "@settingsOpenLogFailed": {
+    "description": "打不开日志目录时的提示",
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDiagnosticsNatSection": "NAT 与 UDP 可达性",
+  "settingsDiagnosticsProbing": "正在探测…",
+  "settingsDiagnosticsCone": "锥型 NAT · 可打洞直连",
+  "settingsDiagnosticsSymmetric": "对称型 NAT · 无法直连",
+  "settingsDiagnosticsBlocked": "UDP 不可达 · 无法通话",
+  "settingsDiagnosticsUnknown": "未知",
+  "settingsDiagnosticsMapped": "公网映射 {address}",
+  "@settingsDiagnosticsMapped": {
+    "description": "STUN 探测成功时的公网映射",
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDiagnosticsMappedRtt": "公网映射 {address} · {rtt}ms",
+  "@settingsDiagnosticsMappedRtt": {
+    "description": "STUN 探测成功时的公网映射与往返时延",
+    "placeholders": {
+      "address": {
+        "type": "String"
+      },
+      "rtt": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsDiagnosticsMembers": "成员连接",
+  "settingsDiagnosticsLocal": "本机",
+  "settingsDiagnosticsRates": "上行 {up} · 下行 {down}",
+  "@settingsDiagnosticsRates": {
+    "description": "诊断里的上行 / 下行速率",
+    "placeholders": {
+      "up": {
+        "type": "String"
+      },
+      "down": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsPluginsPickTitle": "选择要安装的插件",
+  "settingsPluginsPickSummary": "订阅里共 {total} 个插件，已选 {selected} 个。没选中的不会下载、也不会编译。",
+  "@settingsPluginsPickSummary": {
+    "description": "插件选择框顶部的说明：总数与已选数",
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "selected": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsPluginsSelectAll": "全选",
+  "settingsPluginsSelectNone": "全不选",
+  "settingsPluginsSelectedCount": "已选 {selected} / {total}",
+  "@settingsPluginsSelectedCount": {
+    "description": "插件选择框的已选 / 总数",
+    "placeholders": {
+      "selected": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsPluginsInstallCount": "安装 {count} 个",
+  "@settingsPluginsInstallCount": {
+    "description": "插件选择框的确认按钮",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "imagePickerTitle": "选择图片",
+  "imagePickerConfirm": "用这张",
+  "imagePickerAvatarTitle": "选择头像图片",
+  "imagePickerAvatarConfirm": "用这张当头像",
+  "imagePlacePictures": "图片",
+  "imagePlaceDesktop": "桌面",
+  "imagePlaceDownloads": "下载",
+  "imagePlaceDocuments": "文档",
+  "imagePathHint": "目录路径，回车跳转",
+  "imageUp": "上一级",
+  "imageRefresh": "刷新",
+  "imageEmptyFolder": "这个目录里没有图片",
+  "imagePreviewHint": "选一张图片看预览",
+  "imagePreviewFailed": "这张图看不了",
+  "imageErrorMissingDirectory": "这个目录不存在了",
+  "imageErrorOpenFailed": "打不开这个目录：{reason}",
+  "@imageErrorOpenFailed": {
+    "description": "列目录失败时的原因",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "imageErrorListFailed": "列出目录失败：{reason}",
+  "@imageErrorListFailed": {
+    "description": "列目录抛异常时的原因",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "commonCancel": "取消",
+  "commonConfirm": "确定",
+  "commonSave": "保存",
+  "roomsJoinCodeHint": "输入房间号加入。私有房间不会出现在公开列表里，只能这样进来",
+  "roomsJoinLookup": "查询",
+  "roomsJoinNotConnected": "请先连接服务器",
+  "roomsJoinEnterCode": "请输入房间号",
+  "roomsJoinNotFound": "没有找到房间 {code}，检查一下房间号",
+  "@roomsJoinNotFound": {
+    "description": "房间号查不到时的提示",
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "roomsJoinFailed": "进入房间失败",
+  "roomsJoinOwnerLine": "{capacity} · 房主 {owner}",
+  "@roomsJoinOwnerLine": {
+    "description": "房间容量后面的房主",
+    "placeholders": {
+      "capacity": {
+        "type": "String"
+      },
+      "owner": {
+        "type": "String"
+      }
+    }
+  },
+  "roomsPasswordRememberNote": "密码会被记住，下次进这个房间不用再输",
+  "roomsCreateNameHint": "房间名称，例如 游戏开黑",
+  "roomsCreateCapacity": "人数上限",
+  "roomsCreateCapacityValue": "{count} 人",
+  "@roomsCreateCapacityValue": {
+    "description": "创建房间时的人数上限值",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "roomsCreatePasswordHint": "房间密码（可选）",
+  "roomsCreatePublic": "公开展示在房间列表",
+  "roomsCreatePrivate": "仅凭房间号加入",
+  "roomsCreateCapacityHint": "共享屏幕时，5 人房间建议把码率降到 2 Mbps / 720p，8 人房间必须启用自适应降档",
+  "roomsCreateAndJoin": "创建并进入",
+  "roomsCodeCopied": "房间号已复制",
+  "roomsInviteHint": "把房间号发给好友，他们在「房间列表」里输入或直接进入即可",
+  "callShareSourceTitle": "选择共享内容",
+  "callSharePriority": "优先保证",
+  "callShareBitrateHint": "码率不用手调：按观众人数自动分配，单路上行不超过 30 Mbps",
+  "callShareSystemAudioHint": "同时共享系统声音（游戏/播放器声音）。外放时远端可能听到回声，建议戴耳机",
+  "callStartSharing": "开始共享",
+  "shellMicOpen": "打开麦克风",
+  "shellMicResume": "恢复收听",
+  "shellMicMuteSelf": "静音（关闭我的麦克风）",
+  "shellMicMuteOther": "静音（不再收听对方）"
 }

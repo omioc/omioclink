@@ -21,8 +21,8 @@ import 'image_picker_dialog.dart';
 /// 调用方可以直接 `File(path)` 读，不必操心 `content://` 这类 URI。
 Future<String?> pickImagePath(
   BuildContext context, {
-  String title = '选择图片',
-  String confirmLabel = '用这张',
+  String? title,
+  String? confirmLabel,
   String? initialDirectory,
 }) async {
   if (!isMobilePlatform) {

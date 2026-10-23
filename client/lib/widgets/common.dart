@@ -529,9 +529,10 @@ class _MicBadge extends StatelessWidget {
       ),
     );
 
+    final l10n = context.l10n;
     final tooltip = off && mutedLocally
-        ? (isSelf ? '打开麦克风' : '恢复收听')
-        : (isSelf ? '静音（关闭我的麦克风）' : '静音（不再收听对方）');
+        ? (isSelf ? l10n.shellMicOpen : l10n.shellMicResume)
+        : (isSelf ? l10n.shellMicMuteSelf : l10n.shellMicMuteOther);
 
     final content = Tooltip(message: tooltip, child: badge);
     if (onTap == null) {
