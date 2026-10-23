@@ -440,7 +440,7 @@ MESSAGES: Final[dict[str, dict[Locale, str]]] = {
         "zh": "该会话不在指定房间内",
         "en": "That session is not in the specified room",
         "ja": "そのセッションは指定されたルームにいません",
-        "ko": "해당 세션은 지정한 방에 없습니다",
+        "ko": "해당 세션은 지정한 룸에 없습니다",
     },
     "admin.peer_kicked": {
         "zh": "已移出 {peer_id}",
@@ -471,19 +471,19 @@ MESSAGES: Final[dict[str, dict[Locale, str]]] = {
         "zh": "房间不存在",
         "en": "Room not found",
         "ja": "ルームが見つかりません",
-        "ko": "방을 찾을 수 없습니다",
+        "ko": "룸을 찾을 수 없습니다",
     },
     "room.owner_only_update": {
         "zh": "只有房主可以修改房间",
         "en": "Only the room owner can edit the room",
         "ja": "ルームを変更できるのはオーナーだけです",
-        "ko": "방 주인만 방을 수정할 수 있습니다",
+        "ko": "방장만 룸을 수정할 수 있습니다",
     },
     "room.owner_only_delete": {
         "zh": "只有房主可以解散房间",
         "en": "Only the room owner can close the room",
         "ja": "ルームを解散できるのはオーナーだけです",
-        "ko": "방 주인만 방을 해산할 수 있습니다",
+        "ko": "방장만 룸을 해산할 수 있습니다",
     },
     # ---- 头像（app.api.avatars）----
     "avatar.not_found": {
@@ -611,12 +611,12 @@ MESSAGES: Final[dict[str, dict[Locale, str]]] = {
         "zh": "房间已满",
         "en": "The room is full",
         "ja": "ルームが満員です",
-        "ko": "룸 정원이 가득 찼습니다",
+        "ko": "룸이 가득 찼습니다",
     },
     "ws.not_in_room": {
         "zh": "尚未加入房间",
         "en": "You have not joined a room yet",
-        "ja": "まだルームに参加していません",
+        "ja": "ルームに参加していません",
         "ko": "아직 룸에 참여하지 않았습니다",
     },
     "ws.peer_unavailable": {
@@ -647,7 +647,7 @@ MESSAGES: Final[dict[str, dict[Locale, str]]] = {
     # ---- 点歌台：入队与控制的拒绝原因 ----
     "ws.music_rate_limited": {
         "zh": "点歌太快了，{wait} 秒后再试",
-        "en": "You are requesting songs too fast, please try again in {wait} seconds",
+        "en": "You are requesting songs too quickly, please try again in {wait} seconds",
         "ja": "曲のリクエストが速すぎます。{wait} 秒後に再試行してください",
         "ko": "노래 신청이 너무 빠릅니다. {wait}초 후 다시 시도해 주세요",
     },
@@ -665,8 +665,8 @@ MESSAGES: Final[dict[str, dict[Locale, str]]] = {
     },
     "ws.music_personal_limit": {
         "zh": "每人最多同时点 {limit} 首，等自己的歌播完再点",
-        "en": "Each person can queue at most {limit} songs, please wait until yours finish",
-        "ja": "同時にリクエストできるのは 1 人 {limit} 曲まで。自分の曲が終わるまでお待ちください",
+        "en": "Each person can queue at most {limit} songs, please wait until your songs finish",
+        "ja": "1 人 {limit} 曲まで同時にリクエストできます。自分の曲が終わるまでお待ちください",
         "ko": "1인당 최대 {limit}곡까지 신청할 수 있습니다. 자신의 노래가 끝난 후 신청해 주세요",
     },
     "ws.music_duplicate_entry": {
