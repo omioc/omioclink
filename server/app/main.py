@@ -27,6 +27,7 @@ from app.api.admin import serve_admin_logo, serve_admin_page
 from app.api.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.errors import ApiError
+from app.core.i18n import LocaleMiddleware, parse_accept_language, t
 from app.core.ratelimit import LoginLimits
 from app.db.base import Database
 from app.services.avatars import AvatarStore
@@ -131,6 +132,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # 语言协商放在 CORS 之后加（Starlette 里越晚加的越靠外层）：连跨域的预检、
+    # 静态页这些不经过路由的响应也要带上 Content-Language
+    app.add_middleware(LocaleMiddleware)
 
     _install_error_handlers(app)
     app.include_router(api_router, prefix=resolved.api_prefix)
@@ -185,7 +189,8 @@ def _install_error_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         first = exc.errors()[0] if exc.errors() else {}
         location = ".".join(str(part) for part in first.get("loc", ()) if part != "body")
-        message = first.get("msg", "参数校验失败")
+        # msg 来自 pydantic（内置英文或 schema 校验器里的译文），只有完全缺失时才用兜底文案
+        message = first.get("msg") or t("error.validation_failed")
         return JSONResponse(
             status_code=422,
             content={
@@ -208,11 +213,15 @@ def _install_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(Exception)
-    async def _handle_unexpected(_request: Request, exc: Exception) -> JSONResponse:
+    async def _handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("未处理的异常", exc_info=exc)
+        # 这个兜底处理器挂在 ServerErrorMiddleware（比 LocaleMiddleware 还外层），
+        # 中间件已经 reset 过上下文变量了，所以这里自己重新协商一次语言
+        locale = parse_accept_language(request.headers.get("accept-language"))
         return JSONResponse(
             status_code=500,
-            content={"code": "internal_error", "message": "服务器内部错误"},
+            content={"code": "internal_error", "message": t("error.internal", locale=locale)},
+            headers={"Content-Language": locale},
         )
 
 

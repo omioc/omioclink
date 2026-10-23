@@ -20,6 +20,7 @@ from app.core.errors import (
     UnauthorizedError,
     ValidationError,
 )
+from app.core.i18n import t
 from app.core.ratelimit import client_ip
 from app.core.security import (
     create_access_token,
@@ -70,9 +71,9 @@ async def register(
 ) -> TokenResponse:
     # 先判开关再查重名：关闭注册时不泄露「某个用户名是否已存在」
     if not settings.allow_registration:
-        raise ForbiddenError("本服务器未开放注册", code="registration_disabled")
+        raise ForbiddenError(t("auth.registration_disabled"), code="registration_disabled")
     if await accounts.get_user_by_username(session, payload.username) is not None:
-        raise ConflictError("用户名已被占用", code="username_taken")
+        raise ConflictError(t("auth.username_taken"), code="username_taken")
     user = await accounts.create_user(
         session,
         username=payload.username,
@@ -100,7 +101,7 @@ async def login(
     wait = limits.login_ip.hit(ip)
     if wait > 0:
         raise TooManyRequestsError(
-            f"登录请求过于频繁，请 {round(wait)} 秒后再试",
+            t("auth.login_ip_limited", seconds=round(wait)),
             code="login_rate_limited",
             retry_after=wait,
         )
@@ -108,7 +109,7 @@ async def login(
     wait = limits.account.retry_after(account_key)
     if wait > 0:
         raise TooManyRequestsError(
-            f"该账号输错次数过多，请 {round(wait)} 秒后再试",
+            t("auth.login_backoff", seconds=round(wait)),
             code="login_backoff",
             retry_after=wait,
         )
@@ -126,9 +127,9 @@ async def login(
         # 失败记录必须在抛 401 之前落盘：请求结束时会话依赖会回滚，
         # 不先 commit 这条审计记录就白记了（见 app.services.logins）。
         await session.commit()
-        raise UnauthorizedError("用户名或密码错误", code="bad_credentials")
+        raise UnauthorizedError(t("auth.bad_credentials"), code="bad_credentials")
     if user.disabled:
-        raise ForbiddenError("账号已被管理员禁用", code="account_disabled")
+        raise ForbiddenError(t("auth.account_disabled"), code="account_disabled")
     limits.account.clear(account_key)
     await logins.record_login(
         session,
@@ -175,10 +176,10 @@ async def upload_avatar(
     data = await file.read(settings.avatar_max_bytes + 1)
     await file.close()
     if not data:
-        raise ValidationError("上传内容为空", code="empty_avatar")
+        raise ValidationError(t("auth.empty_avatar"), code="empty_avatar")
     if len(data) > settings.avatar_max_bytes:
         raise PayloadTooLargeError(
-            f"头像不能超过 {settings.avatar_max_bytes // 1024} KB",
+            t("auth.avatar_too_large", kilobytes=settings.avatar_max_bytes // 1024),
             code="avatar_too_large",
         )
     try:
@@ -186,7 +187,7 @@ async def upload_avatar(
     except UnsupportedImageError as exc:
         # 不信任 Content-Type 与文件名后缀，只认文件头
         raise ValidationError(
-            "只支持 PNG / JPEG / WebP / GIF 图片", code="unsupported_image"
+            t("auth.unsupported_image"), code="unsupported_image"
         ) from exc
 
     user.avatar = version
@@ -222,12 +223,14 @@ async def change_password(
     # 用 403 而不是 401：401 会被客户端当作「登录态失效」而触发退出登录，
     # 但这里只是表单里的当前密码填错了，账号本身完全有效。
     if not verify_password(payload.current_password, user.password_hash):
-        raise ForbiddenError("当前密码不正确", code="bad_current_password")
+        raise ForbiddenError(t("auth.bad_current_password"), code="bad_current_password")
     if payload.new_password == payload.current_password:
-        raise ValidationError("新密码不能与当前密码相同", code="password_unchanged")
+        raise ValidationError(t("auth.password_unchanged"), code="password_unchanged")
     minimum = settings.password_min_length
     if len(payload.new_password) < minimum:
-        raise ValidationError(f"新密码至少 {minimum} 位", code="weak_password")
+        raise ValidationError(
+            t("auth.new_password_too_short", minimum=minimum), code="weak_password"
+        )
     await accounts.change_password(session, user, payload.new_password)
     # 口令变了 → 此前签发的令牌全部失效；这台设备顺手换一张新令牌，不必重新登录
     return _issue_token(user, settings)

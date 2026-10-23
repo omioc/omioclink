@@ -10,6 +10,7 @@ from typing import Any, cast
 from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.i18n import t
 from app.db.models import Friendship, FriendshipStatus, User
 
 __all__ = [
@@ -71,7 +72,7 @@ async def send_request(
 ) -> Friendship:
     """发起好友申请；若对方已向我发起，则直接互加。"""
     if requester.id == target.id:
-        raise ValueError("不能添加自己为好友")
+        raise ValueError(t("friends.cannot_add_self"))
 
     existing = await _find(session, requester.id, target.id)
     if existing is not None and existing.status == FriendshipStatus.ACCEPTED:

@@ -12,6 +12,7 @@ from fastapi import APIRouter, Query, Response, status
 from app.api.deps import CurrentUser, HubDep, OptionalUser, SessionDep, SettingsDep
 from app.api.serializers import room_response
 from app.core.errors import ForbiddenError, NotFoundError, UnauthorizedError
+from app.core.i18n import t
 from app.db.models import Room, User
 from app.schemas import (
     MemberListResponse,
@@ -48,7 +49,7 @@ def _to_response(
 async def _get_room_or_404(session: SessionDep, room_id: str) -> Room:
     room = await room_service.get_room(session, room_id)
     if room is None:
-        raise NotFoundError("房间不存在", code="room_not_found")
+        raise NotFoundError(t("room.not_found"), code="room_not_found")
     return room
 
 
@@ -127,7 +128,7 @@ async def update_room(
 ) -> RoomResponse:
     room = await _get_room_or_404(session, room_id)
     if room.owner_id != user.id:
-        raise ForbiddenError("只有房主可以修改房间")
+        raise ForbiddenError(t("room.owner_only_update"))
     room = await room_service.update_room(
         session,
         room,
@@ -155,7 +156,7 @@ async def delete_room(
 ) -> Response:
     room = await _get_room_or_404(session, room_id)
     if room.owner_id != user.id:
-        raise ForbiddenError("只有房主可以解散房间")
+        raise ForbiddenError(t("room.owner_only_delete"))
     await hub.close_room(room_id, reason="closed")
     await room_service.delete_room(session, room)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

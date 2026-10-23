@@ -8,6 +8,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.config import Settings
+from app.core.i18n import t
 from app.core.security import BCRYPT_MAX_BYTES
 from app.signaling.protocol import MemberInfo
 
@@ -55,9 +56,9 @@ class _Camel(BaseModel):
 def _validate_password(value: str, settings: Settings | None = None) -> str:
     minimum = settings.password_min_length if settings else 8
     if len(value) < minimum:
-        raise ValueError(f"密码至少 {minimum} 位")
+        raise ValueError(t("password.too_short", minimum=minimum))
     if len(value.encode("utf-8")) > BCRYPT_MAX_BYTES:
-        raise ValueError("密码过长")
+        raise ValueError(t("password.too_long"))
     return value
 
 
@@ -74,7 +75,7 @@ class RegisterRequest(_Camel):
     @classmethod
     def _check_username(cls, value: str) -> str:
         if not re.fullmatch(r"[A-Za-z0-9_\-]{3,32}", value):
-            raise ValueError("用户名只能包含字母、数字、下划线与连字符，长度 3~32")
+            raise ValueError(t("username.charset"))
         return value
 
 

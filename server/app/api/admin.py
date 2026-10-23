@@ -44,6 +44,7 @@ from app.core.errors import (
     UnauthorizedError,
     ValidationError,
 )
+from app.core.i18n import t
 from app.core.ratelimit import client_ip
 from app.core.security import (
     ADMIN_SCOPE,
@@ -122,7 +123,7 @@ async def require_admin(
     legacy = (x_admin_token or "").strip()
     if not legacy:
         # 没带令牌或令牌过期：前端据此弹「密码登录」框
-        raise UnauthorizedError("请先登录管理台", code="admin_session_invalid")
+        raise UnauthorizedError(t("admin.session_invalid"), code="admin_session_invalid")
 
     expected = settings.legacy_admin_token
     # 按字节比：头里的值可能是任意字节，非 ASCII 的 str 直接喂给 compare_digest 会抛 TypeError
@@ -130,11 +131,11 @@ async def require_admin(
         legacy.encode("utf-8", "surrogateescape"), expected.encode("utf-8")
     )
     if not matched:
-        raise UnauthorizedError("管理令牌不正确", code="bad_admin_token")
+        raise UnauthorizedError(t("admin.bad_token"), code="bad_admin_token")
     if await admin_account.has_admin(session):
         # 迁移已经完成：旧钥匙立刻作废（只作过渡用，不长期养两套凭证）
         raise UnauthorizedError(
-            "旧的管理令牌已停用，请用管理员密码登录", code="admin_token_retired"
+            t("admin.token_retired"), code="admin_token_retired"
         )
 
 
@@ -159,7 +160,7 @@ async def require_same_origin_browser(request: Request) -> None:
     if site is not None:
         if site.strip().lower() in _BROWSER_CROSS_SITES:
             raise ForbiddenError(
-                "不允许从其他网站调用管理接口，请打开 /admin 操作",
+                t("admin.cross_origin_blocked"),
                 code="cross_origin_blocked",
             )
         return
@@ -169,7 +170,7 @@ async def require_same_origin_browser(request: Request) -> None:
     host = (request.headers.get("host") or "").strip().lower()
     if not host or urlsplit(origin).netloc.lower() != host:
         raise ForbiddenError(
-            "不允许从其他网站调用管理接口，请打开 /admin 操作", code="cross_origin_blocked"
+            t("admin.cross_origin_blocked"), code="cross_origin_blocked"
         )
 
 
@@ -195,10 +196,10 @@ def _issue_admin_token(admin: AdminAccount, settings: Settings) -> AdminLoginRes
 def _check_password_strength(password: str, settings: Settings) -> None:
     minimum = settings.password_min_length
     if len(password) < minimum:
-        raise ValidationError(f"密码至少 {minimum} 位", code="weak_password")
+        raise ValidationError(t("password.too_short", minimum=minimum), code="weak_password")
     # bcrypt 只处理前 72 字节：宁可明确报错，也不静默截断（见 BCRYPT_MAX_BYTES）
     if len(password.encode("utf-8")) > BCRYPT_MAX_BYTES:
-        raise ValidationError("密码过长（最多 72 字节）", code="password_too_long")
+        raise ValidationError(t("password.too_long_bcrypt"), code="password_too_long")
 
 
 @router.get(
@@ -234,14 +235,14 @@ async def setup_admin(
     _: SameOriginDep,
 ) -> AdminLoginResponse:
     if await admin_account.has_admin(session):
-        raise ConflictError("管理员密码已经设置过了，请直接登录", code="admin_already_initialized")
+        raise ConflictError(t("admin.already_initialized"), code="admin_already_initialized")
     _check_password_strength(payload.password, settings)
     try:
         admin = await admin_account.set_password(session, payload.password)
     except IntegrityError as exc:
         # 两个人同时点「设置」：主键冲突的那一方落到这里，结果是一致的
         raise ConflictError(
-            "管理员密码已经设置过了，请直接登录", code="admin_already_initialized"
+            t("admin.already_initialized"), code="admin_already_initialized"
         ) from exc
     logger.warning("管理台管理员密码已设置（哈希存进 admin_account 表）")
     if settings.legacy_admin_token is not None:
@@ -259,14 +260,14 @@ async def login(
     _: SameOriginDep,
 ) -> AdminLoginResponse:
     if not await admin_account.has_admin(session):
-        raise ConflictError("还没有设置管理员密码，请先设置", code="admin_not_initialized")
+        raise ConflictError(t("admin.not_initialized"), code="admin_not_initialized")
     ip = client_ip(request)
     # 管理台只有一个账号，没有「换个用户名再试」的空间，所以按来源 IP 锁定：
     # 连续错 5 次 → 5 分钟内连正确的密码也不放行（否则猜对那一次等于没锁）。
     wait = limits.admin.locked_for(ip)
     if wait > 0:
         raise TooManyRequestsError(
-            f"密码错误次数过多，请 {round(wait)} 秒后再试",
+            t("admin.locked", seconds=round(wait)),
             code="admin_locked",
             retry_after=wait,
         )
@@ -285,11 +286,11 @@ async def login(
         await session.commit()
         if wait > 0:
             raise TooManyRequestsError(
-                f"密码错误次数过多，请 {round(wait)} 秒后再试",
+                t("admin.locked", seconds=round(wait)),
                 code="admin_locked",
                 retry_after=wait,
             )
-        raise UnauthorizedError("管理员密码不正确", code="bad_admin_password")
+        raise UnauthorizedError(t("admin.bad_password"), code="bad_admin_password")
     limits.admin.clear(ip)
     await logins.record_login(
         session,
@@ -315,13 +316,13 @@ async def change_password(
 ) -> AdminLoginResponse:
     admin = await admin_account.get_admin(session)
     if admin is None:  # pragma: no cover - require_admin 已经确认管理员存在
-        raise UnauthorizedError("请先设置管理员密码", code="admin_not_initialized")
+        raise UnauthorizedError(t("admin.set_password_first"), code="admin_not_initialized")
     # 用 403 而不是 401：401 会被前端当作「登录态失效」直接弹回登录框，
     # 而这里只是表单里的当前密码填错了
     if not verify_password(payload.current_password, admin.password_hash):
-        raise ForbiddenError("当前密码不正确", code="bad_current_password")
+        raise ForbiddenError(t("auth.bad_current_password"), code="bad_current_password")
     if payload.new_password == payload.current_password:
-        raise ValidationError("新密码不能与当前密码相同", code="password_unchanged")
+        raise ValidationError(t("auth.password_unchanged"), code="password_unchanged")
     _check_password_strength(payload.new_password, settings)
     admin = await admin_account.set_password(session, payload.new_password)
     logger.warning("管理台管理员密码已修改：此前签发的管理台令牌全部失效")
@@ -409,11 +410,11 @@ async def kick_member(
 ) -> AdminActionResult:
     peer = hub.state.get_peer(payload.peer_id)
     if peer is None:
-        raise NotFoundError("该会话已离线", code="peer_not_found")
+        raise NotFoundError(t("admin.peer_offline"), code="peer_not_found")
     if peer.room_id != room_id:
-        raise ValidationError("该会话不在指定房间内")
+        raise ValidationError(t("admin.peer_not_in_room"))
     await hub.kick_peer(payload.peer_id, reason="kicked_by_admin")
-    return AdminActionResult(detail=f"已移出 {payload.peer_id}")
+    return AdminActionResult(detail=t("admin.peer_kicked", peer_id=payload.peer_id))
 
 
 @router.delete(
@@ -426,7 +427,7 @@ async def delete_room(
 ) -> Response:
     room = await room_service.get_room(session, room_id)
     if room is None:
-        raise NotFoundError("房间不存在", code="room_not_found")
+        raise NotFoundError(t("room.not_found"), code="room_not_found")
     await hub.close_room(room_id, reason="closed_by_admin")
     await room_service.delete_room(session, room)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -488,7 +489,7 @@ async def update_plugin_subscription(
 async def _get_user_or_404(session: AsyncSession, user_id: int) -> User:
     user = await accounts.get_user(session, user_id)
     if user is None:
-        raise NotFoundError("账号不存在", code="user_not_found")
+        raise NotFoundError(t("admin.user_not_found"), code="user_not_found")
     return user
 
 
@@ -544,7 +545,7 @@ async def create_user(
     payload: RegisterRequest, session: SessionDep, hub: HubDep, _: AdminDep
 ) -> AdminUserResponse:
     if await accounts.get_user_by_username(session, payload.username) is not None:
-        raise ConflictError("用户名已被占用", code="username_taken")
+        raise ConflictError(t("auth.username_taken"), code="username_taken")
     user = await accounts.create_user(
         session,
         username=payload.username,
@@ -558,14 +559,14 @@ async def create_user(
 async def serve_admin_page() -> HTMLResponse:
     """管理页本体（静态 HTML，不含任何密钥；密钥由页面交互时填）。"""
     if not ADMIN_PAGE_PATH.exists():  # pragma: no cover - 镜像里必然存在
-        raise NotFoundError("管理页文件缺失", code="admin_page_missing")
+        raise NotFoundError(t("admin.page_missing"), code="admin_page_missing")
     return HTMLResponse(ADMIN_PAGE_PATH.read_text(encoding="utf-8"))
 
 
 async def serve_admin_logo() -> Response:
     """管理页的品牌图标（无需鉴权：它只是一张图片）。"""
     if not ADMIN_LOGO_PATH.exists():  # pragma: no cover - 镜像里必然存在
-        raise NotFoundError("品牌图标缺失", code="admin_logo_missing")
+        raise NotFoundError(t("admin.logo_missing"), code="admin_logo_missing")
     return Response(
         content=ADMIN_LOGO_PATH.read_bytes(),
         media_type="image/png",

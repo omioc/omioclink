@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, get_settings
 from app.core.errors import UnauthorizedError
+from app.core.i18n import t
 from app.core.ratelimit import LoginLimits
 from app.core.security import decode_access_token, password_fingerprint
 from app.db.models import User
@@ -94,24 +95,24 @@ async def resolve_token_user(session: AsyncSession, settings: Settings, token: s
         token, secret=settings.jwt_secret, algorithm=settings.jwt_algorithm
     )
     if payload is None:
-        raise UnauthorizedError("登录状态无效或已过期")
+        raise UnauthorizedError(t("auth.token_expired"))
     try:
         user_id = int(payload["sub"])
     except (KeyError, TypeError, ValueError) as exc:
-        raise UnauthorizedError("登录状态无效") from exc
+        raise UnauthorizedError(t("auth.token_invalid")) from exc
     user = await accounts.get_user(session, user_id)
     if user is None:
-        raise UnauthorizedError("账号不存在或已注销")
+        raise UnauthorizedError(t("auth.account_missing"))
     if user.disabled:
         # 被禁用的账号，已签发的令牌立即失效（客户端收到 401 后会退出登录）
-        raise UnauthorizedError("账号已被管理员禁用", code="account_disabled")
+        raise UnauthorizedError(t("auth.account_disabled"), code="account_disabled")
     expected = password_fingerprint(
         secret=settings.jwt_secret, password_hash=user.password_hash
     )
     if payload.get("pwf") != expected:
         # 口令改过（或令牌签发于本机制之前）：旧令牌一律失效。
         # 改密码的那台设备会拿到新令牌，其他设备下次请求即被登出。
-        raise UnauthorizedError("密码已修改，请重新登录", code="token_revoked")
+        raise UnauthorizedError(t("auth.password_changed"), code="token_revoked")
     return user
 
 

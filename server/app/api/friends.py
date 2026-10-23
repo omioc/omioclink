@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, HubDep, SessionDep
 from app.api.serializers import user_profile
 from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.core.i18n import t
 from app.db.models import Friendship, User
 from app.schemas import (
     FriendListResponse,
@@ -87,15 +88,15 @@ async def create_request(
 ) -> FriendRequestResponse:
     target = await accounts.get_user_by_username(session, payload.username)
     if target is None:
-        raise NotFoundError("用户不存在", code="user_not_found")
+        raise NotFoundError(t("friends.user_not_found"), code="user_not_found")
     try:
         request = await friend_service.send_request(session, requester=user, target=target)
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     except friend_service.AlreadyFriendsError as exc:
-        raise ConflictError("你们已经是好友", code="already_friends") from exc
+        raise ConflictError(t("friends.already_friends"), code="already_friends") from exc
     except friend_service.DuplicateRequestError as exc:
-        raise ConflictError("已发送过申请，等待对方处理", code="duplicate_request") from exc
+        raise ConflictError(t("friends.duplicate_request"), code="duplicate_request") from exc
     return _request_response(request, target, viewer_id=user.id, hub=hub)
 
 
@@ -117,10 +118,10 @@ async def respond_request(
     if result is None:
         if not payload.accept:
             return None
-        raise NotFoundError("申请不存在或已处理", code="request_not_found")
+        raise NotFoundError(t("friends.request_not_found"), code="request_not_found")
     other = await accounts.get_user(session, result.friend_id)
     if other is None:  # pragma: no cover - 申请双方必然存在
-        raise NotFoundError("用户不存在", code="user_not_found")
+        raise NotFoundError(t("friends.user_not_found"), code="user_not_found")
     return _request_response(result, other, viewer_id=user.id, hub=hub)
 
 
@@ -133,7 +134,7 @@ async def cancel_request(
     request_id: int, user: CurrentUser, session: SessionDep
 ) -> Response:
     if not await friend_service.cancel_request(session, user_id=user.id, request_id=request_id):
-        raise NotFoundError("申请不存在或已处理", code="request_not_found")
+        raise NotFoundError(t("friends.request_not_found"), code="request_not_found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -145,7 +146,7 @@ async def cancel_request(
 async def remove_friend(username: str, user: CurrentUser, session: SessionDep) -> Response:
     target = await accounts.get_user_by_username(session, username)
     if target is None:
-        raise NotFoundError("用户不存在", code="user_not_found")
+        raise NotFoundError(t("friends.user_not_found"), code="user_not_found")
     if not await friend_service.remove_friend(session, user_id=user.id, friend_id=target.id):
-        raise NotFoundError("你们还不是好友", code="not_friends")
+        raise NotFoundError(t("friends.not_friends"), code="not_friends")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

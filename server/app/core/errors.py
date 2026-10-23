@@ -1,11 +1,15 @@
 """统一的业务异常。
 
 响应体统一为 ``{"code": "...", "message": "...", ...}``，便于客户端按 code 分支处理。
+``message`` 是给人看的，默认文案走 ``app.core.i18n`` 的多语言表：异常类里不再写字面量，
+省得同一条中文在文案表和异常类两处各维护一遍。
 """
 
 from typing import Any
 
 from fastapi import HTTPException, status
+
+from app.core.i18n import t
 
 __all__ = [
     "ApiError",
@@ -38,34 +42,38 @@ class ApiError(HTTPException):
 
 
 class UnauthorizedError(ApiError):
-    def __init__(self, message: str = "未登录或登录状态已过期", code: str = "unauthorized") -> None:
-        super().__init__(status.HTTP_401_UNAUTHORIZED, code, message)
+    def __init__(self, message: str | None = None, code: str = "unauthorized") -> None:
+        super().__init__(status.HTTP_401_UNAUTHORIZED, code, message or t("error.unauthorized"))
 
 
 class ForbiddenError(ApiError):
-    def __init__(self, message: str = "没有权限执行该操作", code: str = "forbidden") -> None:
-        super().__init__(status.HTTP_403_FORBIDDEN, code, message)
+    def __init__(self, message: str | None = None, code: str = "forbidden") -> None:
+        super().__init__(status.HTTP_403_FORBIDDEN, code, message or t("error.forbidden"))
 
 
 class NotFoundError(ApiError):
-    def __init__(self, message: str = "资源不存在", code: str = "not_found") -> None:
-        super().__init__(status.HTTP_404_NOT_FOUND, code, message)
+    def __init__(self, message: str | None = None, code: str = "not_found") -> None:
+        super().__init__(status.HTTP_404_NOT_FOUND, code, message or t("error.not_found"))
 
 
 class ConflictError(ApiError):
-    def __init__(self, message: str = "资源冲突", code: str = "conflict") -> None:
-        super().__init__(status.HTTP_409_CONFLICT, code, message)
+    def __init__(self, message: str | None = None, code: str = "conflict") -> None:
+        super().__init__(status.HTTP_409_CONFLICT, code, message or t("error.conflict"))
 
 
 class PayloadTooLargeError(ApiError):
-    def __init__(self, message: str = "内容过大", code: str = "payload_too_large") -> None:
-        super().__init__(status.HTTP_413_CONTENT_TOO_LARGE, code, message)
+    def __init__(self, message: str | None = None, code: str = "payload_too_large") -> None:
+        super().__init__(
+            status.HTTP_413_CONTENT_TOO_LARGE, code, message or t("error.payload_too_large")
+        )
 
 
 class ValidationError(ApiError):
-    def __init__(self, message: str = "参数不合法", code: str = "invalid_request") -> None:
+    def __init__(self, message: str | None = None, code: str = "invalid_request") -> None:
         # 注意：Starlette 已弃用 HTTP_422_UNPROCESSABLE_ENTITY，用新名字避免弃用告警
-        super().__init__(status.HTTP_422_UNPROCESSABLE_CONTENT, code, message)
+        super().__init__(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, code, message or t("error.invalid_request")
+        )
 
 
 class TooManyRequestsError(ApiError):
@@ -76,7 +84,7 @@ class TooManyRequestsError(ApiError):
 
     def __init__(
         self,
-        message: str = "请求过于频繁，请稍后再试",
+        message: str | None = None,
         *,
         code: str = "too_many_requests",
         retry_after: float = 0.0,
@@ -86,6 +94,6 @@ class TooManyRequestsError(ApiError):
         super().__init__(
             status.HTTP_429_TOO_MANY_REQUESTS,
             code,
-            message,
+            message or t("error.too_many_requests"),
             extra={"retryAfter": seconds} if seconds else None,
         )

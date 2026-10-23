@@ -20,6 +20,7 @@ from typing import Final
 from urllib.parse import urlsplit
 
 from app.core.errors import ValidationError
+from app.core.i18n import t
 
 __all__ = [
     "MAX_SUBSCRIPTIONS",
@@ -54,26 +55,36 @@ def subscription_hash(urls: list[str]) -> str:
 
 def _normalize(raw: object, index: int) -> str:
     """校验单条 URL，返回去空白后的值；不合法时抛 :class:`ValidationError`。"""
-    position = f"第 {index + 1} 条订阅地址"
+    position = t("plugin.position", index=index + 1)
     if not isinstance(raw, str):
-        raise ValidationError(f"{position}必须是字符串", code="plugin_subscription_invalid")
+        raise ValidationError(
+            t("plugin.position_not_string", position=position),
+            code="plugin_subscription_invalid",
+        )
     url = raw.strip()
     if not url:
-        raise ValidationError(f"{position}为空", code="plugin_subscription_invalid")
+        raise ValidationError(
+            t("plugin.position_empty", position=position), code="plugin_subscription_invalid"
+        )
     if len(url) > MAX_URL_LENGTH:
         raise ValidationError(
-            f"{position}过长（{len(url)} 字符，最多 {MAX_URL_LENGTH}）",
+            t(
+                "plugin.position_too_long",
+                position=position,
+                length=len(url),
+                maximum=MAX_URL_LENGTH,
+            ),
             code="plugin_subscription_invalid",
         )
     parts = urlsplit(url)
     if parts.scheme not in {"http", "https"} or not parts.netloc:
         raise ValidationError(
-            f"{position}不是 http:// 或 https:// 开头的绝对地址：{url}",
+            t("plugin.position_not_absolute", position=position, url=url),
             code="plugin_subscription_invalid",
         )
     if not parts.path.lower().endswith(_ALLOWED_SUFFIXES):
         raise ValidationError(
-            f"{position}必须以 .js 或 .json 结尾（插件订阅地址）：{url}",
+            t("plugin.position_bad_suffix", position=position, url=url),
             code="plugin_subscription_invalid",
         )
     return url
@@ -87,7 +98,7 @@ def _clean(urls: list[str]) -> list[str]:
     cleaned = list(seen)
     if len(cleaned) > MAX_SUBSCRIPTIONS:
         raise ValidationError(
-            f"最多只能保存 {MAX_SUBSCRIPTIONS} 条订阅地址（当前 {len(cleaned)} 条）",
+            t("plugin.too_many", maximum=MAX_SUBSCRIPTIONS, count=len(cleaned)),
             code="plugin_subscription_invalid",
         )
     return cleaned

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query, Response
 
 from app.api.deps import AvatarStoreDep, CurrentUser
 from app.core.errors import NotFoundError
+from app.core.i18n import t
 
 router = APIRouter(prefix="/avatars", tags=["头像"])
 
@@ -30,7 +31,7 @@ async def get_avatar(
     """
     image = store.load(user_id, v)
     if image is None:
-        raise NotFoundError("头像不存在", code="avatar_not_found")
+        raise NotFoundError(t("avatar.not_found"), code="avatar_not_found")
     return Response(
         content=image.data,
         media_type=image.content_type,
