@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import '../core/app_locales.dart';
 import '../core/app_log.dart';
 import '../signaling/protocol.dart';
 import 'models.dart';
@@ -58,6 +59,8 @@ class ApiClient {
   }) async {
     final request = http.Request(method, _uri(path, query));
     request.headers['Accept'] = 'application/json';
+    // 带语言：服务端的错误文案按这个头选，缺了就是中文
+    request.headers['Accept-Language'] = AppLocales.activeLanguageCode;
     if (body != null) {
       request.headers['Content-Type'] = 'application/json; charset=utf-8';
       request.body = jsonEncode(body);
@@ -74,6 +77,7 @@ class ApiClient {
   }) async {
     final request = http.Request(method, _uri(path, query));
     request.headers['Accept'] = 'image/*';
+    request.headers['Accept-Language'] = AppLocales.activeLanguageCode;
     _authorize(request);
     final response = await _perform(request);
     _ensureSuccess(response);

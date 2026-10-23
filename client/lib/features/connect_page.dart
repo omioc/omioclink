@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../app_state.dart';
 import '../core/app_theme.dart';
+import '../core/l10n_ext.dart';
 import '../data/models.dart';
 import '../widgets/common.dart';
 
@@ -97,6 +98,7 @@ class _ConnectPageState extends State<ConnectPage> {
     final connected = state.isConnectedToServer;
     final info = state.serverInfo;
     final allowRegistration = info?.allowRegistration ?? false;
+    final l10n = context.l10n;
 
     return Scaffold(
       backgroundColor: context.palette.background,
@@ -117,7 +119,7 @@ class _ConnectPageState extends State<ConnectPage> {
                     BrandMark(size: 26),
                     SizedBox(width: 10),
                     Text(
-                      '去中心化语音与屏幕共享',
+                      l10n.connectTagline,
                       style: TextStyle(
                         color: context.palette.textMuted,
                         fontSize: 11.5,
@@ -132,7 +134,7 @@ class _ConnectPageState extends State<ConnectPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SectionLabel(text: '服务器'),
+                      SectionLabel(text: l10n.connectServerSection),
                       const SizedBox(height: AppSpacing.md),
                       TextField(
                         textAlignVertical: TextAlignVertical.center,
@@ -140,7 +142,7 @@ class _ConnectPageState extends State<ConnectPage> {
                         enabled: !state.busy,
                         onSubmitted: (_) => _connect(),
                         decoration: InputDecoration(
-                          hintText: 'host:port，例如 192.168.1.10:21077',
+                          hintText: l10n.connectAddressHint,
                           prefixIcon: const Icon(Icons.dns_rounded, size: 16),
                           suffixIcon: connected
                               ? Icon(
@@ -154,7 +156,9 @@ class _ConnectPageState extends State<ConnectPage> {
                       const SizedBox(height: AppSpacing.md),
                       FilledButton(
                         onPressed: state.busy ? null : _connect,
-                        child: Text(connected ? '重新连接' : '连接服务器'),
+                        child: Text(
+                          connected ? l10n.connectReconnect : l10n.connectConnect,
+                        ),
                       ),
                       if (info != null) ...[
                         const SizedBox(height: AppSpacing.md),
@@ -176,15 +180,15 @@ class _ConnectPageState extends State<ConnectPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const SectionLabel(text: '账号'),
+                          SectionLabel(text: l10n.connectAccountSection),
                           const SizedBox(height: AppSpacing.md),
                           TextField(
                             textAlignVertical: TextAlignVertical.center,
                             controller: _usernameController,
                             enabled: connected && !state.busy,
                             textInputAction: TextInputAction.next,
-                            decoration: const InputDecoration(
-                              hintText: '用户名（3~32 位字母数字）',
+                            decoration: InputDecoration(
+                              hintText: l10n.connectUsernameHint,
                               prefixIcon: Icon(
                                 Icons.person_outline_rounded,
                                 size: 16,
@@ -199,7 +203,7 @@ class _ConnectPageState extends State<ConnectPage> {
                             obscureText: _obscure,
                             onSubmitted: (_) => _submit(register: false),
                             decoration: InputDecoration(
-                              hintText: '密码（至少 8 位）',
+                              hintText: l10n.connectPasswordHint,
                               prefixIcon: const Icon(
                                 Icons.lock_outline_rounded,
                                 size: 16,
@@ -224,7 +228,7 @@ class _ConnectPageState extends State<ConnectPage> {
                                   onPressed: connected && !state.busy
                                       ? () => _submit(register: false)
                                       : null,
-                                  child: const Text('登录'),
+                                  child: Text(l10n.connectLogin),
                                 ),
                               ),
                               // 注册入口只在服务器开放自注册时出现
@@ -235,7 +239,7 @@ class _ConnectPageState extends State<ConnectPage> {
                                     onPressed: connected && !state.busy
                                         ? () => _submit(register: true)
                                         : null,
-                                    child: const Text('注册'),
+                                    child: Text(l10n.connectRegister),
                                   ),
                                 ),
                               ],
@@ -244,8 +248,8 @@ class _ConnectPageState extends State<ConnectPage> {
                           const SizedBox(height: AppSpacing.sm),
                           Text(
                             allowRegistration
-                                ? '本服务器开放注册：填一个新用户名即可创建账号'
-                                : '本服务器未开放注册，请使用已有账号登录',
+                                ? l10n.connectOpenRegistration
+                                : l10n.connectClosedRegistration,
                             style: TextStyle(
                               color: context.palette.textMuted,
                               fontSize: 11,
@@ -289,6 +293,7 @@ class _ServerFacts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       padding: const EdgeInsets.only(top: 10),
       decoration: BoxDecoration(
@@ -296,18 +301,24 @@ class _ServerFacts extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _fact(context, '地址', address),
-          _fact(context, '名称', info.name),
-          _fact(context, '版本', 'v${info.version} · 协议 v${info.protocolVersion}'),
+          _fact(context, l10n.connectFactAddress, address),
+          _fact(context, l10n.connectFactName, info.name),
           _fact(
             context,
-            '房间容量',
-            '默认 ${info.roomCapacity} 人，最多 ${info.maxRoomCapacity} 人',
+            l10n.connectFactVersion,
+            l10n.connectProtocolLine(info.version, '${info.protocolVersion}'),
+          ),
+          _fact(
+            context,
+            l10n.connectRoomCapacity,
+            l10n.connectRoomCapacityValue(info.roomCapacity, info.maxRoomCapacity),
           ),
           _fact(
             context,
             'STUN',
-            info.iceServers.isEmpty ? '未下发（使用内置列表）' : info.iceServers.join('、'),
+            info.iceServers.isEmpty
+                ? l10n.connectIceNotProvided
+                : info.iceServers.join(l10n.connectListSeparator),
           ),
         ],
       ),

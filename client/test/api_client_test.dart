@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:omioclink_client/core/app_locales.dart';
 import 'package:omioclink_client/data/api_client.dart';
 import 'package:omioclink_client/data/models.dart';
 import 'package:omioclink_client/data/server_endpoint.dart';
@@ -430,5 +431,20 @@ void main() {
       expect(subscription.urls, isEmpty);
       expect(subscription.hash, isNull);
     });
+  });
+
+  test('请求带 Accept-Language：服务端才知道用哪种语言回错误文案', () async {
+    AppLocales.setActive('ja');
+    addTearDown(() => AppLocales.setActive('zh'));
+
+    String? sent;
+    final client = _clientReturning((request) {
+      sent =
+          request.headers['Accept-Language'] ??
+          request.headers['accept-language'];
+      return _json(const <Object>[]);
+    });
+    await client.listRooms();
+    expect(sent, 'ja');
   });
 }
