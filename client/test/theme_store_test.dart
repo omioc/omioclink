@@ -37,8 +37,8 @@ void main() {
     }
   });
 
-  String wallpaperFile() =>
-      '${dir.path}${Platform.pathSeparator}${ThemeStore.wallpaperFileName}';
+  String wallpaperAt(String name) =>
+      '${dir.path}${Platform.pathSeparator}$name';
 
   test('第一次启动：默认薄荷汽水、没有壁纸、表面是不透明的', () async {
     final store = ThemeStore(directoryBase: dir.path);
@@ -69,7 +69,7 @@ void main() {
     expect(store.pack.id, AppThemePacks.defaultPack.id);
   });
 
-  test('上传壁纸：落盘 + 表面半透明；移除时文件一起删掉', () async {
+  test('上传壁纸：落盘 + 表面半透明；换图换新文件名；移除时文件一起删掉', () async {
     final store = ThemeStore(directoryBase: dir.path);
     await store.load();
 
@@ -78,26 +78,29 @@ void main() {
     expect(store.wallpaperRevision, 1);
 
     expect(store.hasWallpaper, isTrue);
-    final file = File(wallpaperFile());
-    expect(file.existsSync(), isTrue);
-    expect(file.lengthSync(), 64);
+    final first = File(store.wallpaperPath!);
+    expect(first.existsSync(), isTrue);
+    expect(first.lengthSync(), 64);
     expect(store.palette.stage.a, 0, reason: '舞台要让出透明度，否则壁纸被盖住');
     expect(store.palette.panel.a, lessThan(1));
 
-    // 换同路径的另一张：计数必须再涨，界面才肯重读文件
+    // 换另一张必须落到新文件名：同名覆盖会命中图片缓存，界面继续画上一张
     expect(await store.applyWallpaper(Uint8List.fromList([1, 2, 3])), isNull);
     expect(store.wallpaperRevision, 2);
-    expect(file.lengthSync(), 3);
+    final second = File(store.wallpaperPath!);
+    expect(second.path, isNot(first.path), reason: '同名覆盖会命中图片缓存');
+    expect(second.lengthSync(), 3);
+    expect(first.existsSync(), isFalse, reason: '旧图要删掉，目录里只留当前那张');
 
     await store.clearWallpaper();
     expect(store.hasWallpaper, isFalse);
-    expect(file.existsSync(), isFalse);
+    expect(second.existsSync(), isFalse);
     expect(store.palette.stage.a, 1);
   });
 
   test('壁纸文件被删掉：启动时把记录也清掉', () async {
     SharedPreferences.setMockInitialValues({
-      'omioclink.theme.wallpaper': wallpaperFile(),
+      'omioclink.theme.wallpaper': wallpaperAt('wallpaper-7.png'),
     });
     final store = ThemeStore(directoryBase: dir.path);
     await store.load();
@@ -139,7 +142,7 @@ void main() {
   });
 
   test('目录里已有壁纸时直接沿用，不必重新上传', () async {
-    final file = File(wallpaperFile());
+    final file = File(wallpaperAt('wallpaper-42.png'));
     file.parent.createSync(recursive: true);
     file.writeAsBytesSync(List<int>.filled(8, 1));
     SharedPreferences.setMockInitialValues({
@@ -150,5 +153,21 @@ void main() {
     await store.load();
     expect(store.hasWallpaper, isTrue);
     expect(store.wallpaperPath, file.path);
+  });
+
+  test('启动时清掉遗留的旧壁纸文件（换图删除失败留下的）', () async {
+    final keep = File(wallpaperAt('wallpaper-2.png'))
+      ..writeAsBytesSync(List<int>.filled(8, 2));
+    final stale = File(wallpaperAt('wallpaper-1.png'))
+      ..writeAsBytesSync(List<int>.filled(8, 1));
+    SharedPreferences.setMockInitialValues({
+      'omioclink.theme.wallpaper': keep.path,
+    });
+
+    final store = ThemeStore(directoryBase: dir.path);
+    await store.load();
+    expect(store.wallpaperPath, keep.path);
+    expect(stale.existsSync(), isFalse, reason: '只保留当前那张');
+    expect(keep.existsSync(), isTrue);
   });
 }

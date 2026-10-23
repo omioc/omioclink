@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/painting.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/app_log.dart';
@@ -24,8 +23,12 @@ class ThemeStore extends ChangeNotifier {
   static const _packKey = 'omioclink.theme.pack';
   static const _wallpaperKey = 'omioclink.theme.wallpaper';
 
-  /// 壁纸文件名固定：换图就是覆盖同一张，脏文件不会越攒越多。
-  static const String wallpaperFileName = 'wallpaper.png';
+  /// 壁纸文件名前缀。**每次都写一个新文件名**（`wallpaper-<戳>.png`），不再同名覆盖：
+  /// * 图片缓存按 provider key（含路径）建键，同名覆盖后 `ResizeImage` / `FileImage`
+  ///   仍命中旧条目，界面表现为「换了壁纸没反应」；
+  /// * Windows 上正在解码的图片会占住文件，同名写入本身也可能失败。
+  /// 旧文件在切换成功后删掉，长住磁盘的只有当前一张。
+  static const String wallpaperFilePrefix = 'wallpaper';
 
   /// 壁纸长度上限（重编码后 2400px 的 PNG 通常 3~8MB，给到 32MB 足够宽裕）。
   static const int wallpaperMaxBytes = 32 * 1024 * 1024;
@@ -89,6 +92,8 @@ class ThemeStore extends ChangeNotifier {
       _wallpaperPath = null;
     } else if (File(path).existsSync()) {
       _wallpaperPath = path;
+      // 换图现在是「写新文件 + 删旧文件」：万一上次删除失败，这里顺手收掉
+      _pruneStale(path);
     } else {
       // 图没了（被删/被移动/换了机器）：记录一起清掉
       _wallpaperPath = null;
@@ -153,7 +158,13 @@ class ThemeStore extends ChangeNotifier {
     if (bytes.length > wallpaperMaxBytes) {
       return '图片太大了，换一张小一点的';
     }
-    final path = '$directory${Platform.pathSeparator}$wallpaperFileName';
+    // 每次换图都写一个新文件名：Flutter 的图片缓存按 provider key（含文件路径）
+    // 建键，同名覆盖会让背景继续画缓存里那张旧图 —— 「换了壁纸没反应」就是这么来的；
+    // 另外 Windows 上正在解码的文件会被占住，同名写入本身也可能失败。
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final path =
+        '$directory${Platform.pathSeparator}$wallpaperFilePrefix-$stamp.png';
+    final previous = _wallpaperPath;
     try {
       final file = File(path);
       await file.parent.create(recursive: true);
@@ -162,13 +173,10 @@ class ThemeStore extends ChangeNotifier {
       await prefs.setString(_wallpaperKey, path);
       _wallpaperPath = path;
       _wallpaperRevision++;
-      // 换图时 path 可能没变（同名覆盖），仍然要通知：界面上的 Image 需要重读文件
       notifyListeners();
-      try {
-        // 同名文件的旧图还在图片缓存里，不踢掉会一直显示上一张
-        await FileImage(File(path)).evict();
-      } on Object {
-        // 缓存没踢成只是可能看到上一张，不影响壁纸本身可用
+      // 新图落盘之后才删旧图：中途失败时至少还留着上一张能看
+      if (previous != null && previous != path) {
+        await _deleteQuietly(previous);
       }
       return null;
     } on Object catch (error) {
@@ -188,14 +196,43 @@ class ThemeStore extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_wallpaperKey);
+    await _deleteQuietly(path);
+  }
+
+  /// 删文件，失败只记日志：设置已经改过了，删不掉只是留个垃圾文件。
+  Future<void> _deleteQuietly(String path) async {
     try {
       final file = File(path);
       if (file.existsSync()) {
         file.deleteSync();
       }
     } on Object catch (error) {
-      // 删不掉也不算失败：设置已经清了，界面上不会再用到它
       AppLog.warn('壁纸文件删除失败', error: error);
+    }
+  }
+
+  /// 收掉壁纸目录里不属于当前那张的旧文件。
+  ///
+  /// 换图改成「写新文件 + 删旧文件」之后，只要有一次删除失败（文件正被解码器占用），
+  /// 旧图就会一直躺着；启动时顺手收一遍，别让目录越攒越多。
+  void _pruneStale(String keep) {
+    try {
+      final dir = Directory(directory);
+      if (!dir.existsSync()) {
+        return;
+      }
+      for (final entity in dir.listSync()) {
+        if (entity is! File || entity.path == keep) {
+          continue;
+        }
+        final segments = entity.uri.pathSegments;
+        final name = segments.isEmpty ? '' : segments.last;
+        if (name.startsWith('$wallpaperFilePrefix-')) {
+          entity.deleteSync();
+        }
+      }
+    } on Object catch (error) {
+      AppLog.warn('清理旧壁纸失败', error: error);
     }
   }
 }
