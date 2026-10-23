@@ -1,0 +1,11 @@
+# 多语言生成的配置（由 flutter gen-l10n 读取；pubspec 里 flutter.generate: true
+# 会让 pub get / build 时自动跑一遍，也满足 CI 里 `flutter analyze` 前的生成）。
+#
+# 中文是模板，也是缺省语言：模板文件里带 @-开头的占位符元数据，
+# 其余三份只写译文，少写一个 key 会在生成时报错而不是悄悄退回中文。
+arb-dir: lib/l10n
+template-arb-file: app_zh.arb
+output-localization-file: app_l10n.dart
+output-class: AppL10n
+output-dir: lib/l10n/generated
+nullable-getter: false

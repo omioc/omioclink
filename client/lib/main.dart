@@ -8,15 +8,18 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app_state.dart';
+import 'core/app_locales.dart';
 import 'core/app_log.dart';
 import 'core/app_paths.dart';
 import 'core/app_theme.dart';
 import 'core/log_file.dart';
 import 'core/platform.dart';
 
+import 'data/locale_store.dart';
 import 'data/theme_store.dart';
 import 'features/connect_page.dart';
 import 'features/home_shell.dart';
+import 'l10n/generated/app_l10n.dart';
 
 import 'signaling/signaling_client.dart';
 import 'widgets/common.dart';
@@ -139,23 +142,34 @@ class OmiocLinkApp extends StatelessWidget {
         // 主题放在最外层：MaterialApp 的 theme 直接由它算出来，
         // 换主题时下游控件靠 Theme 的变更通知自己重画
         ChangeNotifierProvider<ThemeStore>(create: (_) => ThemeStore()..load()),
+        // 语言同样是「MaterialApp 直接从它算」：换语言重建的也只是这一层，
+        // 界面里所有文案都从 AppL10n 取，跟着一起换
+        ChangeNotifierProvider<LocaleStore>(create: (_) => LocaleStore()..load()),
       ],
       child: const _App(),
     );
   }
 }
 
-/// 只负责「把主题翻译成 MaterialApp」：换主题重建的就是这一层。
+/// 只负责「把主题与语言翻译成 MaterialApp」：换主题 / 换语言重建的都是这一层。
 class _App extends StatelessWidget {
   const _App();
 
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeStore>();
+    final locale = context.watch<LocaleStore>();
     return MaterialApp(
       title: 'OmiocLink',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.data(theme.palette),
+      // 中 / 英 / 日 / 韩四套文案；locale 为 null（跟随系统）时才走
+      // localeListResolutionCallback —— 匹配不到系统语言就回落到中文
+      locale: locale.locale,
+      supportedLocales: AppLocales.supported,
+      localizationsDelegates: AppL10n.localizationsDelegates,
+      localeListResolutionCallback: (systemLocales, _) =>
+          AppLocales.resolve(systemLocales),
       home: const _Root(),
     );
   }

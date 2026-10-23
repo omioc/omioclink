@@ -3,9 +3,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_locales.dart';
 import '../core/app_theme.dart';
+import '../core/l10n_ext.dart';
 import '../core/platform.dart';
+import '../data/locale_store.dart';
 import '../data/theme_store.dart';
+import '../l10n/generated/app_l10n.dart';
 import '../widgets/common.dart';
 import 'pick_image.dart';
 
@@ -32,7 +36,7 @@ class _ThemePaneState extends State<ThemePane> {
     final messenger = ScaffoldMessenger.of(context);
     final path = await pickImagePath(
       context,
-      title: '选择壁纸图片',
+      title: context.l10n.pickWallpaperTitle,
       initialDirectory: _lastDir,
     );
     if (path == null || !mounted) {
@@ -69,10 +73,17 @@ class _ThemePaneState extends State<ThemePane> {
     await store.select(pack.id);
   }
 
+  Future<void> _selectLanguage(String code) async {
+    await context.read<LocaleStore>().select(code);
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = context.watch<ThemeStore>();
     final palette = context.palette;
+    final l10n = context.l10n;
+    // 命名成 localeStore 而不是 locale：下面选语言那段 for 里已有 locale 变量
+    final localeStore = context.watch<LocaleStore>();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -82,10 +93,10 @@ class _ThemePaneState extends State<ThemePane> {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
           child: Row(
             children: [
-              const Text('主题', style: AppText.pageTitle),
+              Text(l10n.themePaneTitle, style: AppText.pageTitle),
               const SizedBox(width: 10),
               Text(
-                '当前 · ${store.pack.name}',
+                l10n.themePaneCurrent(_packName(l10n, store.pack)),
                 style: TextStyle(
                   color: palette.textMuted,
                   fontSize: 11.5,
@@ -113,10 +124,10 @@ class _ThemePaneState extends State<ThemePane> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const SectionLabel(text: '配色'),
+                        SectionLabel(text: l10n.themeSectionColor),
                         const SizedBox(height: AppSpacing.sm),
                         Text(
-                          '整套界面的配色，点一张就换。深色那几套夜里用眼睛舒服。',
+                          l10n.themeSectionColorHint,
                           style: TextStyle(
                             color: palette.textMuted,
                             fontSize: 11.5,
@@ -146,7 +157,9 @@ class _ThemePaneState extends State<ThemePane> {
                       children: [
                         Row(
                           children: [
-                            const Expanded(child: SectionLabel(text: '壁纸')),
+                            Expanded(
+                              child: SectionLabel(text: l10n.themeSectionWallpaper),
+                            ),
                             OutlinedButton.icon(
                               onPressed: _busy ? null : _pickWallpaper,
                               icon: const Icon(
@@ -155,8 +168,10 @@ class _ThemePaneState extends State<ThemePane> {
                               ),
                               label: Text(
                                 _busy
-                                    ? '正在处理…'
-                                    : (store.hasWallpaper ? '换一张' : '选择图片'),
+                                    ? l10n.wallpaperBusy
+                                    : (store.hasWallpaper
+                                          ? l10n.wallpaperChange
+                                          : l10n.wallpaperPick),
                               ),
                               style: OutlinedButton.styleFrom(
                                 minimumSize: const Size(0, AppSizes.control),
@@ -168,7 +183,7 @@ class _ThemePaneState extends State<ThemePane> {
                               TextButton.icon(
                                 onPressed: _busy ? null : _clearWallpaper,
                                 icon: const Icon(Icons.close_rounded, size: 14),
-                                label: const Text('移除'),
+                                label: Text(context.l10n.wallpaperRemove),
                                 style: TextButton.styleFrom(
                                   minimumSize: const Size(0, AppSizes.control),
                                   foregroundColor: palette.textMuted,
@@ -182,14 +197,49 @@ class _ThemePaneState extends State<ThemePane> {
                         _WallpaperPreview(store: store),
                         const SizedBox(height: AppSpacing.sm),
                         Text(
-                          '点「选择图片」挑一张本机图片（png / jpg / webp）。'
-                          '壁纸会铺满整个应用窗口，卡片与侧栏自动变半透明让出画面；'
-                          '图片压到长边 2400px 后存在本机，只影响这台电脑。',
+                          context.l10n.wallpaperHint,
                           style: TextStyle(
                             color: palette.textMuted,
                             fontSize: 11,
                             height: 1.6,
                           ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  PanelCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SectionLabel(text: l10n.languageSection),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          l10n.languageSectionHint,
+                          style: TextStyle(
+                            color: palette.textMuted,
+                            fontSize: 11.5,
+                            height: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        Wrap(
+                          spacing: AppSpacing.sm,
+                          runSpacing: AppSpacing.sm,
+                          children: [
+                            for (final code in <String>[
+                              AppLocales.system,
+                              for (final supported in AppLocales.supported)
+                                supported.languageCode,
+                            ])
+                              _LanguageOption(
+                                label: code == AppLocales.system
+                                    ? l10n.languageSystem
+                                    : AppLocales.nativeName(code),
+                                selected: localeStore.selection == code,
+                                onTap: () => _selectLanguage(code),
+                              ),
+                          ],
                         ),
                       ],
                     ),
@@ -260,7 +310,7 @@ class _ThemeCardState extends State<_ThemeCard> {
                 children: [
                   Expanded(
                     child: Text(
-                      widget.pack.name,
+                      _packName(context.l10n, widget.pack),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -281,7 +331,7 @@ class _ThemeCardState extends State<_ThemeCard> {
               ),
               const SizedBox(height: 3),
               Text(
-                widget.pack.tagline,
+                _packTagline(context.l10n, widget.pack),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -447,7 +497,7 @@ class _WallpaperPreview extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    '还没有壁纸',
+                    context.l10n.wallpaperEmpty,
                     style: TextStyle(
                       color: palette.textMuted,
                       fontSize: 11.5,
@@ -458,6 +508,79 @@ class _WallpaperPreview extends StatelessWidget {
               ),
             )
           : null,
+    );
+  }
+}
+
+/// 主题包的名字与一句话说明走文案表。
+///
+/// `theme_packs.dart` 里那份中文留给日志和「拿不到本地化」的兜底，
+/// 界面上一律按 id 取当前语言的版本。
+String _packName(AppL10n l10n, AppThemePack pack) => switch (pack.id) {
+  'soda' => l10n.packSodaName,
+  'qingzhu' => l10n.packQingzhuName,
+  'cinnabar' => l10n.packCinnabarName,
+  'sky' => l10n.packSkyName,
+  'honey' => l10n.packHoneyName,
+  'night' => l10n.packNightName,
+  _ => pack.name,
+};
+
+String _packTagline(AppL10n l10n, AppThemePack pack) => switch (pack.id) {
+  'soda' => l10n.packSodaTagline,
+  'qingzhu' => l10n.packQingzhuTagline,
+  'cinnabar' => l10n.packCinnabarTagline,
+  'sky' => l10n.packSkyTagline,
+  'honey' => l10n.packHoneyTagline,
+  'night' => l10n.packNightTagline,
+  _ => pack.tagline,
+};
+
+/// 语言选项：一颗可选中的胶囊，选中态用强调色描边 + 淡底，和主题卡片同一套配色。
+class _LanguageOption extends StatelessWidget {
+  const _LanguageOption({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: AppSizes.control,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            // 选中态用强调色的淡底：深色主题下也看得清，不用另开一套色值
+            color: selected
+                ? palette.accent.withValues(alpha: 0.12)
+                : palette.panel,
+            borderRadius: AppRadii.card,
+            border: Border.all(
+              color: selected ? palette.accent : palette.hairline,
+              width: selected ? 1.4 : 1,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? palette.accent : palette.textPrimary,
+              fontSize: 12.5,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              height: 1.2,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

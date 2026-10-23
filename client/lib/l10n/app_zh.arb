@@ -1,0 +1,84 @@
+{
+  "@@locale": "zh",
+  "themePaneTitle": "主题",
+  "@themePaneTitle": {
+    "description": "外观页顶部标题"
+  },
+  "themePaneCurrent": "当前 · {name}",
+  "@themePaneCurrent": {
+    "description": "外观页标题右侧的当前主题",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "薄荷汽水"
+      }
+    }
+  },
+  "themeSectionColor": "配色",
+  "themeSectionColorHint": "整套界面的配色，点一张就换。深色那几套夜里用眼睛舒服。",
+  "themeSectionWallpaper": "壁纸",
+  "wallpaperPick": "选择图片",
+  "wallpaperChange": "换一张",
+  "wallpaperBusy": "正在处理…",
+  "wallpaperRemove": "移除",
+  "wallpaperEmpty": "还没有壁纸",
+  "wallpaperHint": "点「选择图片」挑一张本机图片（png / jpg / webp）。壁纸会铺满整个应用窗口，卡片与侧栏自动变半透明让出画面；图片压到长边 2400px 后存在本机，只影响这台电脑。",
+  "pickWallpaperTitle": "选择壁纸图片",
+  "languageSection": "语言",
+  "languageSectionHint": "界面语言，选完立刻生效；「跟随系统」按系统语言自动挑，系统语言不在支持列表里时用中文。",
+  "languageSystem": "跟随系统",
+  "packSodaName": "薄荷汽水",
+  "packSodaTagline": "墨黑底 · 荧光薄荷，默认",
+  "packQingzhuName": "青竹",
+  "packQingzhuTagline": "青白底 · 草绿强调",
+  "packCinnabarName": "朱砂",
+  "packCinnabarTagline": "暖白底 · 朱红强调",
+  "packSkyName": "晴空",
+  "packSkyTagline": "冷白底 · 天蓝强调",
+  "packHoneyName": "蜜橙",
+  "packHoneyTagline": "米白底 · 暖橙强调",
+  "packNightName": "夜航",
+  "packNightTagline": "深蓝底 · 星蓝强调，原界面",
+  "connectTagline": "去中心化语音与屏幕共享",
+  "connectServerSection": "服务器",
+  "connectAddressHint": "host:port，例如 192.168.1.10:21077",
+  "connectConnect": "连接服务器",
+  "connectReconnect": "重新连接",
+  "connectAccountSection": "账号",
+  "connectUsernameHint": "用户名（3~32 位字母数字）",
+  "connectPasswordHint": "密码（至少 8 位）",
+  "connectLogin": "登录",
+  "connectRegister": "注册",
+  "connectOpenRegistration": "本服务器开放注册：填一个新用户名即可创建账号",
+  "connectClosedRegistration": "本服务器未开放注册，请使用已有账号登录",
+  "connectFactAddress": "地址",
+  "connectFactName": "名称",
+  "connectFactVersion": "版本",
+  "connectProtocolLine": "v{version} · 协议 v{protocol}",
+  "@connectProtocolLine": {
+    "description": "连接页里服务端版本与协议版本那一行",
+    "placeholders": {
+      "version": {
+        "type": "String"
+      },
+      "protocol": {
+        "type": "String"
+      }
+    }
+  },
+  "connectRoomCapacity": "房间容量",
+  "connectRoomCapacityValue": "默认 {min} 人，最多 {max} 人",
+  "@connectRoomCapacityValue": {
+    "description": "连接页里的房间人数上限",
+    "placeholders": {
+      "min": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "connectIceNotProvided": "未下发（使用内置列表）",
+  "connectListSeparator": "、"
+}

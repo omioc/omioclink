@@ -46,3 +46,6 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# ARB → AppL10n 的生成产物：来源是 lib/l10n/*.arb，flutter pub get / build 时自动重建
+lib/l10n/generated/
