@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/app_log.dart';
+import '../core/l10n_ext.dart';
 import '../data/music_models.dart';
 import '../musicfree/musicfree_host.dart';
 import '../musicfree/musicfree_plugins.dart';
@@ -35,7 +36,10 @@ class MusicFreeDetail {
   final bool isChart;
   final String? error;
 
-  String get kindLabel => isChart ? '排行榜' : '歌单';
+  /// 详情页头部那颗胶囊（榜单 / 歌单）：数据层拿不到 BuildContext，
+  /// 走 `appL10n` 那份全局文案。
+  String get kindLabel =>
+      isChart ? appL10n.musicNavCharts : appL10n.musicSearchTypePlaylist;
 }
 
 /// 点歌台 + 插件管理共用的数据门面。
@@ -165,10 +169,10 @@ class MusicFreeLibrary extends ChangeNotifier {
         _syncError = result.failures.join('；');
       }
       _syncMessage = result.reinstalled
-          ? '已按订阅安装 ${plugins.length} 个插件'
+          ? appL10n.musicSyncInstalled(plugins.length)
           : result.cancelled
-          ? '已取消，插件保持不变'
-          : '插件已是最新（共 ${plugins.length} 个）';
+          ? appL10n.musicSyncCancelled
+          : appL10n.musicSyncUpToDate(plugins.length);
       // 插件集合真的换了才清空已加载内容；换完立刻把原来在看的那些内容重拉一遍，
       // 免得界面突然停在「插件没有提供排行榜」这种空态上（点第一首歌就会触发一次同步）。
       if (_pluginFingerprint() != before) {
@@ -195,7 +199,9 @@ class MusicFreeLibrary extends ChangeNotifier {
     try {
       final failures = await _plugins.updateAll();
       _syncError = failures.isEmpty ? null : failures.join('；');
-      _syncMessage = failures.isEmpty ? '插件已全部更新' : '部分插件更新失败';
+      _syncMessage = failures.isEmpty
+          ? appL10n.musicSyncAllUpdated
+          : appL10n.musicSyncPartialFailed;
       _resetContent();
       _reloadContent();
     } on Object catch (error) {
@@ -457,10 +463,10 @@ class MusicFreeLibrary extends ChangeNotifier {
         // 分清「插件确实没有这个能力」和「有音源卡住了」：后者多半点一次重试就好
         // （服务层有 20 多秒的总闸，卡住的结果会被丢掉重拉）。
         _chartsError = !hasPlugins
-            ? '还没有安装音乐插件'
+            ? appL10n.pluginNoneInstalled
             : _service.lastListTimedOut
-            ? '有的音源响应超时了，点重试再拉一次'
-            : '插件没有提供排行榜';
+            ? appL10n.musicChartsTimeout
+            : appL10n.pluginNoCharts;
       }
     } on Object catch (error) {
       _chartsError = _message(error);
@@ -509,7 +515,9 @@ class MusicFreeLibrary extends ChangeNotifier {
         await selectTag(first);
         return;
       }
-      _sheetsError = hasPlugins ? '插件没有提供热门歌单' : '还没有安装音乐插件';
+      _sheetsError = hasPlugins
+          ? appL10n.pluginNoSheets
+          : appL10n.pluginNoneInstalled;
     } on Object catch (error) {
       _sheetsError = _message(error);
     } finally {
@@ -528,7 +536,7 @@ class MusicFreeLibrary extends ChangeNotifier {
     try {
       _sheets = await _service.sheetsByTag(tag);
       if (_sheets.isEmpty) {
-        _sheetsError = '该分类下暂时没有歌单';
+        _sheetsError = appL10n.musicSheetCategoryEmpty;
       }
     } on Object catch (error) {
       _sheetsError = _message(error);
@@ -549,7 +557,7 @@ class MusicFreeLibrary extends ChangeNotifier {
       final next = _sheetPage + 1;
       final more = await _service.sheetsByTag(tag, page: next);
       if (more.isEmpty) {
-        _sheetsError = '没有更多歌单了';
+        _sheetsError = appL10n.musicNoMoreSheets;
       } else {
         _sheetPage = next;
         _sheets = <MusicFreeSheet>[..._sheets, ...more];

@@ -4,6 +4,8 @@
 /// 便于照着源码排错。
 library;
 
+import '../core/l10n_ext.dart';
+
 /// 插件里声明的用户自定义变量（MusicFree 的 `IUserVariable`）。
 class PluginUserVariable {
   const PluginUserVariable({required this.key, this.name = '', this.hint = ''});
@@ -104,7 +106,7 @@ class MusicFreePlugin {
     if (version.isNotEmpty) {
       return 'v$version';
     }
-    return hash.isEmpty ? '未知插件' : hash.substring(0, 8);
+    return hash.isEmpty ? appL10n.pluginUnknown : hash.substring(0, 8);
   }
 
   MusicFreePlugin copyWith({

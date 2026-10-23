@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:http/http.dart' as http;
 
 import '../core/app_log.dart';
+import '../core/l10n_ext.dart';
 import 'musicfree_bytecode.dart';
 import 'musicfree_host.dart';
 import 'plugin_models.dart';
@@ -214,11 +215,13 @@ class MusicFreePlugins {
     try {
       decoded = jsonDecode(body);
     } on FormatException catch (error) {
-      throw MusicFreeException('订阅不是合法 JSON：${error.message}');
+      throw MusicFreeException(
+        appL10n.pluginSubscriptionBadJson(error.message),
+      );
     }
     final list = decoded is Map ? decoded['plugins'] : null;
     if (list is! List) {
-      throw const MusicFreeException('订阅里没有 plugins 列表');
+      throw MusicFreeException(appL10n.pluginSubscriptionNoPlugins);
     }
     final entries = <MusicFreeSubscriptionEntry>[];
     for (final item in list) {
@@ -406,7 +409,7 @@ class MusicFreePlugins {
         return null;
       }
       if (entries.isEmpty) {
-        failures.add('$url：订阅里没有插件');
+        failures.add(appL10n.pluginSubscriptionNoPluginsForUrl(url));
         return (entries: entries, selected: const <MusicFreeSubscriptionEntry>[]);
       }
       final remembered = selection[url];
@@ -454,7 +457,7 @@ class MusicFreePlugins {
           owned[url] = const <String>[];
           continue;
         }
-        onProgress?.call('正在下载并装载 ${resolved.selected.length} 个插件…');
+        onProgress?.call(appL10n.pluginInstalling(resolved.selected.length));
         owned[url] = await _installEntries(
           resolved.selected,
           onProgress: onProgress,
@@ -469,7 +472,7 @@ class MusicFreePlugins {
         urls: clean,
         signature: effectiveSignature,
         reinstalled: false,
-        failures: const <String>['服务器没有下发订阅地址（本地插件已保留）'],
+        failures: <String>[appL10n.pluginSubscriptionMissing],
       );
     } else if (sameList) {
       // 订阅没变：本地装的就是这一套，直接返回（不下载、不卸载、不解析 JS）
@@ -498,7 +501,7 @@ class MusicFreePlugins {
         if (resolved == null || resolved.selected.isEmpty) {
           continue;
         }
-        onProgress?.call('正在下载并装载 ${resolved.selected.length} 个插件…');
+        onProgress?.call(appL10n.pluginInstalling(resolved.selected.length));
         owned[url] = await _installEntries(
           resolved.selected,
           onProgress: onProgress,
@@ -542,7 +545,7 @@ class MusicFreePlugins {
         try {
           final code = await _fetch(_addRandomHash(entry.url));
           await installCode(code, srcUrl: entry.url, onProgress: onProgress);
-          onProgress?.call('已装载 ${host.plugins.length} 个插件');
+          onProgress?.call(appL10n.pluginInstalled(host.plugins.length));
         } on Object catch (error) {
           // 一个插件坏了不能拖累同一份订阅里的其它插件
           AppLog.warn('订阅安装失败 ${entry.url}', error: error);
@@ -591,11 +594,13 @@ class MusicFreePlugins {
     try {
       decoded = jsonDecode(body);
     } on FormatException catch (error) {
-      throw MusicFreeException('订阅不是合法 JSON：${error.message}');
+      throw MusicFreeException(
+        appL10n.pluginSubscriptionBadJson(error.message),
+      );
     }
     final list = decoded is Map ? decoded['plugins'] : null;
     if (list is! List) {
-      throw const MusicFreeException('订阅里没有 plugins 列表');
+      throw MusicFreeException(appL10n.pluginSubscriptionNoPlugins);
     }
     final problems = <String>[];
     for (final entry in list) {
@@ -648,11 +653,15 @@ class MusicFreePlugins {
     AppLog.timing('插件.编译 ${candidate.platform.isEmpty ? hash : candidate.platform}',
         compileWatch.elapsed);
     onProgress?.call(
-      '已装载 ${candidate.platform.isEmpty ? '插件' : candidate.platform}',
+      appL10n.pluginLoadedOne(
+        candidate.platform.isEmpty ? appL10n.pluginWord : candidate.platform,
+      ),
     );
     if (candidate.loadError != null || candidate.supportedMethods.isEmpty) {
       host.unload(hash);
-      throw MusicFreeException('插件无法解析：${candidate.loadError ?? '没有实现任何方法'}');
+      throw MusicFreeException(
+        appL10n.pluginUnparsable(candidate.loadError ?? appL10n.pluginNoMethods),
+      );
     }
     final sameName = host.plugins
         .where((plugin) => plugin.platform == candidate.platform && plugin.hash != hash)
@@ -661,7 +670,7 @@ class MusicFreePlugins {
       if (_compareVersion(old.version, candidate.version) > 0) {
         host.unload(hash);
         throw MusicFreeException(
-          '已安装更新版本的插件（${old.version} 高于 ${candidate.version}）',
+          appL10n.pluginNewerInstalled(old.version, candidate.version),
         );
       }
       await _removePlugin(old);
@@ -874,13 +883,15 @@ class MusicFreePlugins {
   Future<String> _fetch(String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null || !uri.hasScheme) {
-      throw MusicFreeException('地址无效：$url');
+      throw MusicFreeException(appL10n.pluginInvalidUrl(url));
     }
     final response = await _http
         .get(uri, headers: const <String, String>{'User-Agent': 'OmiocLink/1.0'})
         .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
-      throw MusicFreeException('下载失败（HTTP ${response.statusCode}）：$url');
+      throw MusicFreeException(
+        appL10n.pluginDownloadFailed(response.statusCode, url),
+      );
     }
     return utf8.decode(response.bodyBytes, allowMalformed: true);
   }

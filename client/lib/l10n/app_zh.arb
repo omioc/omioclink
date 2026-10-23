@@ -307,5 +307,538 @@
   "callSpeaker": "耳机/扬声器",
   "callShareScreen": "分享屏幕",
   "callStopShare": "停止共享",
-  "callChat": "聊天"
+  "callChat": "聊天",
+  "musicKioskQueueHasSong": "这首歌已经在播放队列里了",
+  "musicKioskQueueFull": "播放队列已满",
+  "musicKioskNothingToAdd": "没有可加入的歌曲（重复或队列已满）",
+  "musicKioskBatchPaced": "服务器不支持批量点歌：正在按 2 秒间隔排入 {count} 首",
+  "@musicKioskBatchPaced": {
+    "description": "老服务器逐条排入时的提示",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "musicKioskAdded": "已加入 {count} 首",
+  "@musicKioskAdded": {
+    "description": "批量点歌成功的提示",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "musicSearchHint": "搜索歌曲、歌手或歌单",
+  "musicSearch": "搜索",
+  "musicClear": "清空",
+  "musicSectionSearch": "搜索结果",
+  "musicIssuesTooltip": "部分音源没有返回结果，点击查看原因",
+  "musicIssuesCount": "{count} 个音源异常",
+  "@musicIssuesCount": {
+    "description": "搜索框右侧告警入口的文字",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "musicIssuesTitle": "部分音源没有返回结果",
+  "musicIssuesSkipped": "已暂时跳过：{platforms}（连续失败，几分钟后自动重试）",
+  "@musicIssuesSkipped": {
+    "description": "音源异常弹窗里的熔断音源",
+    "placeholders": {
+      "platforms": {
+        "type": "String"
+      }
+    }
+  },
+  "musicIssuesNote": "其它结果不受影响：歌照常能搜、能点。",
+  "musicRetrySearch": "重新搜索",
+  "musicSearchResultsFor": "「{query}」的搜索结果",
+  "@musicSearchResultsFor": {
+    "description": "搜索结果标题：带上关键词",
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "musicSearchProgress": "已收到 {done}/{total} 个音源…",
+  "@musicSearchProgress": {
+    "description": "搜索进行中还剩几个音源",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "musicSearchTypeUnsupported": "「{type}」的结果暂不支持直接点歌，切到「音乐」再点",
+  "@musicSearchTypeUnsupported": {
+    "description": "非音乐类型的结果不能直接点歌",
+    "placeholders": {
+      "type": {
+        "type": "String"
+      }
+    }
+  },
+  "musicSearchEmpty": "没有找到相关歌曲",
+  "musicSearchEmptyHint": "换个关键词，或换一个音源再试",
+  "musicSearchEmptyHintIssues": "有些音源没返回结果，点右上角看原因",
+  "musicSearchTitle": "搜索歌曲",
+  "musicSearchTitleHint": "输入歌名、歌手或歌单，回车或点「搜索」",
+  "musicNavCharts": "排行榜",
+  "musicNavSheets": "热门歌单",
+  "musicNavFavorites": "我喜欢",
+  "musicMenuExpand": "展开菜单",
+  "musicMenuCollapse": "收起菜单",
+  "musicSearchTypeMusic": "音乐",
+  "musicSearchTypeAlbum": "专辑",
+  "musicSearchTypeArtist": "作者",
+  "musicSearchTypePlaylist": "歌单",
+  "musicPlatformAll": "全部",
+  "musicChartsEmptyHint": "插件没有返回榜单时可以点「重试」，或到设置页检查插件",
+  "musicSheetsEmptyHint": "插件没有返回歌单标签时可以点「重试」，或到设置页检查插件",
+  "musicRetry": "重试",
+  "musicSheetCategoryEmpty": "该分类下暂时没有歌单",
+  "musicLoadMore": "加载更多",
+  "musicLoadingLabel": "正在加载 {label}",
+  "@musicLoadingLabel": {
+    "description": "加载中的说明：带上正在加载的内容名",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "musicChartsTimeout": "有的音源响应超时了，点重试再拉一次",
+  "musicNoMoreSheets": "没有更多歌单了",
+  "musicFavoritesEmpty": "还没有喜欢的歌",
+  "musicFavoritesEmptyHint": "在搜索结果、榜单里点歌曲右侧的心形，就会收进这里",
+  "musicFavoritesTitle": "我喜欢的音乐",
+  "musicTrackCount": "{count} 首",
+  "@musicTrackCount": {
+    "description": "歌曲数量",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "musicFavoritesLocalOnly": "只保存在这台设备上，换电脑 / 换账号都不同步",
+  "musicAddAllToQueue": "全部加入队列",
+  "musicLoadFailed": "内容加载失败",
+  "musicDetailCount": "共 {count} 首",
+  "@musicDetailCount": {
+    "description": "详情里的歌曲总数",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "musicDetailCountMore": "共 {count} 首（还有更多）",
+  "@musicDetailCountMore": {
+    "description": "详情里的歌曲总数：还没到底",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "musicDetailEmpty": "这个列表里还没有歌曲",
+  "musicDetailEmptyHint": "插件返回了空列表，换一个榜单或歌单试试",
+  "musicBack": "返回",
+  "musicQueueTitle": "房间播放队列 ({count})",
+  "@musicQueueTitle": {
+    "description": "右侧队列栏标题",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "musicQueueWaiting": "等待中 ({count})",
+  "@musicQueueWaiting": {
+    "description": "右侧队列栏标题：已经有歌在播",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "musicQueueNowPlaying": "正在播放",
+  "musicQueueSkip": "切歌（房主或点歌人）",
+  "musicQueueEmpty": "队列还是空的",
+  "musicQueueNoNext": "还没有下一首",
+  "musicQueueEmptyHint": "挑一首喜欢的歌，大家一起听",
+  "musicQueueRemove": "从队列移除",
+  "musicAnonymous": "匿名",
+  "musicRequestedBy": "点歌人 {name}",
+  "@musicRequestedBy": {
+    "description": "队列里谁点的这首歌",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "musicRequesterSelf": "{name}（你）",
+  "@musicRequesterSelf": {
+    "description": "点歌人就是自己时",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "musicQueuePickHint": "选中喜欢的歌曲，加入房间播放队列和大家一起听吧！",
+  "musicQueueOwnerHint": "你是房主：可以切歌、清空队列，也能移除别人点的歌。",
+  "musicQueueMemberHint": "每人最多 88 首；点歌人可以切自己点的歌，清空队列需要房主。",
+  "musicQueueTooltip": "播放队列",
+  "musicMyVolume": "我的音量",
+  "musicNoRequests": "还没有人点歌",
+  "musicNoRequestsHint": "在点歌台挑一首加入播放队列，房间一起听",
+  "musicSyncPlaying": "同步播放中",
+  "musicPaused": "已暂停",
+  "musicUpNext": "即将播放",
+  "musicPause": "暂停",
+  "musicPlay": "播放",
+  "musicNext": "下一首",
+  "musicMuteLocal": "静音（仅本机）",
+  "musicUnmuteLocal": "恢复音量（仅本机）",
+  "musicAmbientTitle": "房间氛围音",
+  "musicWaitingRequest": "等待点歌",
+  "musicUpcomingCount": "接下来 {count} 首",
+  "@musicUpcomingCount": {
+    "description": "氛围音卡片上的待播数量",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "musicUpcomingTooltip": "查看接下来播放的队列",
+  "musicDirectSourceNote": "客户端直连音源 · 服务端仅同步曲目与开始时间，不转发音频",
+  "musicNoLyrics": "暂无歌词",
+  "musicIntroOnly": "前奏…",
+  "musicUpcomingTitle": "接下来播放（{count} 首）",
+  "@musicUpcomingTitle": {
+    "description": "待播队列弹框标题",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "musicQueueDialogEmpty": "队列是空的",
+  "musicClose": "关闭",
+  "musicAddButtonAdded": "已在播放队列",
+  "musicAddButton": "加入播放队列",
+  "musicUnlike": "取消喜欢",
+  "musicLike": "喜欢",
+  "musicNoTrackPlaying": "还没有在播的歌",
+  "musicLikeThisSong": "喜欢这首歌",
+  "musicFreeSource": "免费音源",
+  "musicModeRepeatOne": "单曲循环",
+  "musicModeSequential": "顺序播放",
+  "musicModeShuffle": "随机播放",
+  "musicModeRepeatAll": "列表循环",
+  "musicModeSwitch": "{mode}（点击切换）",
+  "@musicModeSwitch": {
+    "description": "播放模式按钮的提示",
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "musicAudioFailed": "音频播放失败",
+  "musicPlayFailedSkipped": "播放失败：{reason}（已跳过）",
+  "@musicPlayFailedSkipped": {
+    "description": "本地模式播放失败：自动跳过",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "musicPlayFailedLocal": "播放失败：{reason}（只影响本机）",
+  "@musicPlayFailedLocal": {
+    "description": "房间点歌播放失败：只影响本机",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "musicSourceServer": "音源服务器",
+  "musicSourceServerHost": "音源服务器 {host}",
+  "@musicSourceServerHost": {
+    "description": "连不上音源：带上域名",
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "musicSourceBlocked": "连不上 {target}（连接被中断）：该音源可能被你的网络阻断，换个网络，或让代理软件以 TUN 模式接管本应用流量再试",
+  "@musicSourceBlocked": {
+    "description": "TLS 被阻断时的提示",
+    "placeholders": {
+      "target": {
+        "type": "String"
+      }
+    }
+  },
+  "musicSourceTimeout": "连不上音源服务器（网络超时）",
+  "musicUnknownError": "未知错误",
+  "musicEnqueueNotSent": "点歌没发出去：与服务器的连接已断开，稍后重试",
+  "musicQualityLow": "流畅",
+  "musicQualityStandard": "标准",
+  "musicQualityHigh": "高品",
+  "musicQualityLossless": "无损",
+  "musicSyncInstalled": "已按订阅安装 {count} 个插件",
+  "@musicSyncInstalled": {
+    "description": "订阅同步完成的提示",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "musicSyncCancelled": "已取消，插件保持不变",
+  "musicSyncUpToDate": "插件已是最新（共 {count} 个）",
+  "@musicSyncUpToDate": {
+    "description": "订阅没有变化",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "musicSyncAllUpdated": "插件已全部更新",
+  "musicSyncPartialFailed": "部分插件更新失败",
+  "pluginWord": "插件",
+  "pluginNoneInstalled": "还没有安装音乐插件",
+  "pluginNoneInstalledHint": "到「设置 · 音乐插件」里刷新订阅后再来点歌",
+  "pluginNoSearch": "插件没有提供搜索能力",
+  "pluginNoSearchHint": "当前启用的插件里没有实现 search 方法的，去设置页检查插件",
+  "pluginNoCharts": "插件没有提供排行榜",
+  "pluginNoSheets": "插件没有提供热门歌单",
+  "pluginSearchTypeUnsupported": "「{platform}」这个音源没有提供该类型的搜索",
+  "@pluginSearchTypeUnsupported": {
+    "description": "某个音源不支持该搜索类型",
+    "placeholders": {
+      "platform": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginNoSearchPlugin": "没有插件支持搜索",
+  "pluginSourcesUnavailable": "音源暂时都不可用（{platforms}），稍后会自动重试",
+  "@pluginSourcesUnavailable": {
+    "description": "全都处于熔断期",
+    "placeholders": {
+      "platforms": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginPlatformMissing": "找不到平台「{platform}」对应的插件",
+  "@pluginPlatformMissing": {
+    "description": "曲目所指的音源没有对应插件",
+    "placeholders": {
+      "platform": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginResolveUnsupported": "插件「{platform}」不支持解析播放地址",
+  "@pluginResolveUnsupported": {
+    "description": "插件没有 getMediaSource",
+    "placeholders": {
+      "platform": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginResolveEmpty": "插件「{platform}」没有返回播放地址",
+  "@pluginResolveEmpty": {
+    "description": "解析结果里没有 url",
+    "placeholders": {
+      "platform": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginSubscriptionBadJson": "订阅不是合法 JSON：{reason}",
+  "@pluginSubscriptionBadJson": {
+    "description": "订阅文件解析失败",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginSubscriptionNoPlugins": "订阅里没有 plugins 列表",
+  "pluginSubscriptionNoPluginsForUrl": "{url}：订阅里没有插件",
+  "@pluginSubscriptionNoPluginsForUrl": {
+    "description": "某个订阅地址里没有插件",
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginSubscriptionMissing": "服务器没有下发订阅地址（本地插件已保留）",
+  "pluginInstalling": "正在下载并装载 {count} 个插件…",
+  "@pluginInstalling": {
+    "description": "订阅安装进度",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pluginInstalled": "已装载 {count} 个插件",
+  "@pluginInstalled": {
+    "description": "订阅安装进度：整批完成",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pluginLoadedOne": "已装载 {name}",
+  "@pluginLoadedOne": {
+    "description": "订阅安装进度：单个插件",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginUnparsable": "插件无法解析：{reason}",
+  "@pluginUnparsable": {
+    "description": "插件里没有可用的方法",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginNoMethods": "没有实现任何方法",
+  "pluginNewerInstalled": "已安装更新版本的插件（{installed} 高于 {incoming}）",
+  "@pluginNewerInstalled": {
+    "description": "已有更新版本，不再降级安装",
+    "placeholders": {
+      "installed": {
+        "type": "String"
+      },
+      "incoming": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginInvalidUrl": "地址无效：{url}",
+  "@pluginInvalidUrl": {
+    "description": "插件 / 订阅地址不合法",
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginDownloadFailed": "下载失败（HTTP {status}）：{url}",
+  "@pluginDownloadFailed": {
+    "description": "下载插件源码失败",
+    "placeholders": {
+      "status": {
+        "type": "int"
+      },
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginHostDisposed": "插件宿主已释放",
+  "pluginRuntimeLoadFailed": "插件运行时加载失败：{reason}",
+  "@pluginRuntimeLoadFailed": {
+    "description": "bundle 执行失败",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginUnknown": "未知插件",
+  "pluginUnnamed": "未命名插件",
+  "pluginNoPlatform": "插件没有声明 platform，无法使用",
+  "pluginNotLoaded": "插件未加载",
+  "pluginNotReady": "插件还没有装载完成",
+  "pluginCallFailed": "插件调用失败",
+  "pluginCallFailedReason": "插件调用失败：{reason}",
+  "@pluginCallFailedReason": {
+    "description": "插件方法调用失败：带原因",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginBadJson": "插件返回的不是合法 JSON：{reason}",
+  "@pluginBadJson": {
+    "description": "插件返回值解析失败",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginTimeout": "超时（{label} 秒未返回）",
+  "@pluginTimeout": {
+    "description": "插件调用超时",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginRequestInvalidUrl": "请求地址无效",
+  "pluginSourceMissing": "插件源码不存在（{hash}），请重新拉取订阅",
+  "@pluginSourceMissing": {
+    "description": "源码文件丢了",
+    "placeholders": {
+      "hash": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginWorkerStartFailed": "插件 worker 启动失败",
+  "pluginHostTimeout": "插件宿主没有响应（worker 超时）",
+  "pluginRequestFailed": "插件请求失败：{error}",
+  "@pluginRequestFailed": {
+    "description": "插件内部请求出错",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginConnectFailed": "{error}（连接 {host} 失败）",
+  "@pluginConnectFailed": {
+    "description": "插件请求连不上主机",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      },
+      "host": {
+        "type": "String"
+      }
+    }
+  }
 }

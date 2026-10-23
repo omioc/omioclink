@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/app_theme.dart';
+import '../../core/l10n_ext.dart';
 import '../../data/music_models.dart';
 import '../../music/music_favorites.dart';
 import '../../music/music_player.dart';
@@ -91,7 +92,7 @@ class NowPlayingBar extends StatelessWidget {
                 track: view?.track,
               ),
               const SizedBox(width: AppSpacing.md),
-              PlayerVolumeControl(player: player, label: '我的音量'),
+              PlayerVolumeControl(player: player),
             ],
           ),
         );
@@ -124,7 +125,7 @@ class _TrackSummary extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '还没有人点歌',
+            context.l10n.musicNoRequests,
             style: TextStyle(
               color: context.palette.textPrimary,
               fontSize: 13,
@@ -133,7 +134,7 @@ class _TrackSummary extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            message ?? '在点歌台挑一首加入播放队列，房间一起听',
+            message ?? context.l10n.musicNoRequestsHint,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -165,7 +166,9 @@ class _TrackSummary extends StatelessWidget {
             if (showBadge) ...<Widget>[
               const SizedBox(width: AppSpacing.sm),
               MusicBadge(
-                text: current.playing ? '同步播放中' : '即将播放',
+                text: current.playing
+                    ? context.l10n.musicSyncPlaying
+                    : context.l10n.musicUpNext,
                 color: current.playing ? context.palette.success : context.palette.textSecondary,
                 icon: current.playing ? Icons.link : null,
               ),
@@ -219,7 +222,7 @@ class _TransportControls extends StatelessWidget {
         PlaybackModeButton(queue: player.queue),
         const SizedBox(width: AppSpacing.xs),
         Tooltip(
-          message: playing ? '暂停' : '播放',
+          message: playing ? context.l10n.musicPause : context.l10n.musicPlay,
           child: Container(
             width: 36,
             height: 36,
@@ -239,7 +242,7 @@ class _TransportControls extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.xs),
         Tooltip(
-          message: '下一首',
+          message: context.l10n.musicNext,
           child: IconButton(
             onPressed: () => player.playNext(),
             iconSize: 18,
@@ -259,12 +262,14 @@ class PlayerVolumeControl extends StatelessWidget {
   const PlayerVolumeControl({
     super.key,
     required this.player,
-    this.label = '我的音量',
+    this.label,
     this.sliderWidth = 130,
   });
 
   final MusicPlayer player;
-  final String label;
+
+  /// 不传就用当前语言里的「我的音量」。
+  final String? label;
   final double sliderWidth;
 
   @override
@@ -280,7 +285,9 @@ class PlayerVolumeControl extends StatelessWidget {
               // 静音 / 解除静音都在播放器里记账：解除时回到静音前的音量
               onPressed: () => unawaited(player.toggleMute()),
               iconSize: 18,
-              tooltip: value > 0 ? '静音（仅本机）' : '恢复音量（仅本机）',
+              tooltip: value > 0
+                  ? context.l10n.musicMuteLocal
+                  : context.l10n.musicUnmuteLocal,
               icon: Icon(
                 value <= 0
                     ? Icons.volume_off_outlined
@@ -289,7 +296,7 @@ class PlayerVolumeControl extends StatelessWidget {
               ),
             ),
             Text(
-              label,
+              label ?? context.l10n.musicMyVolume,
               style: TextStyle(
                 color: context.palette.textSecondary,
                 fontSize: 12,
@@ -359,7 +366,7 @@ class AmbientCard extends StatelessWidget {
                   const SizedBox(width: 6),
                   Flexible(
                     child: Text(
-                      '房间氛围音',
+                      context.l10n.musicAmbientTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -372,7 +379,9 @@ class AmbientCard extends StatelessWidget {
                   const SizedBox(width: AppSpacing.sm),
                   // 状态胶囊只在这里出现一次：歌曲行里那颗是重复的，已经去掉
                   MusicBadge(
-                    text: (view?.playing ?? false) ? '同步播放中' : '等待点歌',
+                    text: (view?.playing ?? false)
+                        ? context.l10n.musicSyncPlaying
+                        : context.l10n.musicWaitingRequest,
                     color: (view?.playing ?? false)
                         ? context.palette.success
                         : context.palette.textSecondary,
@@ -381,7 +390,7 @@ class AmbientCard extends StatelessWidget {
                   const Spacer(),
                   if (upcoming > 0) ...[
                     Text(
-                      '接下来 $upcoming 首',
+                      context.l10n.musicUpcomingCount(upcoming),
                       style: TextStyle(
                         color: context.palette.textSecondary,
                         fontSize: 11,
@@ -389,7 +398,7 @@ class AmbientCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 2),
                     Tooltip(
-                      message: '查看接下来播放的队列',
+                      message: context.l10n.musicUpcomingTooltip,
                       child: IconButton(
                         key: const ValueKey<String>('ambient-upcoming-queue'),
                         onPressed: () =>
@@ -453,7 +462,7 @@ class AmbientCard extends StatelessWidget {
                   const SizedBox(width: 6),
                   Flexible(
                     child: Text(
-                      '客户端直连音源 · 服务端仅同步曲目与开始时间，不转发音频',
+                      context.l10n.musicDirectSourceNote,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -488,9 +497,10 @@ class _LyricLineView extends StatelessWidget {
     final active = index >= 0 && index < lyrics.length
         ? lyrics[index].text
         : null;
+    final l10n = context.l10n;
     final placeholder = player.current == null
-        ? '还没有人点歌'
-        : (lyrics.isEmpty ? '暂无歌词' : '前奏…');
+        ? l10n.musicNoRequests
+        : (lyrics.isEmpty ? l10n.musicNoLyrics : l10n.musicIntroOnly);
     final text = active ?? placeholder;
     return Row(
       children: [
@@ -543,7 +553,7 @@ Future<void> showUpcomingQueueDialog(
     builder: (dialogContext) {
       final items = queue.queue;
       return AlertDialog(
-        title: Text('接下来播放（${items.length} 首）'),
+        title: Text(context.l10n.musicUpcomingTitle(items.length)),
         content: SizedBox(
           // 手机屏幕放不下 420×340：按可用空间收窄，别让它顶到屏幕外
           width: MediaQuery.sizeOf(context).width > 468
@@ -555,7 +565,7 @@ Future<void> showUpcomingQueueDialog(
           child: items.isEmpty
               ? Center(
                   child: Text(
-                    '队列是空的',
+                    context.l10n.musicQueueDialogEmpty,
                     style: TextStyle(color: context.palette.textMuted, fontSize: 12),
                   ),
                 )
@@ -624,7 +634,7 @@ Future<void> showUpcomingQueueDialog(
         actions: [
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('关闭'),
+            child: Text(context.l10n.musicClose),
           ),
         ],
       );

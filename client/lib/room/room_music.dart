@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 
+import '../core/l10n_ext.dart';
 import '../data/music_models.dart';
 import '../signaling/protocol.dart';
 
@@ -304,7 +305,7 @@ class RoomMusicQueue extends ChangeNotifier {
     }
     if (!sink.enqueue(MusicEntryDraft.fromTrack(track))) {
       // 信令没发出去（断线中）：否则界面看起来「点成功了却什么都没发生」
-      noteError('点歌没发出去：与服务器的连接已断开，稍后重试');
+      noteError(appL10n.musicEnqueueNotSent);
     }
     return true;
   }
@@ -354,7 +355,7 @@ class RoomMusicQueue extends ChangeNotifier {
       return _sendPaced(drafts);
     }
     if (!sink.enqueueBatch(drafts)) {
-      noteError('点歌没发出去：与服务器的连接已断开，稍后重试');
+      noteError(appL10n.musicEnqueueNotSent);
       return 0;
     }
     return drafts.length;
@@ -377,7 +378,7 @@ class RoomMusicQueue extends ChangeNotifier {
       }
       final sink = _sink;
       if (sink == null || !sink.enqueue(draft)) {
-        noteError('点歌没发出去：与服务器的连接已断开，稍后重试');
+        noteError(appL10n.musicEnqueueNotSent);
         break;
       }
       added += 1;

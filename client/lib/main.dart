@@ -171,6 +171,12 @@ class _App extends StatelessWidget {
       localizationsDelegates: AppL10n.localizationsDelegates,
       localeListResolutionCallback: (systemLocales, _) =>
           AppLocales.resolve(systemLocales),
+      // 播放器 / 插件门面拿不到 BuildContext，却要产出界面上的错误与提示：
+      // 在这里（Localizations 之内）把当前语言的实例登记给它们
+      builder: (context, child) {
+        syncAppL10n(context.l10n);
+        return child ?? const SizedBox.shrink();
+      },
       home: const _Root(),
     );
   }

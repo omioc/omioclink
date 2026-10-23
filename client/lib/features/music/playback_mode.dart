@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../../core/app_theme.dart';
+import '../../core/l10n_ext.dart';
+import '../../l10n/generated/app_l10n.dart';
 import '../../room/room_music.dart';
 
 /// 播放模式在界面上的表现：图标 + 文案。
 ///
 /// 模式本身是 `PlaybackMode` 里的协议字符串，这里只做展示映射：
 /// 新增模式时两边一起改，别在界面里散落第二套枚举。
-String playbackModeLabel(String mode) => switch (mode) {
-  PlaybackMode.repeatOne => '单曲循环',
-  PlaybackMode.sequential => '顺序播放',
-  PlaybackMode.shuffle => '随机播放',
-  _ => '列表循环',
+String playbackModeLabel(AppL10n l10n, String mode) => switch (mode) {
+  PlaybackMode.repeatOne => l10n.musicModeRepeatOne,
+  PlaybackMode.sequential => l10n.musicModeSequential,
+  PlaybackMode.shuffle => l10n.musicModeShuffle,
+  _ => l10n.musicModeRepeatAll,
 };
 
 IconData playbackModeIcon(String mode) => switch (mode) {
@@ -37,7 +39,7 @@ class PlaybackModeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final mode = queue.mode;
     return Tooltip(
-      message: '${playbackModeLabel(mode)}（点击切换）',
+      message: context.l10n.musicModeSwitch(playbackModeLabel(context.l10n, mode)),
       child: IconButton(
         onPressed: () => queue.setMode(queue.nextMode),
         iconSize: compact ? 18 : 20,

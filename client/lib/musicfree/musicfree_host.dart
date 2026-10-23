@@ -9,6 +9,7 @@ import 'package:http/io_client.dart';
 import 'package:quickjs_engine/quickjs_engine.dart';
 
 import '../core/app_log.dart';
+import '../core/l10n_ext.dart';
 import '../core/app_version.dart';
 import '../core/platform.dart';
 import 'musicfree_bytecode.dart';
@@ -176,7 +177,7 @@ class MusicFreeEngine {
 
   Future<void> _ensureBooted() {
     if (_disposed) {
-      return Future<void>.error(const MusicFreeException('插件宿主已释放'));
+      return Future<void>.error(MusicFreeException(appL10n.pluginHostDisposed));
     }
     if (_js != null) {
       return Future<void>.value();
@@ -234,7 +235,9 @@ class MusicFreeEngine {
     _timing('插件.bundle 编译执行', created.elapsed);
     if (loaded.isError) {
       js.dispose();
-      throw MusicFreeException('插件运行时加载失败：${loaded.stringResult}');
+      throw MusicFreeException(
+        appL10n.pluginRuntimeLoadFailed(loaded.stringResult),
+      );
     }
     _js = js;
   }
@@ -366,7 +369,7 @@ class MusicFreeEngine {
       _entries.remove(hash)?.cancelTimers();
       return MusicFreePlugin(
         hash: hash,
-        platform: '未知插件',
+        platform: appL10n.pluginUnknown,
         path: path,
         srcUrl: srcUrl,
         loadError: _brief(compiled.stringResult),
@@ -383,7 +386,7 @@ class MusicFreeEngine {
       _entries.remove(hash)?.cancelTimers();
       return MusicFreePlugin(
         hash: hash,
-        platform: '未知插件',
+        platform: appL10n.pluginUnknown,
         path: path,
         srcUrl: srcUrl,
         loadError: _brief(installed.stringResult),
@@ -411,7 +414,7 @@ class MusicFreeEngine {
 
     final plugin = MusicFreePlugin(
       hash: hash,
-      platform: platform.isEmpty ? '未命名插件' : platform,
+      platform: platform.isEmpty ? appL10n.pluginUnnamed : platform,
       path: path,
       version: meta['version']?.toString() ?? '',
       author: meta['author']?.toString() ?? '',
@@ -430,7 +433,7 @@ class MusicFreeEngine {
           .map((item) => item.toString())
           .toList(growable: false),
       cacheControl: meta['cacheControl']?.toString() ?? 'cache',
-      loadError: platform.isEmpty ? '插件没有声明 platform，无法使用' : null,
+      loadError: platform.isEmpty ? appL10n.pluginNoPlatform : null,
     );
     _entries[hash] = _LoadedEntry(plugin: plugin);
     return plugin;
@@ -452,7 +455,7 @@ class MusicFreeEngine {
     final js = _js!;
     final entry = _entries[hash];
     if (entry == null) {
-      throw const MusicFreeException('插件未加载');
+      throw MusicFreeException(appL10n.pluginNotLoaded);
     }
     final code =
         '__mfRuntime.invokeJson(${jsonEncode(hash)}, ${jsonEncode(method)}, ${jsonEncode(jsonEncode(args))})';
@@ -471,10 +474,12 @@ class MusicFreeEngine {
       throw MusicFreeException(_timeoutText(timeout));
     } on Object catch (error) {
       // 不是超时：把真实原因（引擎/源码错误）透出去，别一律报「超时」。
-      throw MusicFreeException('插件调用失败：${_brief('$error')}');
+      throw MusicFreeException(appL10n.pluginCallFailedReason(_brief('$error')));
     }
     if (raw.isError) {
-      throw MusicFreeException('插件调用失败：${_brief(raw.stringResult)}');
+      throw MusicFreeException(
+        appL10n.pluginCallFailedReason(_brief(raw.stringResult)),
+      );
     }
     final JsEvalResult value;
     try {
@@ -488,7 +493,9 @@ class MusicFreeEngine {
     try {
       decoded = jsonDecode(text);
     } on FormatException {
-      throw MusicFreeException('插件返回的不是合法 JSON：${_brief(text)}');
+      throw MusicFreeException(
+        appL10n.pluginBadJson(_brief(text)),
+      );
     }
     // 只等本地写入（storage / cookie），不等网络：请求收尾跟这次调用无关。
     if (flushWrites) {
@@ -497,7 +504,9 @@ class MusicFreeEngine {
     if (decoded is Map && decoded['ok'] == true) {
       return decoded['value'];
     }
-    final message = decoded is Map ? (decoded['error']?.toString() ?? '插件调用失败') : '插件调用失败';
+    final message = decoded is Map
+        ? (decoded['error']?.toString() ?? appL10n.pluginCallFailed)
+        : appL10n.pluginCallFailed;
     throw MusicFreeException(_brief(message));
   }
 
@@ -506,7 +515,7 @@ class MusicFreeEngine {
     final label = seconds == seconds.roundToDouble()
         ? seconds.round().toString()
         : seconds.toStringAsFixed(1);
-    return '超时（$label 秒未返回）';
+    return appL10n.pluginTimeout(label);
   }
 
   void unload(String hash) {
@@ -679,7 +688,9 @@ class MusicFreeEngine {
       AppLog.warn('插件请求失败 ${host ?? ''}', error: error);
       _deliverHttp(
         ticket,
-        host == null || host.isEmpty ? '$error' : '$error（连接 $host 失败）',
+        host == null || host.isEmpty
+            ? '$error'
+            : appL10n.pluginConnectFailed('$error', host),
         null,
       );
     } finally {
@@ -748,7 +759,7 @@ class MusicFreeEngine {
     final url = payload['url']?.toString() ?? '';
     final uri = Uri.tryParse(url);
     if (uri == null || !uri.hasScheme) {
-      throw const MusicFreeException('请求地址无效');
+      throw MusicFreeException(appL10n.pluginRequestInvalidUrl);
     }
     final method = (payload['method']?.toString() ?? 'GET').toUpperCase();
     final headers = <String, String>{};
@@ -1059,7 +1070,7 @@ class MusicFreeHost {
     await _ensureCompiled(hash);
     final link = _owner[hash];
     if (link == null) {
-      throw const MusicFreeException('插件还没有装载完成');
+      throw MusicFreeException(appL10n.pluginNotReady);
     }
     final reply = await _call(link, <String, dynamic>{
       'op': 'invoke',
@@ -1110,7 +1121,7 @@ class MusicFreeHost {
     _plugins.clear();
     for (final call in _pending.values) {
       if (!call.completer.isCompleted) {
-        call.completer.completeError(const MusicFreeException('插件宿主已释放'));
+        call.completer.completeError(MusicFreeException(appL10n.pluginHostDisposed));
       }
     }
     _pending.clear();
@@ -1136,7 +1147,7 @@ class MusicFreeHost {
     final path = _paths.pluginFile(hash);
     final file = File(path);
     if (!file.existsSync()) {
-      throw MusicFreeException('插件源码不存在（$hash），请重新拉取订阅');
+      throw MusicFreeException(appL10n.pluginSourceMissing(hash));
     }
     final code = await file.readAsString();
     final watch = Stopwatch()..start();
@@ -1308,7 +1319,7 @@ class MusicFreeHost {
       call.completer.complete(map);
     } else {
       call.completer.completeError(
-        MusicFreeException(map['error']?.toString() ?? '插件调用失败'),
+        MusicFreeException(map['error']?.toString() ?? appL10n.pluginCallFailed),
       );
     }
   }
@@ -1319,7 +1330,7 @@ class MusicFreeHost {
     final starting = link.starting;
     link.starting = null;
     if (starting != null && !starting.isCompleted) {
-      starting.completeError(const MusicFreeException('插件 worker 启动失败'));
+      starting.completeError(MusicFreeException(appL10n.pluginWorkerStartFailed));
     }
     for (final hash in link.hashes.toList(growable: false)) {
       if (identical(_owner[hash], link)) {
@@ -1336,7 +1347,7 @@ class MusicFreeHost {
     required Duration timeout,
   }) async {
     if (_disposed) {
-      throw const MusicFreeException('插件宿主已释放');
+      throw MusicFreeException(appL10n.pluginHostDisposed);
     }
     if (!link.isReady) {
       await _start(link);
@@ -1352,7 +1363,7 @@ class MusicFreeHost {
     } on TimeoutException {
       _pending.remove(id);
       link.inFlight -= 1;
-      throw const MusicFreeException('插件宿主没有响应（worker 超时）');
+      throw MusicFreeException(appL10n.pluginHostTimeout);
     }
   }
 
@@ -1577,7 +1588,7 @@ Future<http.Response> _workerHttp(
   final map = (raw as Map).cast<String, dynamic>();
   final error = map['error'];
   if (error != null) {
-    throw MusicFreeException('插件请求失败：$error');
+    throw MusicFreeException(appL10n.pluginRequestFailed('$error'));
   }
   final headers = <String, String>{};
   final rawHeaders = map['headers'];

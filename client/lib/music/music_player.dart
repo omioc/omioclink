@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
 
 import '../core/app_log.dart';
+import '../core/l10n_ext.dart';
 import '../data/music_models.dart';
 import '../data/music_store.dart';
 import '../musicfree/musicfree_service.dart';
@@ -91,7 +92,7 @@ class MusicPlayer extends ChangeNotifier {
     player.stream.position.listen(_onPosition);
     player.stream.error.listen((error) {
       AppLog.warn('音频播放错误', error: error);
-      _fail('音频播放失败');
+      _fail(appL10n.musicAudioFailed);
     });
     return player;
   }
@@ -206,7 +207,7 @@ class MusicPlayer extends ChangeNotifier {
       }
       AppLog.warn('点歌播放失败 ${track.name}', error: error);
       _failedKeys.add(track.key);
-      _fail('播放失败：${_briefMessage(error)}（已跳过）');
+      _fail(appL10n.musicPlayFailedSkipped(_briefMessage(error)));
       _advance();
     }
   }
@@ -331,7 +332,7 @@ class MusicPlayer extends ChangeNotifier {
         return;
       }
       AppLog.warn('房间点歌播放失败 ${current.title}', error: error);
-      _fail('播放失败：${_briefMessage(error)}（只影响本机）');
+      _fail(appL10n.musicPlayFailedLocal(_briefMessage(error)));
     }
   }
 
@@ -558,21 +559,23 @@ class MusicPlayer extends ChangeNotifier {
     if (text.contains('HandshakeException') ||
         text.contains('Connection terminated') ||
         text.contains('Connection reset')) {
+      final l10n = appL10n;
       final host = RegExp(r'连接 ([^\s（()]+) 失败').firstMatch(text)?.group(1);
-      final target = host == null ? '音源服务器' : '音源服务器 $host';
+      final target = host == null
+          ? l10n.musicSourceServer
+          : l10n.musicSourceServerHost(host);
       // 客户端不再自己探测/配置代理（代理交给系统的 TUN/虚拟网卡接管），
       // 所以这里只提示「被网络阻断」，不再区分走没走代理
-      return '连不上 $target（连接被中断）：该音源可能被你的网络阻断，'
-          '换个网络，或让代理软件以 TUN 模式接管本应用流量再试';
+      return l10n.musicSourceBlocked(target);
     }
     if (text.contains('SocketException') ||
         text.contains('TimeoutException') ||
         text.contains('timed out')) {
-      return '连不上音源服务器（网络超时）';
+      return appL10n.musicSourceTimeout;
     }
     final first = text.split('\n').first.trim();
     if (first.isEmpty) {
-      return '未知错误';
+      return appL10n.musicUnknownError;
     }
     return first.length > 120 ? '${first.substring(0, 120)}…' : first;
   }

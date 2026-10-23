@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../core/app_log.dart';
+import '../core/l10n_ext.dart';
 import '../data/music_models.dart';
 import 'musicfree_cache.dart';
 import 'musicfree_host.dart';
@@ -19,10 +20,10 @@ extension MusicFreeQualityKey on MusicFreeQuality {
   };
 
   String get label => switch (this) {
-    MusicFreeQuality.low => '流畅',
-    MusicFreeQuality.standard => '标准',
-    MusicFreeQuality.high => '高品',
-    MusicFreeQuality.super_ => '无损',
+    MusicFreeQuality.low => appL10n.musicQualityLow,
+    MusicFreeQuality.standard => appL10n.musicQualityStandard,
+    MusicFreeQuality.high => appL10n.musicQualityHigh,
+    MusicFreeQuality.super_ => appL10n.musicQualityLossless,
   };
 
   static MusicFreeQuality fromKey(String? key) {
@@ -395,11 +396,11 @@ class MusicFreeService {
         tracks: const <MusicTrack>[],
         errors: <String>[
           if (allPlugins.isEmpty)
-            '还没有安装音乐插件'
+            appL10n.pluginNoneInstalled
           else if (platform != null)
-            '「${musicPlatformLabel(platform)}」这个音源没有提供该类型的搜索'
+            appL10n.pluginSearchTypeUnsupported(musicPlatformLabel(platform))
           else
-            '没有插件支持搜索',
+            appL10n.pluginNoSearchPlugin,
         ],
       );
     }
@@ -418,7 +419,9 @@ class MusicFreeService {
       return MusicFreeSearchResult(
         tracks: const <MusicTrack>[],
         errors: <String>[
-          '音源暂时都不可用（${skipped.map(musicPlatformLabel).join('、')}），稍后会自动重试',
+          appL10n.pluginSourcesUnavailable(
+            skipped.map(musicPlatformLabel).join('、'),
+          ),
         ],
         skipped: skipped,
         total: targets.length,
@@ -982,7 +985,7 @@ class MusicFreeService {
   Future<MusicFreeMediaSource> mediaSource(MusicTrack track, {MusicFreeQuality? qualityOverride}) async {
     final plugin = _pluginOf(track.platform);
     if (plugin == null) {
-      throw MusicFreeException('找不到平台「${track.platform}」对应的插件');
+      throw MusicFreeException(appL10n.pluginPlatformMissing(track.platform));
     }
     // 原样传回插件自己产出的对象（只补 platform，避免丢字段）
     final item = <String, dynamic>{
@@ -996,7 +999,7 @@ class MusicFreeService {
       if (fallback != null) {
         return MusicFreeMediaSource(url: fallback);
       }
-      throw MusicFreeException('插件「${plugin.platform}」不支持解析播放地址');
+      throw MusicFreeException(appL10n.pluginResolveUnsupported(plugin.platform));
     }
     final raw = await plugins.host.invoke(
       plugin.hash,
@@ -1006,7 +1009,7 @@ class MusicFreeService {
       flushWrites: false,
     );
     if (raw is! Map) {
-      throw MusicFreeException('插件「${plugin.platform}」没有返回播放地址');
+      throw MusicFreeException(appL10n.pluginResolveEmpty(plugin.platform));
     }
     final url = raw['url']?.toString() ?? '';
     if (url.isEmpty) {
@@ -1014,7 +1017,7 @@ class MusicFreeService {
       if (fallback != null) {
         return MusicFreeMediaSource(url: fallback);
       }
-      throw MusicFreeException('插件「${plugin.platform}」没有返回播放地址');
+      throw MusicFreeException(appL10n.pluginResolveEmpty(plugin.platform));
     }
     final headers = <String, String>{};
     final rawHeaders = raw['headers'];

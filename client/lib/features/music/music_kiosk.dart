@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 
 import '../../core/app_theme.dart';
+import '../../core/l10n_ext.dart';
 import '../../core/platform.dart';
+import '../../l10n/generated/app_l10n.dart';
 import '../../data/music_models.dart';
 import '../../music/music_favorites.dart';
 import '../../music/music_free_library.dart';
@@ -133,7 +135,11 @@ class _MusicKioskState extends State<MusicKiosk> {
     if (added) {
       return;
     }
-    _notify(queue.contains(track) ? '这首歌已经在播放队列里了' : '播放队列已满');
+    _notify(
+      queue.contains(track)
+          ? context.l10n.musicKioskQueueHasSong
+          : context.l10n.musicKioskQueueFull,
+    );
   }
 
   /// 喜欢 / 取消喜欢：心形立刻变实心（或空），不再弹提示——
@@ -168,18 +174,22 @@ class _MusicKioskState extends State<MusicKiosk> {
   void _enqueueAll(Iterable<MusicTrack> tracks) {
     final list = tracks.toList(growable: false);
     if (list.isEmpty) {
-      _notify('没有可加入的歌曲（重复或队列已满）');
+      _notify(context.l10n.musicKioskNothingToAdd);
       return;
     }
     if (list.length > 1 && queue.sink?.supportsBatch == false) {
-      _notify('服务器不支持批量点歌：正在按 2 秒间隔排入 ${list.length} 首');
+      _notify(context.l10n.musicKioskBatchPaced(list.length));
     }
     unawaited(
       queue.enqueueAll(list).then((added) {
         if (!mounted) {
           return;
         }
-        _notify(added > 0 ? '已加入 $added 首' : '没有可加入的歌曲（重复或队列已满）');
+        _notify(
+          added > 0
+              ? context.l10n.musicKioskAdded(added)
+              : context.l10n.musicKioskNothingToAdd,
+        );
       }),
     );
   }
@@ -202,7 +212,7 @@ class _MusicKioskState extends State<MusicKiosk> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('部分音源没有返回结果'),
+        title: Text(context.l10n.musicIssuesTitle),
         content: SizedBox(
           width: 420,
           child: Column(
@@ -234,8 +244,9 @@ class _MusicKioskState extends State<MusicKiosk> {
               if (skipped.isNotEmpty) ...[
                 if (issues.isNotEmpty) const SizedBox(height: 4),
                 Text(
-                  '已暂时跳过：${skipped.map(musicPlatformLabel).join('、')}'
-                  '（连续失败，几分钟后自动重试）',
+                  context.l10n.musicIssuesSkipped(
+                    skipped.map(musicPlatformLabel).join('、'),
+                  ),
                   style: TextStyle(
                     color: context.palette.textMuted,
                     fontSize: 11,
@@ -245,7 +256,7 @@ class _MusicKioskState extends State<MusicKiosk> {
               ],
               const SizedBox(height: 10),
               Text(
-                '其它结果不受影响：歌照常能搜、能点。',
+                context.l10n.musicIssuesNote,
                 style: TextStyle(color: context.palette.textMuted, fontSize: 11),
               ),
             ],
@@ -262,11 +273,11 @@ class _MusicKioskState extends State<MusicKiosk> {
               }
               unawaited(library.search(library.query, refresh: true));
             },
-            child: const Text('重新搜索'),
+            child: Text(context.l10n.musicRetrySearch),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('知道了'),
+            child: Text(context.l10n.shellGotIt),
           ),
         ],
       ),
@@ -471,8 +482,8 @@ class _SearchBar extends StatelessWidget {
               controller: controller,
               onSubmitted: onSubmit,
               textInputAction: TextInputAction.search,
-              decoration: const InputDecoration(
-                hintText: '搜索歌曲、歌手或歌单',
+              decoration: InputDecoration(
+                hintText: context.l10n.musicSearchHint,
                 prefixIcon: Icon(Icons.search, size: 15),
               ),
             ),
@@ -480,25 +491,25 @@ class _SearchBar extends StatelessWidget {
           const SizedBox(width: AppSpacing.sm),
           FilledButton(
             onPressed: searching ? null : () => onSubmit(controller.text),
-            child: const Text('搜索'),
+            child: Text(context.l10n.musicSearch),
           ),
           if (controller.text.isNotEmpty) ...<
             Widget
           >[
             const SizedBox(width: AppSpacing.xs),
-            TextButton(onPressed: onClear, child: const Text('清空')),
+            TextButton(onPressed: onClear, child: Text(context.l10n.musicClear)),
           ],
           // 音源报错不占内容区：这里只是一个灰不溜秋的小入口，
           // 不点开就完全不影响搜索结果的排版。
           if (issueCount > 0) ...<Widget>[
             const SizedBox(width: AppSpacing.xs),
             Tooltip(
-              message: '部分音源没有返回结果，点击查看原因',
+              message: context.l10n.musicIssuesTooltip,
               child: TextButton.icon(
                 onPressed: onShowIssues,
                 icon: const Icon(Icons.info_outline, size: 13),
                 label: Text(
-                  '$issueCount 个音源异常',
+                  context.l10n.musicIssuesCount(issueCount),
                   style: const TextStyle(fontSize: 11),
                 ),
                 style: TextButton.styleFrom(
@@ -543,7 +554,7 @@ class _NavRail extends StatelessWidget {
         children: [
           NavRow(
             icon: Icons.leaderboard_outlined,
-            label: collapsed ? '' : '排行榜',
+            label: collapsed ? '' : context.l10n.musicNavCharts,
             dense: true,
             selected: section == MusicFreeSection.charts,
             accent: context.palette.accent,
@@ -551,7 +562,7 @@ class _NavRail extends StatelessWidget {
           ),
           NavRow(
             icon: Icons.local_fire_department_outlined,
-            label: collapsed ? '' : '热门歌单',
+            label: collapsed ? '' : context.l10n.musicNavSheets,
             dense: true,
             selected: section == MusicFreeSection.sheets,
             accent: context.palette.accent,
@@ -569,7 +580,7 @@ class _NavRail extends StatelessWidget {
           ),
           NavRow(
             icon: Icons.favorite_border,
-            label: collapsed ? '' : '我喜欢',
+            label: collapsed ? '' : context.l10n.musicNavFavorites,
             dense: true,
             selected: section == MusicFreeSection.favorites,
             accent: context.palette.accent,
@@ -596,7 +607,9 @@ class _NavCollapseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: collapsed ? '展开菜单' : '收起菜单',
+      message: collapsed
+          ? context.l10n.musicMenuExpand
+          : context.l10n.musicMenuCollapse,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
@@ -686,12 +699,12 @@ class _SearchPane extends StatelessWidget {
   /// 行尾动作（喜欢 + 加入队列）：由点歌台统一给，各面板不要自己拼按钮。
   final Widget Function(MusicTrack track) trackActions;
 
-  /// 类型 tab 的中文名（未知类型直接用插件里的原始 id）。
-  static String _searchTypeLabel(String type) => switch (type) {
-    'music' => '音乐',
-    'album' => '专辑',
-    'artist' => '作者',
-    'playlist' || 'sheet' => '歌单',
+  /// 类型 tab 的名称（未知类型直接用插件里的原始 id）。
+  static String _searchTypeLabel(AppL10n l10n, String type) => switch (type) {
+    'music' => l10n.musicSearchTypeMusic,
+    'album' => l10n.musicSearchTypeAlbum,
+    'artist' => l10n.musicSearchTypeArtist,
+    'playlist' || 'sheet' => l10n.musicSearchTypePlaylist,
     _ => type,
   };
 
@@ -701,7 +714,7 @@ class _SearchPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!library.hasSearch) {
-      return _emptyBeforeSearch(library);
+      return _emptyBeforeSearch(context, library);
     }
     if (library.searchError != null) {
       return MusicErrorHint(
@@ -724,7 +737,7 @@ class _SearchPane extends StatelessWidget {
             key: const ValueKey<String>('search-types'),
             items: <({String id, String label})>[
               for (final type in types)
-                (id: type, label: _searchTypeLabel(type)),
+                (id: type, label: _searchTypeLabel(context.l10n, type)),
             ],
             selectedId: library.searchType,
             keyPrefix: 'search-type',
@@ -736,7 +749,7 @@ class _SearchPane extends StatelessWidget {
           _PillTabBar(
             key: const ValueKey<String>('search-platforms'),
             items: <({String id, String label})>[
-              (id: _allPlatforms, label: '全部'),
+              (id: _allPlatforms, label: context.l10n.musicPlatformAll),
               for (final platform in platforms)
                 (id: platform, label: musicPlatformLabel(platform)),
             ],
@@ -757,10 +770,13 @@ class _SearchPane extends StatelessWidget {
               // 音源报错挪到搜索框右边的小入口里（点开才有弹窗），
               // 这里只留一行「还在等几个音源」的轻提示，结果照常往下排。
               MusicSectionTitle(
-                text: '「${library.query}」的搜索结果',
+                text: context.l10n.musicSearchResultsFor(library.query),
                 trailing: library.searching && library.searchTotal > 0
                     ? Text(
-                        '已收到 ${library.searchDone}/${library.searchTotal} 个音源…',
+                        context.l10n.musicSearchProgress(
+                          library.searchDone,
+                          library.searchTotal,
+                        ),
                         style: TextStyle(
                           color: context.palette.textMuted,
                           fontSize: 11,
@@ -770,23 +786,23 @@ class _SearchPane extends StatelessWidget {
               ),
               if (!isMusic)
                 _WarningLine(
-                  text:
-                      '「${_searchTypeLabel(library.searchType)}」的结果暂不支持直接点歌，'
-                      '切到「音乐」再点',
+                  text: context.l10n.musicSearchTypeUnsupported(
+                    _searchTypeLabel(context.l10n, library.searchType),
+                  ),
                 ),
               const SizedBox(height: AppSpacing.sm),
               Expanded(
                 child: library.searching && tracks.isEmpty
-                    ? const MusicLoading(label: '搜索结果')
+                    ? MusicLoading(label: context.l10n.musicSectionSearch)
                     : tracks.isEmpty
                     ? MusicEmptyHint(
                         icon: Icons.search_off,
-                        text: '没有找到相关歌曲',
+                        text: context.l10n.musicSearchEmpty,
                         hint:
                             library.searchWarnings.isEmpty &&
                                 library.searchSkipped.isEmpty
-                            ? '换个关键词，或换一个音源再试'
-                            : '有些音源没返回结果，点右上角看原因',
+                            ? context.l10n.musicSearchEmptyHint
+                            : context.l10n.musicSearchEmptyHintIssues,
                       )
                     : ListView.builder(
                         itemCount: tracks.length,
@@ -809,25 +825,26 @@ class _SearchPane extends StatelessWidget {
   }
 
   /// 还没搜索时的空态：区分「没装插件」与「插件没有搜索能力」。
-  Widget _emptyBeforeSearch(MusicFreeLibrary library) {
+  Widget _emptyBeforeSearch(BuildContext context, MusicFreeLibrary library) {
+    final l10n = context.l10n;
     if (!library.hasPlugins) {
-      return const MusicEmptyHint(
+      return MusicEmptyHint(
         icon: Icons.extension_outlined,
-        text: '还没有安装音乐插件',
-        hint: '到「设置 · 音乐插件」里刷新订阅后再来点歌',
+        text: l10n.pluginNoneInstalled,
+        hint: l10n.pluginNoneInstalledHint,
       );
     }
     if (!library.canSearch) {
-      return const MusicEmptyHint(
+      return MusicEmptyHint(
         icon: Icons.search_off,
-        text: '插件没有提供搜索能力',
-        hint: '当前启用的插件里没有实现 search 方法的，去设置页检查插件',
+        text: l10n.pluginNoSearch,
+        hint: l10n.pluginNoSearchHint,
       );
     }
-    return const MusicEmptyHint(
+    return MusicEmptyHint(
       icon: Icons.search,
-      text: '搜索歌曲',
-      hint: '输入歌名、歌手或歌单，回车或点「搜索」',
+      text: l10n.musicSearchTitle,
+      hint: l10n.musicSearchTitleHint,
     );
   }
 }
@@ -855,7 +872,7 @@ class _ChartsPaneState extends State<_ChartsPane> {
   Widget build(BuildContext context) {
     final groups = library.chartGroups;
     if (library.chartsLoading && groups.isEmpty) {
-      return const MusicLoading(label: '排行榜');
+      return MusicLoading(label: context.l10n.musicNavCharts);
     }
     if (groups.isEmpty) {
       final error = library.chartsError;
@@ -867,15 +884,15 @@ class _ChartsPaneState extends State<_ChartsPane> {
               icon: Icons.leaderboard_outlined,
               text: error ?? _emptyText(library),
               hint: library.hasPlugins
-                  ? '插件没有返回榜单时可以点「重试」，或到设置页检查插件'
-                  : '到「设置 · 音乐插件」里刷新订阅后再来点歌',
+                  ? context.l10n.musicChartsEmptyHint
+                  : context.l10n.pluginNoneInstalledHint,
             ),
           ),
           if (error != null)
             Center(
               child: TextButton(
                 onPressed: () => unawaited(library.loadCharts(force: true)),
-                child: const Text('重试'),
+                child: Text(context.l10n.musicRetry),
               ),
             ),
         ],
@@ -972,8 +989,9 @@ class _ChartsPaneState extends State<_ChartsPane> {
   }
 
 
-  String _emptyText(MusicFreeLibrary library) =>
-      library.hasPlugins ? '插件没有提供排行榜' : '还没有安装音乐插件';
+  String _emptyText(MusicFreeLibrary library) => library.hasPlugins
+      ? context.l10n.pluginNoCharts
+      : context.l10n.pluginNoneInstalled;
 }
 
 /// 顶部一条横向可滚动的 pill tab 条（排行榜的音源 / 热门歌单的标签共用）。
@@ -1225,7 +1243,7 @@ class _SheetsPaneState extends State<_SheetsPane> {
   Widget build(BuildContext context) {
     final tags = library.tags;
     if (library.tagsLoading && tags.isEmpty) {
-      return const MusicLoading(label: '热门歌单');
+      return MusicLoading(label: context.l10n.musicNavSheets);
     }
     if (tags.isEmpty) {
       final error = library.sheetsError;
@@ -1237,8 +1255,8 @@ class _SheetsPaneState extends State<_SheetsPane> {
               icon: Icons.local_fire_department_outlined,
               text: error ?? _emptyText(library),
               hint: library.hasPlugins
-                  ? '插件没有返回歌单标签时可以点「重试」，或到设置页检查插件'
-                  : '到「设置 · 音乐插件」里刷新订阅后再来点歌',
+                  ? context.l10n.musicSheetsEmptyHint
+                  : context.l10n.pluginNoneInstalledHint,
             ),
           ),
           if (error != null)
@@ -1246,7 +1264,7 @@ class _SheetsPaneState extends State<_SheetsPane> {
               child: TextButton(
                 onPressed: () =>
                     unawaited(library.loadTagSections(force: true)),
-                child: const Text('重试'),
+                child: Text(context.l10n.musicRetry),
               ),
             ),
         ],
@@ -1343,16 +1361,20 @@ class _SheetsPaneState extends State<_SheetsPane> {
               return CustomScrollView(
                 slivers: [
                   if (sheets.isEmpty && library.sheetsLoading)
-                    const SliverFillRemaining(
+                    SliverFillRemaining(
                       hasScrollBody: false,
-                      child: MusicLoading(label: '歌单'),
+                      child: MusicLoading(
+                        label: context.l10n.musicSearchTypePlaylist,
+                      ),
                     )
                   else if (sheets.isEmpty)
                     SliverFillRemaining(
                       hasScrollBody: false,
                       child: MusicEmptyHint(
                         icon: Icons.queue_music,
-                        text: library.sheetsError ?? '该分类下暂时没有歌单',
+                        text:
+                            library.sheetsError ??
+                            context.l10n.musicSheetCategoryEmpty,
                       ),
                     )
                   else ...[
@@ -1405,7 +1427,7 @@ class _SheetsPaneState extends State<_SheetsPane> {
                     _WarningLine(text: library.sheetsError!, center: true),
                   TextButton(
                     onPressed: () => unawaited(library.loadMoreSheets()),
-                    child: const Text('加载更多'),
+                    child: Text(context.l10n.musicLoadMore),
                   ),
                 ],
               ),
@@ -1413,8 +1435,9 @@ class _SheetsPaneState extends State<_SheetsPane> {
     );
   }
 
-  String _emptyText(MusicFreeLibrary library) =>
-      library.hasPlugins ? '插件没有提供热门歌单' : '还没有安装音乐插件';
+  String _emptyText(MusicFreeLibrary library) => library.hasPlugins
+      ? context.l10n.pluginNoSheets
+      : context.l10n.pluginNoneInstalled;
 }
 
 // --------------------------------------------------------------------------- //
@@ -1441,19 +1464,19 @@ class _FavoritesPane extends StatelessWidget {
   Widget build(BuildContext context) {
     final tracks = favorites.tracks;
     if (tracks.isEmpty) {
-      return const MusicEmptyHint(
+      return MusicEmptyHint(
         icon: Icons.favorite_border,
-        text: '还没有喜欢的歌',
-        hint: '在搜索结果、榜单里点歌曲右侧的心形，就会收进这里',
+        text: context.l10n.musicFavoritesEmpty,
+        hint: context.l10n.musicFavoritesEmptyHint,
       );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         MusicSectionTitle(
-          text: '我喜欢的音乐',
+          text: context.l10n.musicFavoritesTitle,
           trailing: MusicBadge(
-            text: '${tracks.length} 首',
+            text: context.l10n.musicTrackCount(tracks.length),
             color: context.palette.accent,
           ),
         ),
@@ -1463,7 +1486,7 @@ class _FavoritesPane extends StatelessWidget {
             // 把「存在哪」说清楚：用户换电脑找不到这份列表时，得知道为什么
             Expanded(
               child: Text(
-                '只保存在这台设备上，换电脑 / 换账号都不同步',
+                context.l10n.musicFavoritesLocalOnly,
                 style: TextStyle(
                   color: context.palette.textMuted,
                   fontSize: 11,
@@ -1473,7 +1496,7 @@ class _FavoritesPane extends StatelessWidget {
             TextButton.icon(
               onPressed: () => onEnqueueAll(tracks),
               icon: const Icon(Icons.playlist_add, size: 16),
-              label: const Text('全部加入队列'),
+              label: Text(context.l10n.musicAddAllToQueue),
             ),
           ],
         ),
@@ -1522,11 +1545,13 @@ class _DetailPane extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _backRow(library),
+          _backRow(context, library),
           Expanded(
             child: library.detailLoading
                 ? MusicLoading(label: library.detailLoadingTitle)
-                : MusicErrorHint(message: library.detailError ?? '内容加载失败'),
+                : MusicErrorHint(
+                    message: library.detailError ?? context.l10n.musicLoadFailed,
+                  ),
           ),
         ],
       );
@@ -1535,7 +1560,7 @@ class _DetailPane extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _backRow(library),
+        _backRow(context, library),
         Row(
           children: [
             MusicCover(
@@ -1586,7 +1611,11 @@ class _DetailPane extends StatelessWidget {
                     ),
                   const SizedBox(height: 4),
                   Text(
-                    '共 ${detail.tracks.length} 首${detail.isEnd ? '' : '（还有更多）'}',
+                    detail.isEnd
+                        ? context.l10n.musicDetailCount(detail.tracks.length)
+                        : context.l10n.musicDetailCountMore(
+                            detail.tracks.length,
+                          ),
                     style: TextStyle(
                       color: context.palette.textMuted,
                       fontSize: 11,
@@ -1600,7 +1629,7 @@ class _DetailPane extends StatelessWidget {
                   ? null
                   : () => onEnqueueAll(detail.tracks),
               icon: const Icon(Icons.playlist_add, size: 16),
-              label: const Text('全部加入队列'),
+              label: Text(context.l10n.musicAddAllToQueue),
             ),
           ],
         ),
@@ -1608,10 +1637,10 @@ class _DetailPane extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Expanded(
           child: detail.tracks.isEmpty && !library.detailLoading
-              ? const MusicEmptyHint(
+              ? MusicEmptyHint(
                   icon: Icons.music_off_outlined,
-                  text: '这个列表里还没有歌曲',
-                  hint: '插件返回了空列表，换一个榜单或歌单试试',
+                  text: context.l10n.musicDetailEmpty,
+                  hint: context.l10n.musicDetailEmptyHint,
                 )
               : ListView.builder(
                   itemCount: detail.tracks.length + (detail.isEnd ? 0 : 1),
@@ -1633,7 +1662,7 @@ class _DetailPane extends StatelessWidget {
                               : TextButton(
                                   onPressed: () =>
                                       unawaited(library.loadMoreDetail()),
-                                  child: const Text('加载更多'),
+                                  child: Text(context.l10n.musicLoadMore),
                                 ),
                         ),
                       );
@@ -1664,12 +1693,12 @@ class _DetailPane extends StatelessWidget {
     return parts.join(' · ');
   }
 
-  Widget _backRow(MusicFreeLibrary library) => Align(
+  Widget _backRow(BuildContext context, MusicFreeLibrary library) => Align(
     alignment: Alignment.centerLeft,
     child: TextButton.icon(
       onPressed: library.closeDetail,
       icon: const Icon(Icons.arrow_back, size: 16),
-      label: const Text('返回'),
+      label: Text(context.l10n.musicBack),
     ),
   );
 }
@@ -1723,9 +1752,9 @@ class _QueuePanel extends StatelessWidget {
         children: [
           SectionLabel(
             text: current == null
-                ? '房间播放队列 (${items.length})'
-                : '等待中 (${items.length})',
-            trailing: _actions(items),
+                ? context.l10n.musicQueueTitle(items.length)
+                : context.l10n.musicQueueWaiting(items.length),
+            trailing: _actions(context, items),
           ),
           const SizedBox(height: AppSpacing.xs),
           // 正在播放的那首起播时就从 queue.queue 里取走了，这里显式列出来：
@@ -1736,7 +1765,7 @@ class _QueuePanel extends StatelessWidget {
                 Icon(Icons.graphic_eq, size: 12, color: context.palette.accent),
                 const SizedBox(width: 6),
                 Text(
-                  '正在播放',
+                  context.l10n.musicQueueNowPlaying,
                   style: TextStyle(
                     color: context.palette.accent,
                     fontSize: 10,
@@ -1753,7 +1782,7 @@ class _QueuePanel extends StatelessWidget {
                       width: 24,
                       height: 20,
                     ),
-                    tooltip: '切歌（房主或点歌人）',
+                    tooltip: context.l10n.musicQueueSkip,
                     icon: Icon(
                       Icons.skip_next,
                       color: context.palette.textSecondary,
@@ -1780,7 +1809,7 @@ class _QueuePanel extends StatelessWidget {
               showPlatform: false,
               playing: player.playing,
               // 谁点的这首：房主切歌前能看清切的是谁的
-              note: _requesterNote(currentEntry),
+              note: _requesterNote(context, currentEntry),
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
@@ -1788,8 +1817,10 @@ class _QueuePanel extends StatelessWidget {
             child: items.isEmpty
                 ? MusicEmptyHint(
                     icon: Icons.queue_music,
-                    text: current == null ? '队列还是空的' : '还没有下一首',
-                    hint: '挑一首喜欢的歌，大家一起听',
+                    text: current == null
+                        ? context.l10n.musicQueueEmpty
+                        : context.l10n.musicQueueNoNext,
+                    hint: context.l10n.musicQueueEmptyHint,
                   )
                 : ListView.builder(
                     itemCount: items.length,
@@ -1803,12 +1834,12 @@ class _QueuePanel extends StatelessWidget {
                         track: track,
                         dense: true,
                         showPlatform: false,
-                        note: _requesterNote(entry),
+                        note: _requesterNote(context, entry),
                         trailing: removable
                             ? IconButton(
                                 onPressed: () => onRemove(track),
                                 iconSize: 16,
-                                tooltip: '从队列移除',
+                                tooltip: context.l10n.musicQueueRemove,
                                 icon: Icon(
                                   Icons.close,
                                   color: context.palette.textMuted,
@@ -1821,7 +1852,7 @@ class _QueuePanel extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            _footerHint(),
+            _footerHint(context),
             style: TextStyle(color: context.palette.textMuted, fontSize: 10),
           ),
         ],
@@ -1832,7 +1863,7 @@ class _QueuePanel extends StatelessWidget {
   /// 头部动作：清空（只有房主；切歌挪到了「正在播放」那一行）。
   ///
   /// 服务端会再校验一次权限，这里只负责别把点了必然失败的按钮摆出来。
-  Widget _actions(List<MusicTrack> items) {
+  Widget _actions(BuildContext context, List<MusicTrack> items) {
     if (items.isEmpty || !queue.canClear) {
       return const SizedBox.shrink();
     }
@@ -1842,7 +1873,7 @@ class _QueuePanel extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6),
         minimumSize: const Size(0, 24),
       ),
-      child: const Text('清空', style: TextStyle(fontSize: 11)),
+      child: Text(context.l10n.musicClear, style: const TextStyle(fontSize: 11)),
     );
   }
 
@@ -1856,24 +1887,28 @@ class _QueuePanel extends StatelessWidget {
   }
 
   /// 「点歌人 小明」：本地模式不显示（那一层没有点歌人概念）。
-  String? _requesterNote(MusicEntry? entry) {
+  String? _requesterNote(BuildContext context, MusicEntry? entry) {
     if (entry == null) {
       return null;
     }
+    final l10n = context.l10n;
     final name = entry.requestedBy.displayName.trim();
-    final who = name.isEmpty ? '匿名' : name;
-    return '点歌人 ${queue.isMine(entry) ? '$who（你）' : who}';
+    final who = name.isEmpty ? l10n.musicAnonymous : name;
+    return l10n.musicRequestedBy(
+      queue.isMine(entry) ? l10n.musicRequesterSelf(who) : who,
+    );
   }
 
   /// 底部一行说明：服务端模式下顺便当权限提示。
-  String _footerHint() {
+  String _footerHint(BuildContext context) {
+    final l10n = context.l10n;
     if (!queue.serverDriven) {
-      return '选中喜欢的歌曲，加入房间播放队列和大家一起听吧！';
+      return l10n.musicQueuePickHint;
     }
     if (queue.isOwner) {
-      return '你是房主：可以切歌、清空队列，也能移除别人点的歌。';
+      return l10n.musicQueueOwnerHint;
     }
-    return '每人最多 88 首；点歌人可以切自己点的歌，清空队列需要房主。';
+    return l10n.musicQueueMemberHint;
   }
 }
 
@@ -1946,7 +1981,7 @@ class _KioskNowPlayingBar extends StatelessWidget {
           _transportControls(context, playing: playing, track: track),
           if (compact)
             IconButton(
-              tooltip: '播放队列',
+              tooltip: context.l10n.musicQueueTooltip,
               onPressed: () => _openQueueSheet(context),
               iconSize: 18,
               icon: Icon(
@@ -1956,7 +1991,7 @@ class _KioskNowPlayingBar extends StatelessWidget {
             )
           else ...[
             const SizedBox(width: AppSpacing.md),
-            PlayerVolumeControl(player: player, label: '我的音量'),
+            PlayerVolumeControl(player: player),
           ],
         ],
       ),
@@ -1989,7 +2024,7 @@ class _KioskNowPlayingBar extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          '还没有人点歌',
+          context.l10n.musicNoRequests,
           style: TextStyle(
             color: context.palette.textPrimary,
             fontSize: 13,
@@ -1998,7 +2033,7 @@ class _KioskNowPlayingBar extends StatelessWidget {
         ),
         const SizedBox(height: 2),
         Text(
-          error ?? '在点歌台挑一首加入播放队列，房间一起听',
+          error ?? context.l10n.musicNoRequestsHint,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
@@ -2039,7 +2074,9 @@ class _KioskNowPlayingBar extends StatelessWidget {
             MusicBadge(
               // 三态：在播 / 已暂停 / 还没轮到它。暂停时不能沿用「即将播放」，
               // 那是给「有下一首但还没开始」的队列看的。
-              text: playing ? '同步播放中' : (paused ? '已暂停' : '即将播放'),
+              text: playing
+                  ? context.l10n.musicSyncPlaying
+                  : (paused ? context.l10n.musicPaused : context.l10n.musicUpNext),
               color: playing
                   ? context.palette.success
                   : context.palette.textSecondary,
@@ -2083,7 +2120,7 @@ class _KioskNowPlayingBar extends StatelessWidget {
         PlaybackModeButton(queue: queue, compact: compact),
         const SizedBox(width: AppSpacing.xs),
         Tooltip(
-          message: playing ? '暂停' : '播放',
+          message: playing ? context.l10n.musicPause : context.l10n.musicPlay,
           child: Container(
             width: 36,
             height: 36,
@@ -2103,7 +2140,7 @@ class _KioskNowPlayingBar extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.xs),
         Tooltip(
-          message: '下一首',
+          message: context.l10n.musicNext,
           child: IconButton(
             onPressed: () => unawaited(player.playNext()),
             iconSize: 18,

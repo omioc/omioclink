@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/app_theme.dart';
 import '../../core/formatting.dart';
+import '../../core/l10n_ext.dart';
 import '../../data/music_models.dart';
 import '../../music/music_favorites.dart';
 
@@ -288,7 +289,9 @@ class MusicAddButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: added ? '已在播放队列' : (tooltip ?? '加入播放队列'),
+      message: added
+          ? context.l10n.musicAddButtonAdded
+          : (tooltip ?? context.l10n.musicAddButton),
       child: SizedBox(
         width: 28,
         height: 28,
@@ -324,7 +327,7 @@ class MusicFavoriteButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: favorited ? '取消喜欢' : '喜欢',
+      message: favorited ? context.l10n.musicUnlike : context.l10n.musicLike,
       child: SizedBox(
         width: 28,
         height: 28,
@@ -371,8 +374,8 @@ class NowPlayingFavoriteButton extends StatelessWidget {
     final favorited = current != null && favorites.contains(current);
     return Tooltip(
       message: current == null
-          ? '还没有在播的歌'
-          : (favorited ? '取消喜欢' : '喜欢这首歌'),
+          ? context.l10n.musicNoTrackPlaying
+          : (favorited ? context.l10n.musicUnlike : context.l10n.musicLikeThisSong),
       child: IconButton(
         onPressed: current == null ? null : () => favorites.toggle(current),
         iconSize: compact ? 18 : 20,
@@ -475,7 +478,7 @@ class MusicTopicCard extends StatelessWidget {
                           ),
                         const SizedBox(height: 6),
                         MusicBadge(
-                          text: '免费音源',
+                          text: context.l10n.musicFreeSource,
                           color: context.palette.success,
                         ),
                       ],
@@ -595,7 +598,7 @@ class MusicErrorHint extends StatelessWidget {
             ),
             if (onRetry != null) ...[
               const SizedBox(height: AppSpacing.sm),
-              TextButton(onPressed: onRetry, child: const Text('重试')),
+              TextButton(onPressed: onRetry, child: Text(context.l10n.musicRetry)),
             ],
           ],
         ),
@@ -633,7 +636,7 @@ class MusicLoading extends StatelessWidget {
             if (label != null && label!.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.sm),
               Text(
-                '正在加载 $label',
+                context.l10n.musicLoadingLabel(label!),
                 style: TextStyle(
                   color: context.palette.textMuted,
                   fontSize: 11,
