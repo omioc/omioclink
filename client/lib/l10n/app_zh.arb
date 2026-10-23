@@ -25,7 +25,6 @@
   "wallpaperHint": "点「选择图片」挑一张本机图片（png / jpg / webp）。壁纸会铺满整个应用窗口，卡片与侧栏自动变半透明让出画面；图片压到长边 2400px 后存在本机，只影响这台电脑。",
   "pickWallpaperTitle": "选择壁纸图片",
   "languageSection": "语言",
-  "languageSectionHint": "界面语言，选完立刻生效；「跟随系统」按系统语言自动挑，系统语言不在支持列表里时用中文。",
   "languageSystem": "跟随系统",
   "packSodaName": "薄荷汽水",
   "packSodaTagline": "墨黑底 · 荧光薄荷，默认",

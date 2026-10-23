@@ -13,7 +13,6 @@
   "wallpaperHint": "「이미지 선택」을 눌러 이 기기의 이미지(png / jpg / webp)를 고르세요. 배경 화면은 창 전체를 채우고 카드와 사이드바가 반투명해져 그림이 비칩니다. 이미지는 긴 변 2400px로 줄여 이 기기에만 저장됩니다.",
   "pickWallpaperTitle": "배경 화면 이미지 선택",
   "languageSection": "언어",
-  "languageSectionHint": "인터페이스 언어입니다. 선택하면 바로 적용됩니다. 「시스템 설정 따르기」는 OS 언어를 쓰고, 지원하지 않는 언어면 중국어로 표시됩니다.",
   "languageSystem": "시스템 설정 따르기",
   "packSodaName": "민트 소다",
   "packSodaTagline": "먹색 바탕 · 형광 민트, 기본",

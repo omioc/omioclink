@@ -13,7 +13,6 @@
   "wallpaperHint": "Tap “Choose image” to pick a picture on this device (png / jpg / webp). It fills the whole window and panels turn semi-transparent so the picture shows through; the image is scaled to 2400px on the long edge and stored locally, affecting only this computer.",
   "pickWallpaperTitle": "Choose a wallpaper image",
   "languageSection": "Language",
-  "languageSectionHint": "Interface language, applied as soon as you pick one. “Follow system” uses your OS language, falling back to Chinese when it is not supported.",
   "languageSystem": "Follow system",
   "packSodaName": "Mint Soda",
   "packSodaTagline": "Ink black · neon mint, default",

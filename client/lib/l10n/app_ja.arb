@@ -13,7 +13,6 @@
   "wallpaperHint": "「画像を選択」からこの端末の画像（png / jpg / webp）を選べます。壁紙はウィンドウ全体に敷かれ、カードとサイドバーが半透明になって画像が透けます。画像は長辺 2400px に縮小してこの端末にのみ保存されます。",
   "pickWallpaperTitle": "壁紙画像を選択",
   "languageSection": "言語",
-  "languageSectionHint": "表示言語です。選ぶとすぐ反映されます。「システムに従う」は OS の言語を使い、対応していない言語なら中国語になります。",
   "languageSystem": "システムに従う",
   "packSodaName": "ミントソーダ",
   "packSodaTagline": "墨黒の地に蛍光ミント、既定",

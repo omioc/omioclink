@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -82,7 +83,7 @@ class _ThemePaneState extends State<ThemePane> {
     final store = context.watch<ThemeStore>();
     final palette = context.palette;
     final l10n = context.l10n;
-    // 命名成 localeStore 而不是 locale：下面选语言那段 for 里已有 locale 变量
+    // 命名成 localeStore 而不是 locale：下面下拉的 for 里已有 locale 变量
     final localeStore = context.watch<LocaleStore>();
 
     return Column(
@@ -95,12 +96,56 @@ class _ThemePaneState extends State<ThemePane> {
             children: [
               Text(l10n.themePaneTitle, style: AppText.pageTitle),
               const SizedBox(width: 10),
-              Text(
-                l10n.themePaneCurrent(_packName(l10n, store.pack)),
-                style: TextStyle(
-                  color: palette.textMuted,
-                  fontSize: 11.5,
-                  height: 1.2,
+              // 主题名可能很长（小语种尤其），用剩余宽度并省略，
+              // 否则窄屏上会把页头的语言下拉挤出可视区域
+              Expanded(
+                child: Text(
+                  l10n.themePaneCurrent(_packName(l10n, store.pack)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.textMuted,
+                    fontSize: 11.5,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+              // 语言切换放页头：配色与语言是这一页最常用的两个开关，都在第一屏，
+              // 不用滚到列表底部；下拉沿用设置页那套（isDense + 去掉下划线）
+              Tooltip(
+                message: l10n.languageSection,
+                child: DropdownButton<String>(
+                  value: localeStore.selection,
+                  isDense: true,
+                  underline: const SizedBox.shrink(),
+                  borderRadius: AppRadii.medium,
+                  dropdownColor: palette.panelElevated,
+                  style: TextStyle(color: palette.textSecondary, fontSize: 12),
+                  icon: Icon(
+                    Icons.language_rounded,
+                    size: 15,
+                    color: palette.textMuted,
+                  ),
+                  items: [
+                    for (final code in <String>[
+                      AppLocales.system,
+                      for (final supported in AppLocales.supported)
+                        supported.languageCode,
+                    ])
+                      DropdownMenuItem<String>(
+                        value: code,
+                        child: Text(
+                          code == AppLocales.system
+                              ? l10n.languageSystem
+                              : AppLocales.nativeName(code),
+                        ),
+                      ),
+                  ],
+                  onChanged: (code) {
+                    if (code != null) {
+                      unawaited(_selectLanguage(code));
+                    }
+                  },
                 ),
               ),
             ],
@@ -203,43 +248,6 @@ class _ThemePaneState extends State<ThemePane> {
                             fontSize: 11,
                             height: 1.6,
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  PanelCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SectionLabel(text: l10n.languageSection),
-                        const SizedBox(height: AppSpacing.sm),
-                        Text(
-                          l10n.languageSectionHint,
-                          style: TextStyle(
-                            color: palette.textMuted,
-                            fontSize: 11.5,
-                            height: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        Wrap(
-                          spacing: AppSpacing.sm,
-                          runSpacing: AppSpacing.sm,
-                          children: [
-                            for (final code in <String>[
-                              AppLocales.system,
-                              for (final supported in AppLocales.supported)
-                                supported.languageCode,
-                            ])
-                              _LanguageOption(
-                                label: code == AppLocales.system
-                                    ? l10n.languageSystem
-                                    : AppLocales.nativeName(code),
-                                selected: localeStore.selection == code,
-                                onTap: () => _selectLanguage(code),
-                              ),
-                          ],
                         ),
                       ],
                     ),
@@ -535,52 +543,3 @@ String _packTagline(AppL10n l10n, AppThemePack pack) => switch (pack.id) {
   'night' => l10n.packNightTagline,
   _ => pack.tagline,
 };
-
-/// 语言选项：一颗可选中的胶囊，选中态用强调色描边 + 淡底，和主题卡片同一套配色。
-class _LanguageOption extends StatelessWidget {
-  const _LanguageOption({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          height: AppSizes.control,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            // 选中态用强调色的淡底：深色主题下也看得清，不用另开一套色值
-            color: selected
-                ? palette.accent.withValues(alpha: 0.12)
-                : palette.panel,
-            borderRadius: AppRadii.card,
-            border: Border.all(
-              color: selected ? palette.accent : palette.hairline,
-              width: selected ? 1.4 : 1,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? palette.accent : palette.textPrimary,
-              fontSize: 12.5,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-              height: 1.2,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

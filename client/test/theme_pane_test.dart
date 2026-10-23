@@ -58,7 +58,7 @@ void main() {
     expect(find.text('当前 · 朱砂'), findsOneWidget);
   });
 
-  testWidgets('语言区：四门语言 + 跟随系统，点上就换语言', (tester) async {
+  testWidgets('页头下拉：四门语言 + 跟随系统，选中就换语言', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await tester.binding.setSurfaceSize(const Size(1100, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -73,30 +73,29 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 语言名按「它自己的语言」写，切到英文后整页文案要跟着变
-    expect(find.text('语言'), findsOneWidget);
+    // 下拉框在页头：按钮上就是当前选择，展开后才列出四种语言
     expect(find.text('跟随系统'), findsOneWidget);
+    await tester.tap(find.byType(DropdownButton<String>));
+    await tester.pumpAndSettle();
     expect(find.text('English'), findsOneWidget);
     expect(find.text('日本語'), findsOneWidget);
     expect(find.text('한국어'), findsOneWidget);
 
-    // 语言卡片在第一屏之下：不滚过去，点击会落在视口外（相当于没点到）
-    await tester.ensureVisible(find.text('English'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('English'));
+    await tester.tap(find.text('English').last);
     await tester.pumpAndSettle();
 
-    expect(locale.selection, 'en', reason: '点了 English 要记到 LocaleStore');
+    expect(locale.selection, 'en', reason: '选了 English 要记到 LocaleStore');
     await tester.pumpWidget(
       _pane(theme: theme, locale: locale, selectedLocale: const Locale('en')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Language'), findsOneWidget);
-    expect(find.text('Follow system'), findsOneWidget);
+    expect(find.text('Theme'), findsOneWidget);
+    // 下拉按钮上显示的是当前选择，所以这时候是 English 而不是 Follow system
+    expect(find.text('English'), findsOneWidget);
     expect(find.text('Mint Soda'), findsOneWidget);
   });
 
-  testWidgets('语言区：点「跟随系统」清掉选择', (tester) async {
+  testWidgets('页头下拉：选「跟随系统」清掉选择', (tester) async {
     SharedPreferences.setMockInitialValues({'omioclink.locale': 'ja'});
     await tester.binding.setSurfaceSize(const Size(1100, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -112,10 +111,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 语言卡片在两屏之外：先滚到看得见的位置，否则点击落在空白处
-    await tester.ensureVisible(find.text('システムに従う'));
+    // 页头下拉：展开后选「跟随系统」
+    await tester.tap(find.byType(DropdownButton<String>));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('システムに従う'));
+    await tester.tap(find.text('システムに従う').last);
     await tester.pumpAndSettle();
 
     expect(locale.selection, AppLocales.system);
