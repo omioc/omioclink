@@ -2,6 +2,8 @@
   <img src="assets/readme/omioclink-round.png" width="64" height="64" valign="middle" alt="OmiocLink"> OmiocLink
 </h1>
 
+<p><b>语言 / Languages:</b> <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
+
 <p align="center">
   为小圈子打造的自部署点对点 P2P 通讯应用 —— <b> 一起开黑语音、游戏投屏、听歌观影 </b>
 </p>

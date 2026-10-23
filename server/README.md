@@ -1,5 +1,7 @@
 # OmiocLink 服务端
 
+<p><b>语言 / Languages:</b> <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
+
 FastAPI 信令服务器 + STUN + Web 管理台
 
 **只做信令与状态，永不转发媒体**：语音、屏幕、聊天都在成员之间直连（WebRTC + DTLS-SRTP），服务端没有 TURN、没有 relay 进程，流量永远 KB 级
