@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'dart:typed_data';
 
+import '../core/l10n_ext.dart';
+
 /// 麦克风的实时状态：电平 + 是否在说话 + 采集是否可用。
 ///
 /// 这是「麦克风是否有效」的唯一事实来源：界面上的绿灯、电平条、状态文案
@@ -48,15 +50,15 @@ class MicLevel {
       return failure;
     }
     if (!capturing) {
-      return '麦克风未启动';
+      return appL10n.mediaMicNotStarted;
     }
     if (muted) {
-      return '已静音';
+      return appL10n.mediaMicMuted;
     }
     if (speaking) {
-      return '正在说话';
+      return appL10n.mediaMicSpeaking;
     }
-    return '麦克风正常 · 未检测到语音';
+    return appL10n.mediaMicIdle;
   }
 
   MicLevel copyWith({
@@ -127,8 +129,14 @@ class AudioDevice {
   final String label;
   final bool isInput;
 
-  String get displayName =>
-      label.isNotEmpty ? label : (isInput ? '默认麦克风' : '默认扬声器');
+  String get displayName {
+    if (label.isNotEmpty) {
+      return label;
+    }
+    return isInput
+        ? appL10n.mediaDefaultMicrophone
+        : appL10n.mediaDefaultSpeaker;
+  }
 }
 
 /// 一条 P2P 连接的状态（对 flutter_webrtc 枚举的薄映射，UI 不直接依赖原生类型）。
@@ -143,12 +151,12 @@ enum PeerLinkState {
   bool get isLive => this == PeerLinkState.connected;
 
   String get label => switch (this) {
-    PeerLinkState.idle => '未连接',
-    PeerLinkState.connecting => '连接中',
-    PeerLinkState.connected => '已直连',
-    PeerLinkState.disconnected => '连接中断',
-    PeerLinkState.failed => '无法直连',
-    PeerLinkState.closed => '已关闭',
+    PeerLinkState.idle => appL10n.mediaLinkIdle,
+    PeerLinkState.connecting => appL10n.mediaLinkConnecting,
+    PeerLinkState.connected => appL10n.mediaLinkConnected,
+    PeerLinkState.disconnected => appL10n.mediaLinkDisconnected,
+    PeerLinkState.failed => appL10n.mediaLinkFailed,
+    PeerLinkState.closed => appL10n.mediaLinkClosed,
   };
 }
 
@@ -189,18 +197,18 @@ class PeerStatsSnapshot {
   String get pathDescription {
     final local = localCandidateType;
     if (local == null) {
-      return '尚未建立连接';
+      return appL10n.mediaPathNotConnected;
     }
     if (local == 'host') {
-      return '局域网直连';
+      return appL10n.mediaPathLan;
     }
     if (local == 'srflx' || local == 'prflx') {
-      return '公网打洞直连';
+      return appL10n.mediaPathHolePunch;
     }
     if (local == 'relay') {
-      return '中继转发（异常：服务器不应提供中继）';
+      return appL10n.mediaPathRelay;
     }
-    return '连接方式：$local';
+    return appL10n.mediaPathUnknown(local);
   }
 
   @override

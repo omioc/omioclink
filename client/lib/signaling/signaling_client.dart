@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../core/app_log.dart';
+import '../core/l10n_ext.dart';
 import '../data/server_endpoint.dart';
 import 'protocol.dart';
 
@@ -161,7 +162,7 @@ class SignalingClient {
       _armConnectTimeout();
     } on Object catch (error) {
       AppLog.warn('信令建连失败', error: error);
-      _handleDisconnected(description: '无法建立连接');
+      _handleDisconnected(description: appL10n.dataConnectFailed);
     }
   }
 
@@ -227,7 +228,7 @@ class SignalingClient {
         return;
       }
       AppLog.warn('信令握手超时');
-      _handleDisconnected(description: '连接超时');
+      _handleDisconnected(description: appL10n.dataConnectTimeout);
     });
   }
 
@@ -277,7 +278,7 @@ class SignalingClient {
 
   void _onError(Object error, StackTrace stackTrace) {
     AppLog.warn('信令连接出错', error: error);
-    _handleDisconnected(description: '连接中断');
+    _handleDisconnected(description: appL10n.dataLinkInterrupted);
   }
 
   void _onDone() {
@@ -289,22 +290,22 @@ class SignalingClient {
     switch (code) {
       case SignalingCloseCode.unauthorized:
         failure.value = SignalingFailure.unauthorized;
-        lastError.value = '登录状态已失效，请重新登录';
+        lastError.value = appL10n.dataSessionExpired;
         _stopPermanently();
       case SignalingCloseCode.duplicateSession:
         failure.value = SignalingFailure.duplicateSession;
-        lastError.value = '该账号已在其他设备登录';
+        lastError.value = appL10n.dataSignedInElsewhere;
         _stopPermanently();
       case SignalingCloseCode.roomClosed:
         failure.value = SignalingFailure.roomClosed;
-        lastError.value = '房间已被解散';
+        lastError.value = appL10n.roomsDissolved;
         _stopPermanently();
       case SignalingCloseCode.kickedByAdmin:
         failure.value = SignalingFailure.kickedByAdmin;
-        lastError.value = '你已被管理员移出房间';
+        lastError.value = appL10n.roomsKickedByAdmin;
         _stopPermanently();
       default:
-        _handleDisconnected(description: '连接已断开');
+        _handleDisconnected(description: appL10n.dataLinkClosed);
     }
   }
 

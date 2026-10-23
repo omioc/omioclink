@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import '../core/app_log.dart';
+import '../core/l10n_ext.dart';
 
 /// 本机录音设备主音量的端口（测试可注入假实现）。
 ///
@@ -26,15 +27,18 @@ abstract interface class MicVolumePort {
 
 /// 非 Windows / 无 COM 环境下的空实现（supported=false，读写都失败但绝不抛）。
 class NullMicVolume implements MicVolumePort {
-  NullMicVolume([this._reason = '非 Windows 或没有可用的录音设备']);
+  NullMicVolume([this._reason]);
 
-  final String _reason;
+  /// 为空时回落到「没有可用的录音设备」那句。
+  ///
+  /// 默认参数必须是常量、取不到当前语言，所以推迟到读取时才取文案。
+  final String? _reason;
 
   @override
   bool get supported => false;
 
   @override
-  String? get lastError => _reason;
+  String? get lastError => _reason ?? appL10n.mediaMicVolumeDefaultReason;
 
   @override
   double? readVolume() => null;
@@ -49,7 +53,7 @@ class NullMicVolume implements MicVolumePort {
 /// 当前平台可用的实现（Windows → [WindowsMicVolume]，其它 → [NullMicVolume]）。
 MicVolumePort createMicVolumePort() {
   if (!Platform.isWindows) {
-    return NullMicVolume('非 Windows 系统，调不了本机麦克风音量');
+    return NullMicVolume(appL10n.mediaMicVolumeUnsupportedPlatform);
   }
   return WindowsMicVolume();
 }
@@ -157,7 +161,7 @@ class WindowsMicVolume implements MicVolumePort {
   @override
   double? readVolume() {
     if (_disposed) {
-      _lastError = '麦克风音量接口已释放';
+      _lastError = appL10n.mediaMicVolumeReleased;
       return null;
     }
     var endpoint = _endpoint(retry: true);
@@ -180,7 +184,7 @@ class WindowsMicVolume implements MicVolumePort {
   @override
   bool writeVolume(double value) {
     if (_disposed) {
-      _lastError = '麦克风音量接口已释放';
+      _lastError = appL10n.mediaMicVolumeReleased;
       return false;
     }
     // NaN 没有意义，按 0 处理；其余钳制到 0.0~1.0
@@ -199,7 +203,7 @@ class WindowsMicVolume implements MicVolumePort {
       hr = _writeScalar(endpoint, level);
     }
     if (hr < 0) {
-      _lastError = '设置音量失败（HRESULT ${_hexHr(hr)}）';
+      _lastError = appL10n.mediaMicVolumeWriteFailed(_hexHr(hr));
       return false;
     }
     _lastError = null;
@@ -256,7 +260,7 @@ class WindowsMicVolume implements MicVolumePort {
     try {
       return _acquireUnchecked();
     } on Object catch (error) {
-      _lastError = '初始化麦克风音量接口失败：$error';
+      _lastError = appL10n.mediaMicVolumeInitFailed('$error');
       AppLog.warn('初始化麦克风音量接口抛异常', error: error);
       return null;
     }
@@ -265,7 +269,7 @@ class WindowsMicVolume implements MicVolumePort {
   Pointer<Void>? _acquireUnchecked() {
     final ole = _Ole.instance;
     if (ole == null) {
-      _lastError = '无法加载 ole32.dll，调不了麦克风音量';
+      _lastError = appL10n.mediaMicVolumeOleMissing;
       return null;
     }
     if (!_initCom(ole)) {
@@ -279,7 +283,7 @@ class WindowsMicVolume implements MicVolumePort {
         iidEnumerator == null ||
         iidVolume == null ||
         out == null) {
-      _lastError = '初始化麦克风音量接口失败：内存不足';
+      _lastError = appL10n.mediaMicVolumeInitOutOfMemory;
       return null;
     }
 
@@ -294,7 +298,7 @@ class WindowsMicVolume implements MicVolumePort {
     );
     final enumerator = out.value;
     if (hrCreate < 0 || enumerator == nullptr) {
-      _lastError = '打开音频设备枚举器失败（HRESULT ${_hexHr(hrCreate)}）';
+      _lastError = appL10n.mediaMicVolumeEnumeratorFailed(_hexHr(hrCreate));
       AppLog.debug('打开音频设备枚举器失败：$_lastError');
       return null;
     }
@@ -306,8 +310,8 @@ class WindowsMicVolume implements MicVolumePort {
       device = out.value;
       if (hrEndpoint < 0 || device == nullptr) {
         _lastError = hrEndpoint == _errorNotFound
-            ? '没有找到可用的录音设备'
-            : '获取默认录音设备失败（HRESULT ${_hexHr(hrEndpoint)}）';
+            ? appL10n.mediaMicVolumeNoDevice
+            : appL10n.mediaMicVolumeDefaultDeviceFailed(_hexHr(hrEndpoint));
         AppLog.debug('获取默认录音设备失败：$_lastError');
         device = nullptr;
         return null;
@@ -317,7 +321,7 @@ class WindowsMicVolume implements MicVolumePort {
       final hrActivate = _callActivate(device, iidVolume, out);
       final volume = out.value;
       if (hrActivate < 0 || volume == nullptr) {
-        _lastError = '获取录音设备音量接口失败（HRESULT ${_hexHr(hrActivate)}）';
+        _lastError = appL10n.mediaMicVolumeActivateFailed(_hexHr(hrActivate));
         AppLog.debug('获取录音设备音量接口失败：$_lastError');
         return null;
       }
@@ -331,7 +335,7 @@ class WindowsMicVolume implements MicVolumePort {
       );
       if (setMaster == nullptr || getMaster == nullptr) {
         _release(volume);
-        _lastError = '录音设备音量接口缺少读写方法（HRESULT ${_hexHr(_eFail)}）';
+        _lastError = appL10n.mediaMicVolumeNoMethods(_hexHr(_eFail));
         return null;
       }
       _setMasterVolume = setMaster.asFunction<_SetMasterVolumeLevelScalarDart>();
@@ -363,7 +367,7 @@ class WindowsMicVolume implements MicVolumePort {
       // 线程早被（别处）初始化成 STA：照样能用，只是我们不该再 Uninitialize
       return true;
     }
-    _lastError = '初始化 COM 失败（HRESULT ${_hexHr(hr)}）';
+    _lastError = appL10n.mediaMicVolumeComInitFailed(_hexHr(hr));
     AppLog.debug('初始化 COM 失败：$_lastError');
     return false;
   }
@@ -474,18 +478,18 @@ class WindowsMicVolume implements MicVolumePort {
   double? _readScalar(Pointer<Void> endpoint) {
     final getMaster = _getMasterVolume;
     if (getMaster == null) {
-      _lastError = '读取音量失败（HRESULT ${_hexHr(_eFail)}）';
+      _lastError = appL10n.mediaMicVolumeReadFailed(_hexHr(_eFail));
       return null;
     }
     final ole = _Ole.instance;
     final level = ole == null ? null : _ensureLevelSlot(ole);
     if (level == null) {
-      _lastError = '读取音量失败：内存不足';
+      _lastError = appL10n.mediaMicVolumeReadOutOfMemory;
       return null;
     }
     final hr = getMaster(endpoint, level);
     if (hr < 0) {
-      _lastError = '读取音量失败（HRESULT ${_hexHr(hr)}）';
+      _lastError = appL10n.mediaMicVolumeReadFailed(_hexHr(hr));
       return null;
     }
     _lastError = null;

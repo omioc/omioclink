@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/app_log.dart';
 import '../core/app_palette.dart';
 import '../core/app_paths.dart';
+import '../core/l10n_ext.dart';
 import '../core/theme_packs.dart';
 import 'avatar_picker.dart';
 
@@ -121,20 +122,20 @@ class ThemeStore extends ChangeNotifier {
   Future<String?> applyWallpaperFile(String path) async {
     final file = File(path);
     if (!file.existsSync()) {
-      return '这个文件已经不在了';
+      return appL10n.wallpaperFileMissing;
     }
     if (file.lengthSync() > wallpaperMaxBytes * 2) {
-      return '图片太大了，换一张小一点的';
+      return appL10n.wallpaperTooLarge;
     }
     final raw = await _readBytes(file);
     if (raw == null) {
-      return '读不了这个文件';
+      return appL10n.dataFileUnreadable;
     }
     final png = await AvatarPicker(
       maxSide: wallpaperMaxSide,
     ).compress(raw);
     if (png == null) {
-      return '这个文件不是能识别的图片';
+      return appL10n.dataNotAnImage;
     }
     return applyWallpaper(png);
   }
@@ -153,10 +154,10 @@ class ThemeStore extends ChangeNotifier {
   /// 单独抽出来是为了能在测试里直接喂字节，不走文件选择框。
   Future<String?> applyWallpaper(Uint8List bytes) async {
     if (bytes.isEmpty) {
-      return '这张图是空的';
+      return appL10n.wallpaperEmptyImage;
     }
     if (bytes.length > wallpaperMaxBytes) {
-      return '图片太大了，换一张小一点的';
+      return appL10n.wallpaperTooLarge;
     }
     // 每次换图都写一个新文件名：Flutter 的图片缓存按 provider key（含文件路径）
     // 建键，同名覆盖会让背景继续画缓存里那张旧图 —— 「换了壁纸没反应」就是这么来的；
@@ -181,7 +182,7 @@ class ThemeStore extends ChangeNotifier {
       return null;
     } on Object catch (error) {
       AppLog.warn('壁纸保存失败', error: error);
-      return '壁纸保存失败：$error';
+      return appL10n.wallpaperSaveFailed('$error');
     }
   }
 

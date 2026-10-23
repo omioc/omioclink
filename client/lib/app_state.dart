@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/widgets.dart';
 
 import 'core/app_log.dart';
+import 'core/l10n_ext.dart';
 import 'data/api_client.dart';
 import 'data/avatar_cache.dart';
 import 'data/models.dart';
@@ -334,7 +335,7 @@ class AppState extends ChangeNotifier {
   Future<bool> connectToServer(String address, {bool silent = false}) async {
     final parsed = ServerEndpoint.tryParse(address);
     if (parsed == null) {
-      _fail('服务器地址格式不正确（示例：192.168.1.10:21077）');
+      _fail(appL10n.connectAddressInvalid);
       return false;
     }
     // 地址先落盘再连：服务器暂时连不上（重启、换网络、端口还没起）时，
@@ -368,7 +369,7 @@ class AppState extends ChangeNotifier {
         _music.reset();
       }
       _error = null;
-      _notice = '已连接到 ${info.name}（${parsed.display}）';
+      _notice = appL10n.connectConnectedNotice(info.name, parsed.display);
       return true;
     } on ApiException catch (error) {
       api.close();
@@ -389,7 +390,7 @@ class AppState extends ChangeNotifier {
   }) async {
     final api = _api;
     if (api == null) {
-      _fail('请先连接服务器');
+      _fail(appL10n.dataConnectFirst);
       return false;
     }
     _setBusy(true);
@@ -416,7 +417,7 @@ class AppState extends ChangeNotifier {
   }) async {
     final api = _api;
     if (api == null) {
-      _fail('请先连接服务器');
+      _fail(appL10n.dataConnectFirst);
       return false;
     }
     _setBusy(true);
@@ -629,7 +630,10 @@ class AppState extends ChangeNotifier {
   Future<void> uploadAvatar(Uint8List bytes) async {
     final api = _api;
     if (api == null || _user == null) {
-      throw const ApiException(code: 'not_logged_in', message: '请先登录');
+      throw ApiException(
+        code: 'not_logged_in',
+        message: appL10n.dataSignInFirst,
+      );
     }
     final updated = await api.uploadAvatar(bytes);
     _applyProfile(updated);
@@ -639,7 +643,10 @@ class AppState extends ChangeNotifier {
   Future<void> removeAvatar() async {
     final api = _api;
     if (api == null || _user == null) {
-      throw const ApiException(code: 'not_logged_in', message: '请先登录');
+      throw ApiException(
+        code: 'not_logged_in',
+        message: appL10n.dataSignInFirst,
+      );
     }
     final updated = await api.deleteAvatar();
     _applyProfile(updated);
@@ -661,11 +668,17 @@ class AppState extends ChangeNotifier {
     final api = _api;
     final current = _user;
     if (api == null || current == null) {
-      throw const ApiException(code: 'not_logged_in', message: '请先登录');
+      throw ApiException(
+        code: 'not_logged_in',
+        message: appL10n.dataSignInFirst,
+      );
     }
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
-      throw const ApiException(code: 'invalid_request', message: '昵称不能为空');
+      throw ApiException(
+        code: 'invalid_request',
+        message: appL10n.dataDisplayNameEmpty,
+      );
     }
     if (trimmed == current.displayName) {
       return;
@@ -694,7 +707,10 @@ class AppState extends ChangeNotifier {
   }) async {
     final api = _api;
     if (api == null || _user == null) {
-      throw const ApiException(code: 'not_logged_in', message: '请先登录');
+      throw ApiException(
+        code: 'not_logged_in',
+        message: appL10n.dataSignInFirst,
+      );
     }
     final auth = await api.changePassword(
       currentPassword: currentPassword,
@@ -909,7 +925,7 @@ class AppState extends ChangeNotifier {
   }) async {
     final api = _api;
     if (api == null) {
-      _fail('请先连接服务器');
+      _fail(appL10n.dataConnectFirst);
       return null;
     }
     _setBusy(true);
@@ -922,7 +938,7 @@ class AppState extends ChangeNotifier {
       );
       // 拉一次列表：新建的房间会出现在「我创建的房间」（私有房间尤其是这样）
       await refreshRooms();
-      _notice = '房间「${room.name}」已创建，房间号 ${room.roomId}';
+      _notice = appL10n.roomsCreatedNotice(room.name, room.roomId);
       return room;
     } on ApiException catch (error) {
       _fail(error.message);
@@ -967,7 +983,7 @@ class AppState extends ChangeNotifier {
     final signaling = _signaling;
     final user = _user;
     if (signaling == null || user == null) {
-      _fail('请先登录');
+      _fail(appL10n.dataSignInFirst);
       return false;
     }
     // 已经在这个房间里就别再拆一次：以前「再进一次同一个房间」会先 leaveRoom()
@@ -1015,7 +1031,7 @@ class AppState extends ChangeNotifier {
       _disposeSession();
       return false;
     } on Object catch (error) {
-      _fail('进入房间失败：$error');
+      _fail(appL10n.roomsJoinFailedReason('$error'));
       _disposeSession();
       return false;
     }
@@ -1221,7 +1237,7 @@ class AppState extends ChangeNotifier {
     }
     try {
       await api.sendFriendRequest(username);
-      _notice = '已向 $username 发送好友申请';
+      _notice = appL10n.friendsRequestSent(username);
       await refreshFriends();
     } on ApiException catch (error) {
       _fail(error.message);

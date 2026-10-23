@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import '../core/l10n_ext.dart';
+
 /// STUN 探测结果：本机在某个 STUN 服务器看来是什么公网映射地址。
 class StunProbeResult {
   const StunProbeResult({
@@ -21,8 +23,9 @@ class StunProbeResult {
 
   bool get ok => mappedAddress != null && mappedPort != null;
 
-  String get mapped =>
-      ok ? '${mappedAddress!.address}:$mappedPort' : (error ?? '无响应');
+  String get mapped => ok
+      ? '${mappedAddress!.address}:$mappedPort'
+      : (error ?? appL10n.stunNoResponse);
 }
 
 /// NAT 类型判定。
@@ -187,14 +190,17 @@ abstract final class StunProbe {
   }) async {
     final target = _parseServer(server);
     if (target == null) {
-      return StunProbeResult(server: server, error: '地址格式不支持');
+      return StunProbeResult(
+        server: server,
+        error: appL10n.stunAddressUnsupported,
+      );
     }
 
     RawDatagramSocket? socket;
     try {
       final resolved = await _resolveIpv4(target.host);
       if (resolved == null) {
-        return StunProbeResult(server: server, error: '域名无法解析');
+        return StunProbeResult(server: server, error: appL10n.stunDnsFailed);
       }
       socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       socket.broadcastEnabled = false;
@@ -239,7 +245,10 @@ abstract final class StunProbe {
               ? (error.osError?.message ?? error.message)
               : '$error';
           response.complete(
-            StunProbeResult(server: server, error: '无响应（$detail）'),
+            StunProbeResult(
+              server: server,
+              error: appL10n.stunNoResponseDetail(detail),
+            ),
           );
         },
       );
@@ -249,8 +258,10 @@ abstract final class StunProbe {
       return await response.future
           .timeout(
             timeout,
-            onTimeout: () =>
-                StunProbeResult(server: server, error: '无响应（UDP 可能被拦截）'),
+            onTimeout: () => StunProbeResult(
+              server: server,
+              error: appL10n.stunNoResponseUdpBlocked,
+            ),
           )
           .whenComplete(() async {
             await subscription.cancel();
@@ -258,7 +269,9 @@ abstract final class StunProbe {
     } on SocketException catch (error) {
       return StunProbeResult(
         server: server,
-        error: 'UDP 不可用：${error.osError?.message ?? error.message}',
+        error: appL10n.stunUdpUnavailable(
+          error.osError?.message ?? error.message,
+        ),
       );
     } on Object catch (error) {
       return StunProbeResult(server: server, error: '$error');
@@ -273,10 +286,10 @@ abstract final class StunProbe {
     Duration timeout = const Duration(seconds: 3),
   }) async {
     if (servers.isEmpty) {
-      return const NatDiagnosis(
+      return NatDiagnosis(
         type: NatType.unknown,
         results: <StunProbeResult>[],
-        summary: '服务器未下发 STUN 地址',
+        summary: appL10n.stunNoServers,
       );
     }
     final results = await Future.wait(
@@ -287,9 +300,7 @@ abstract final class StunProbe {
       return NatDiagnosis(
         type: NatType.blocked,
         results: results,
-        summary:
-            'UDP 出站不可达：当前网络禁止 UDP，或防火墙拦截了 STUN。'
-            '本应用不使用服务器中转，这种网络下无法通话——建议换到手机热点或家庭宽带',
+        summary: appL10n.stunBlockedSummary,
       );
     }
     final ports = ok.map((result) => result.mappedPort).toSet();
@@ -297,15 +308,13 @@ abstract final class StunProbe {
       return NatDiagnosis(
         type: NatType.symmetric,
         results: results,
-        summary:
-            '检测到对称型 NAT：不同目的地分配到的公网端口不一致，'
-            '无法与好友打洞直连。建议更换网络（手机热点）后重试',
+        summary: appL10n.stunSymmetricSummary,
       );
     }
     return NatDiagnosis(
       type: NatType.cone,
       results: results,
-      summary: '锥型 NAT：可以打洞直连（预估成功率 80%~90%），媒体不会经过服务器',
+      summary: appL10n.stunConeSummary,
     );
   }
 

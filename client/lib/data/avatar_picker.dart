@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import '../core/app_log.dart';
+import '../core/l10n_ext.dart';
 
 /// 把用户选中的图片缩成适合当头像的尺寸。
 ///
@@ -30,14 +31,14 @@ class AvatarPicker {
       raw = await File(path).readAsBytes();
     } on Object catch (error) {
       AppLog.warn('头像读取失败', error: error);
-      return (bytes: null, error: '读不了这个文件');
+      return (bytes: null, error: appL10n.dataFileUnreadable);
     }
     if (raw.isEmpty) {
-      return (bytes: null, error: '这个文件是空的');
+      return (bytes: null, error: appL10n.avatarFileEmpty);
     }
     final bytes = await compress(raw);
     if (bytes == null) {
-      return (bytes: null, error: '这个文件不是能识别的图片');
+      return (bytes: null, error: appL10n.dataNotAnImage);
     }
     return (bytes: bytes, error: null);
   }

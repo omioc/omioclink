@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 
 import '../core/app_locales.dart';
 import '../core/app_log.dart';
+import '../core/l10n_ext.dart';
 import '../signaling/protocol.dart';
 import 'models.dart';
 import 'server_endpoint.dart';
@@ -96,16 +97,19 @@ class ApiClient {
       final streamed = await _http.send(request).timeout(timeout);
       return await http.Response.fromStream(streamed);
     } on TimeoutException {
-      throw const ApiException(code: 'timeout', message: '服务器响应超时，请检查网络或服务器地址');
+      throw ApiException(code: 'timeout', message: appL10n.apiTimeout);
     } on SocketException catch (error) {
       AppLog.warn('请求失败 ${request.url}', error: error);
-      throw const ApiException(
+      throw ApiException(
         code: 'network_error',
-        message: '无法连接到服务器，请检查地址与网络',
+        message: appL10n.apiNetworkError,
       );
     } on http.ClientException catch (error) {
       AppLog.warn('请求失败 ${request.url}', error: error);
-      throw const ApiException(code: 'network_error', message: '连接被中断，请稍后重试');
+      throw ApiException(
+        code: 'network_error',
+        message: appL10n.apiInterrupted,
+      );
     }
   }
 
@@ -118,7 +122,7 @@ class ApiClient {
     // _decode 对错误状态一定会抛；这行只是给类型系统一个交代
     throw ApiException(
       code: 'http_${response.statusCode}',
-      message: '请求失败（${response.statusCode}）',
+      message: appL10n.apiHttpFailed(response.statusCode),
       statusCode: response.statusCode,
     );
   }
@@ -129,7 +133,7 @@ class ApiClient {
       if (status >= 400) {
         throw ApiException(
           code: 'http_$status',
-          message: '请求失败（$status）',
+          message: appL10n.apiHttpFailed(status),
           statusCode: status,
         );
       }
@@ -142,7 +146,7 @@ class ApiClient {
     } on FormatException {
       throw ApiException(
         code: 'bad_response',
-        message: '服务器返回了无法解析的内容',
+        message: appL10n.apiBadResponse,
         statusCode: status,
       );
     }
@@ -153,7 +157,7 @@ class ApiClient {
           : const <String, dynamic>{};
       throw ApiException(
         code: map['code'] as String? ?? 'http_$status',
-        message: map['message'] as String? ?? '请求失败（$status）',
+        message: map['message'] as String? ?? appL10n.apiHttpFailed(status),
         statusCode: status,
       );
     }

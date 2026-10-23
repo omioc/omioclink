@@ -7,6 +7,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/app_log.dart';
+import '../core/l10n_ext.dart';
 import '../data/models.dart';
 import '../data/volume_store.dart';
 import '../media/media_engine.dart';
@@ -237,7 +238,7 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
   /// 进入房间。成功时 [phase] 变为 [RoomPhase.active]。
   Future<void> join({required String roomId, String? password}) async {
     if (_disposed) {
-      throw const RoomException('会话已释放');
+      throw RoomException(appL10n.dataSessionReleased);
     }
     AppLog.info(
       '加入房间 $roomId（${password == null || password.isEmpty ? '无密码' : '带密码'}）',
@@ -258,12 +259,12 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
     _joinWaiter = waiter;
     if (!signaling.send(joinRoomMessage(roomId: roomId, password: password))) {
       _joinWaiter = null;
-      throw const RoomException('信令未就绪，请稍后重试');
+      throw RoomException(appL10n.dataSignalingNotReady);
     }
     try {
       await waiter.future.timeout(
         const Duration(seconds: 12),
-        onTimeout: () => throw const RoomException('进房超时，请检查网络'),
+        onTimeout: () => throw RoomException(appL10n.roomsJoinTimeout),
       );
     } on Object {
       _joinWaiter = null;
@@ -304,7 +305,7 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
         if (!completer.isCompleted) {
           completer.completeError(
             RoomException(
-              signaling.lastError.value ?? '无法连接到服务器',
+              signaling.lastError.value ?? appL10n.dataUnreachable,
               code: 'signaling_failed',
             ),
           );
@@ -319,8 +320,8 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
     try {
       await completer.future.timeout(
         const Duration(seconds: 15),
-        onTimeout: () => throw const RoomException(
-          '连接服务器超时，请检查地址与网络',
+        onTimeout: () => throw RoomException(
+          appL10n.dataConnectServerTimeout,
           code: 'connect_timeout',
         ),
       );
@@ -586,7 +587,7 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
   }
 
   Future<void> _onRoomClosed(RoomClosedMessage message) async {
-    _lastError = '房间已被解散';
+    _lastError = appL10n.roomsDissolved;
     await _teardownMedia();
     _resetRoomState();
     _setPhase(RoomPhase.closed);
@@ -594,14 +595,16 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
 
   Future<void> _onKicked(KickedMessage message) async {
     _lastError = switch (message.code) {
-      SignalingErrorCode.duplicateSession => '该账号已在其他设备登录',
+      SignalingErrorCode.duplicateSession => appL10n.dataSignedInElsewhere,
       SignalingErrorCode.kickedByAdmin => switch (message.reason) {
-        'account_disabled' => '账号已被管理员禁用',
-        'account_deleted' => '账号已被管理员删除',
-        'owner_deleted' => '房主已注销，房间已解散',
-        _ => '你已被管理员移出房间',
+        'account_disabled' => appL10n.roomsKickedAccountDisabled,
+        'account_deleted' => appL10n.roomsKickedAccountDeleted,
+        'owner_deleted' => appL10n.roomsKickedOwnerDeleted,
+        _ => appL10n.roomsKickedByAdmin,
       },
-      _ => message.reason.isEmpty ? '已被移出房间' : message.reason,
+      _ => message.reason.isEmpty
+          ? appL10n.roomsKickedGeneric
+          : message.reason,
     };
     await _teardownMedia();
     _resetRoomState();
@@ -1024,7 +1027,7 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
   /// 某个成员到本机的直连方式描述（用于「点对点、不经过服务器」的可验证展示）。
   Future<String> describePath(String peerId) async {
     final snapshot = await media.statsFor(peerId);
-    return snapshot?.pathDescription ?? '尚未建立连接';
+    return snapshot?.pathDescription ?? appL10n.mediaPathNotConnected;
   }
 
   // ------------------------------------------------------------------ 内部

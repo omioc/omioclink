@@ -1223,5 +1223,496 @@
   "shellMicOpen": "打开麦克风",
   "shellMicResume": "恢复收听",
   "shellMicMuteSelf": "静音（关闭我的麦克风）",
-  "shellMicMuteOther": "静音（不再收听对方）"
+  "shellMicMuteOther": "静音（不再收听对方）",
+  "apiTimeout": "服务器响应超时，请检查网络或服务器地址",
+  "@apiTimeout": {
+    "description": "REST 请求超时的提示"
+  },
+  "apiNetworkError": "无法连接到服务器，请检查地址与网络",
+  "@apiNetworkError": {
+    "description": "连不上服务器（Socket 失败）的提示"
+  },
+  "apiInterrupted": "连接被中断，请稍后重试",
+  "@apiInterrupted": {
+    "description": "连接中途被中断的提示"
+  },
+  "apiHttpFailed": "请求失败（{status}）",
+  "@apiHttpFailed": {
+    "description": "按 HTTP 状态码给出的失败提示",
+    "placeholders": {
+      "status": {
+        "type": "int"
+      }
+    }
+  },
+  "apiBadResponse": "服务器返回了无法解析的内容",
+  "@apiBadResponse": {
+    "description": "响应体不是合法 JSON"
+  },
+  "dataConnectFailed": "无法建立连接",
+  "@dataConnectFailed": {
+    "description": "信令建连直接抛异常时的描述"
+  },
+  "dataConnectTimeout": "连接超时",
+  "@dataConnectTimeout": {
+    "description": "信令握手超时的描述"
+  },
+  "dataLinkInterrupted": "连接中断",
+  "@dataLinkInterrupted": {
+    "description": "信令连接出错时的描述"
+  },
+  "dataLinkClosed": "连接已断开",
+  "@dataLinkClosed": {
+    "description": "信令连接被关闭且没有具体原因时的描述"
+  },
+  "dataSessionExpired": "登录状态已失效，请重新登录",
+  "@dataSessionExpired": {
+    "description": "令牌失效被服务端拒掉时的提示"
+  },
+  "dataSignedInElsewhere": "该账号已在其他设备登录",
+  "@dataSignedInElsewhere": {
+    "description": "同一账号在别处登录导致本机被顶下线"
+  },
+  "dataSessionReleased": "会话已释放",
+  "@dataSessionReleased": {
+    "description": "房间会话已释放后仍被调用（进房失败横幅里会显示）"
+  },
+  "dataSignalingNotReady": "信令未就绪，请稍后重试",
+  "@dataSignalingNotReady": {
+    "description": "信令未连接时发不进房请求"
+  },
+  "dataUnreachable": "无法连接到服务器",
+  "@dataUnreachable": {
+    "description": "信号里没带原因时用的兜底描述"
+  },
+  "dataConnectServerTimeout": "连接服务器超时，请检查地址与网络",
+  "@dataConnectServerTimeout": {
+    "description": "等信令连上服务器超过 15 秒"
+  },
+  "dataFileUnreadable": "读不了这个文件",
+  "@dataFileUnreadable": {
+    "description": "本地图片读不出来（头像与壁纸共用）"
+  },
+  "dataNotAnImage": "这个文件不是能识别的图片",
+  "@dataNotAnImage": {
+    "description": "文件解不出图片（头像与壁纸共用）"
+  },
+  "dataUnknownServer": "未知服务器",
+  "@dataUnknownServer": {
+    "description": "服务器没上报名字时的占位名"
+  },
+  "roomsDissolved": "房间已被解散",
+  "@roomsDissolved": {
+    "description": "房间被房主解散"
+  },
+  "roomsKickedByAdmin": "你已被管理员移出房间",
+  "@roomsKickedByAdmin": {
+    "description": "被管理员踢出房间"
+  },
+  "roomsKickedAccountDisabled": "账号已被管理员禁用",
+  "@roomsKickedAccountDisabled": {
+    "description": "被踢原因：账号被禁用"
+  },
+  "roomsKickedAccountDeleted": "账号已被管理员删除",
+  "@roomsKickedAccountDeleted": {
+    "description": "被踢原因：账号被删除"
+  },
+  "roomsKickedOwnerDeleted": "房主已注销，房间已解散",
+  "@roomsKickedOwnerDeleted": {
+    "description": "被踢原因：房主注销账号"
+  },
+  "roomsKickedGeneric": "已被移出房间",
+  "@roomsKickedGeneric": {
+    "description": "被移出房间但没有具体原因"
+  },
+  "roomsJoinTimeout": "进房超时，请检查网络",
+  "@roomsJoinTimeout": {
+    "description": "进房请求迟迟没有回音"
+  },
+  "roomsJoinFailedReason": "进入房间失败：{reason}",
+  "@roomsJoinFailedReason": {
+    "description": "进房抛出非预期异常时的兜底横幅",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "roomsCreatedNotice": "房间「{name}」已创建，房间号 {roomId}",
+  "@roomsCreatedNotice": {
+    "description": "创建房间成功后的横幅",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "roomId": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsRequestSent": "已向 {name} 发送好友申请",
+  "@friendsRequestSent": {
+    "description": "发送好友申请成功后的横幅",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "connectConnectedNotice": "已连接到 {name}（{address}）",
+  "@connectConnectedNotice": {
+    "description": "连上服务器后的横幅",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaMicMissingReason": "未检测到麦克风设备",
+  "@mediaMicMissingReason": {
+    "description": "麦克风状态行：机器上没有录音设备"
+  },
+  "mediaMicMissingMessage": "这台电脑没有可用的麦克风，无法采集声音",
+  "@mediaMicMissingMessage": {
+    "description": "采集失败的详细说明：机器上没有麦克风"
+  },
+  "mediaMicDeniedReason": "无法使用麦克风（无设备或无权限）",
+  "@mediaMicDeniedReason": {
+    "description": "麦克风状态行：打不开麦克风"
+  },
+  "mediaMicDeniedMessage": "无法使用麦克风，请检查系统权限与设备占用",
+  "@mediaMicDeniedMessage": {
+    "description": "采集失败的详细说明：权限或占用"
+  },
+  "mediaMicNoTrackReason": "麦克风没有可用的采集设备",
+  "@mediaMicNoTrackReason": {
+    "description": "麦克风状态行：拿到的流没有音轨"
+  },
+  "mediaMicNoTrackMessage": "没能从麦克风读到声音，请检查设备是否可用",
+  "@mediaMicNoTrackMessage": {
+    "description": "采集失败的详细说明：读到空壳流"
+  },
+  "mediaAudioOutputFailed": "无法切换到所选扬声器，请确认设备仍然可用",
+  "@mediaAudioOutputFailed": {
+    "description": "切换扬声器失败"
+  },
+  "mediaScreenEnumFailed": "无法枚举屏幕与窗口",
+  "@mediaScreenEnumFailed": {
+    "description": "枚举屏幕源失败"
+  },
+  "mediaNoScreenSource": "没有可共享的屏幕或窗口",
+  "@mediaNoScreenSource": {
+    "description": "一个可共享的源都没有"
+  },
+  "mediaScreenCaptureFailed": "无法开始屏幕共享，请检查系统权限",
+  "@mediaScreenCaptureFailed": {
+    "description": "系统拒绝了屏幕采集"
+  },
+  "mediaMicNotStarted": "麦克风未启动",
+  "@mediaMicNotStarted": {
+    "description": "麦克风状态行：尚未采集"
+  },
+  "mediaMicMuted": "已静音",
+  "@mediaMicMuted": {
+    "description": "麦克风状态行：已静音"
+  },
+  "mediaMicSpeaking": "正在说话",
+  "@mediaMicSpeaking": {
+    "description": "麦克风状态行：检测到说话"
+  },
+  "mediaMicIdle": "麦克风正常 · 未检测到语音",
+  "@mediaMicIdle": {
+    "description": "麦克风状态行：一切正常但没有声音"
+  },
+  "mediaDefaultMicrophone": "默认麦克风",
+  "@mediaDefaultMicrophone": {
+    "description": "设备没有名字时的占位名（输入）"
+  },
+  "mediaDefaultSpeaker": "默认扬声器",
+  "@mediaDefaultSpeaker": {
+    "description": "设备没有名字时的占位名（输出）"
+  },
+  "mediaLinkIdle": "未连接",
+  "@mediaLinkIdle": {
+    "description": "单条 P2P 连接状态：未连接"
+  },
+  "mediaLinkConnecting": "连接中",
+  "@mediaLinkConnecting": {
+    "description": "单条 P2P 连接状态：连接中"
+  },
+  "mediaLinkConnected": "已直连",
+  "@mediaLinkConnected": {
+    "description": "单条 P2P 连接状态：已直连"
+  },
+  "mediaLinkDisconnected": "连接中断",
+  "@mediaLinkDisconnected": {
+    "description": "单条 P2P 连接状态：中断"
+  },
+  "mediaLinkFailed": "无法直连",
+  "@mediaLinkFailed": {
+    "description": "单条 P2P 连接状态：打洞失败"
+  },
+  "mediaLinkClosed": "已关闭",
+  "@mediaLinkClosed": {
+    "description": "单条 P2P 连接状态：已关闭"
+  },
+  "mediaPathNotConnected": "尚未建立连接",
+  "@mediaPathNotConnected": {
+    "description": "还没有拿到候选对时的连接路径描述"
+  },
+  "mediaPathLan": "局域网直连",
+  "@mediaPathLan": {
+    "description": "连接路径：同一局域网"
+  },
+  "mediaPathHolePunch": "公网打洞直连",
+  "@mediaPathHolePunch": {
+    "description": "连接路径：公网打洞"
+  },
+  "mediaPathRelay": "中继转发（异常：服务器不应提供中继）",
+  "@mediaPathRelay": {
+    "description": "连接路径：走了中继（本项目不该出现）"
+  },
+  "mediaPathUnknown": "连接方式：{candidate}",
+  "@mediaPathUnknown": {
+    "description": "连接路径：不认识的候选类型",
+    "placeholders": {
+      "candidate": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaMicVolumeDefaultReason": "非 Windows 或没有可用的录音设备",
+  "@mediaMicVolumeDefaultReason": {
+    "description": "没有别的线索时的兜底说明"
+  },
+  "mediaMicVolumeUnsupportedPlatform": "非 Windows 系统，调不了本机麦克风音量",
+  "@mediaMicVolumeUnsupportedPlatform": {
+    "description": "非 Windows 平台调不了系统麦克风音量"
+  },
+  "mediaMicVolumeReleased": "麦克风音量接口已释放",
+  "@mediaMicVolumeReleased": {
+    "description": "接口已释放后仍在读写"
+  },
+  "mediaMicVolumeWriteFailed": "设置音量失败（HRESULT {hr}）",
+  "@mediaMicVolumeWriteFailed": {
+    "description": "写音量失败，带 HRESULT",
+    "placeholders": {
+      "hr": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaMicVolumeInitFailed": "初始化麦克风音量接口失败：{reason}",
+  "@mediaMicVolumeInitFailed": {
+    "description": "初始化接口时抛异常",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaMicVolumeInitOutOfMemory": "初始化麦克风音量接口失败：内存不足",
+  "@mediaMicVolumeInitOutOfMemory": {
+    "description": "初始化接口时申请内存失败"
+  },
+  "mediaMicVolumeOleMissing": "无法加载 ole32.dll，调不了麦克风音量",
+  "@mediaMicVolumeOleMissing": {
+    "description": "ole32.dll 加载不了"
+  },
+  "mediaMicVolumeEnumeratorFailed": "打开音频设备枚举器失败（HRESULT {hr}）",
+  "@mediaMicVolumeEnumeratorFailed": {
+    "description": "打开音频设备枚举器失败",
+    "placeholders": {
+      "hr": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaMicVolumeNoDevice": "没有找到可用的录音设备",
+  "@mediaMicVolumeNoDevice": {
+    "description": "没有默认录音设备"
+  },
+  "mediaMicVolumeDefaultDeviceFailed": "获取默认录音设备失败（HRESULT {hr}）",
+  "@mediaMicVolumeDefaultDeviceFailed": {
+    "description": "取默认录音设备失败",
+    "placeholders": {
+      "hr": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaMicVolumeActivateFailed": "获取录音设备音量接口失败（HRESULT {hr}）",
+  "@mediaMicVolumeActivateFailed": {
+    "description": "取音量接口失败",
+    "placeholders": {
+      "hr": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaMicVolumeNoMethods": "录音设备音量接口缺少读写方法（HRESULT {hr}）",
+  "@mediaMicVolumeNoMethods": {
+    "description": "vtable 上没有读写方法",
+    "placeholders": {
+      "hr": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaMicVolumeComInitFailed": "初始化 COM 失败（HRESULT {hr}）",
+  "@mediaMicVolumeComInitFailed": {
+    "description": "CoInitializeEx 失败",
+    "placeholders": {
+      "hr": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaMicVolumeReadFailed": "读取音量失败（HRESULT {hr}）",
+  "@mediaMicVolumeReadFailed": {
+    "description": "读音量失败",
+    "placeholders": {
+      "hr": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaMicVolumeReadOutOfMemory": "读取音量失败：内存不足",
+  "@mediaMicVolumeReadOutOfMemory": {
+    "description": "读音量时申请内存失败"
+  },
+  "mediaMicVolumeWriteFallback": "写入麦克风音量失败",
+  "@mediaMicVolumeWriteFallback": {
+    "description": "写音量失败且端口没给原因"
+  },
+  "shareFpsFirstLabel": "帧率优先",
+  "@shareFpsFirstLabel": {
+    "description": "共享策略卡片的标题：帧率优先"
+  },
+  "shareFpsFirstScene": "游戏投屏",
+  "@shareFpsFirstScene": {
+    "description": "帧率优先的适用场景（卡片副标题）"
+  },
+  "shareFpsFirstDetail": "恒定 60fps，带宽不足时先降分辨率",
+  "@shareFpsFirstDetail": {
+    "description": "帧率优先的补充说明"
+  },
+  "shareResolutionFirstLabel": "分辨率优先",
+  "@shareResolutionFirstLabel": {
+    "description": "共享策略卡片的标题：分辨率优先"
+  },
+  "shareResolutionFirstScene": "会议 · 文档 · 演示",
+  "@shareResolutionFirstScene": {
+    "description": "分辨率优先的适用场景（卡片副标题）"
+  },
+  "shareResolutionFirstDetail": "锁定源分辨率不缩放，帧率最低 30fps",
+  "@shareResolutionFirstDetail": {
+    "description": "分辨率优先的补充说明"
+  },
+  "shareBalancedLabel": "均衡",
+  "@shareBalancedLabel": {
+    "description": "共享策略卡片的标题：均衡"
+  },
+  "shareBalancedScene": "寻常场景",
+  "@shareBalancedScene": {
+    "description": "均衡档的适用场景（卡片副标题）"
+  },
+  "shareBalancedDetail": "按画面内容自动取舍，默认档",
+  "@shareBalancedDetail": {
+    "description": "均衡档的补充说明"
+  },
+  "stunNoResponse": "无响应",
+  "@stunNoResponse": {
+    "description": "STUN 探测失败且没有细节"
+  },
+  "stunAddressUnsupported": "地址格式不支持",
+  "@stunAddressUnsupported": {
+    "description": "配置的 STUN 地址解析不了"
+  },
+  "stunDnsFailed": "域名无法解析",
+  "@stunDnsFailed": {
+    "description": "STUN 主机名解析不了"
+  },
+  "stunNoResponseDetail": "无响应（{detail}）",
+  "@stunNoResponseDetail": {
+    "description": "STUN 探测失败并带上系统给的细节",
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "stunNoResponseUdpBlocked": "无响应（UDP 可能被拦截）",
+  "@stunNoResponseUdpBlocked": {
+    "description": "STUN 探测超时"
+  },
+  "stunUdpUnavailable": "UDP 不可用：{detail}",
+  "@stunUdpUnavailable": {
+    "description": "UDP socket 建不起来",
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "stunNoServers": "服务器未下发 STUN 地址",
+  "@stunNoServers": {
+    "description": "服务器没下发 STUN 地址"
+  },
+  "stunBlockedSummary": "UDP 出站不可达：当前网络禁止 UDP，或防火墙拦截了 STUN。本应用不使用服务器中转，这种网络下无法通话——建议换到手机热点或家庭宽带",
+  "@stunBlockedSummary": {
+    "description": "所有 STUN 都没回应：UDP 出不去"
+  },
+  "stunSymmetricSummary": "检测到对称型 NAT：不同目的地分配到的公网端口不一致，无法与好友打洞直连。建议更换网络（手机热点）后重试",
+  "@stunSymmetricSummary": {
+    "description": "不同 STUN 看到的端口不一致 = 对称型 NAT"
+  },
+  "stunConeSummary": "锥型 NAT：可以打洞直连（预估成功率 80%~90%），媒体不会经过服务器",
+  "@stunConeSummary": {
+    "description": "端口一致 = 锥型 NAT，打洞成功率高"
+  },
+  "avatarFileEmpty": "这个文件是空的",
+  "@avatarFileEmpty": {
+    "description": "选中的头像文件是空的"
+  },
+  "wallpaperFileMissing": "这个文件已经不在了",
+  "@wallpaperFileMissing": {
+    "description": "壁纸文件已经不在了"
+  },
+  "wallpaperTooLarge": "图片太大了，换一张小一点的",
+  "@wallpaperTooLarge": {
+    "description": "壁纸原图太大"
+  },
+  "wallpaperEmptyImage": "这张图是空的",
+  "@wallpaperEmptyImage": {
+    "description": "重编码出来的 PNG 是空的"
+  },
+  "wallpaperSaveFailed": "壁纸保存失败：{reason}",
+  "@wallpaperSaveFailed": {
+    "description": "壁纸落盘失败",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "connectAddressInvalid": "服务器地址格式不正确（示例：192.168.1.10:21077）",
+  "@connectAddressInvalid": {
+    "description": "连接页：服务器地址解析不出来"
+  },
+  "dataConnectFirst": "请先连接服务器",
+  "@dataConnectFirst": {
+    "description": "还没连上服务器就做了需要服务器的操作"
+  },
+  "dataSignInFirst": "请先登录",
+  "@dataSignInFirst": {
+    "description": "还没登录就做了需要登录的操作"
+  },
+  "dataDisplayNameEmpty": "昵称不能为空",
+  "@dataDisplayNameEmpty": {
+    "description": "昵称为空时的校验提示"
+  }
 }

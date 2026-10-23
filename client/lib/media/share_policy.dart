@@ -1,3 +1,5 @@
+import '../core/l10n_ext.dart';
+
 /// 屏幕共享的编码策略：决定「上行不够时先牺牲什么」。
 ///
 /// 它取代了原来的 `ScreenShareQuality`。那套把帧率、码率上限、降级策略写死成一个
@@ -6,24 +8,37 @@
 /// `uplink_budget.dart` 的 `allocateScreenPlan`。
 enum SharePolicy {
   /// 游戏投屏：先保帧率，带宽不够就把分辨率降下来。
-  fpsFirst('帧率优先', '游戏投屏', '恒定 60fps，带宽不足时先降分辨率'),
+  fpsFirst,
 
   /// 会议 / 文档 / 演示：分辨率锁死在源尺寸，帧率先让位。
-  resolutionFirst('分辨率优先', '会议 · 文档 · 演示', '锁定源分辨率不缩放，帧率最低 30fps'),
+  resolutionFirst,
 
   /// 寻常场景：按画面内容在两者之间自动取舍。
-  balanced('均衡', '寻常场景', '按画面内容自动取舍，默认档');
-
-  const SharePolicy(this.label, this.scene, this.detail);
+  balanced;
 
   /// 界面上的名字。
-  final String label;
+  ///
+  /// 文案不能挂在枚举常量上（枚举值必须 const，而文案要跟着语言走），
+  /// 所以改成读取时去 ARB 取当前语言。
+  String get label => switch (this) {
+    SharePolicy.fpsFirst => appL10n.shareFpsFirstLabel,
+    SharePolicy.resolutionFirst => appL10n.shareResolutionFirstLabel,
+    SharePolicy.balanced => appL10n.shareBalancedLabel,
+  };
 
   /// 一句话适用场景，卡片上作为副标题。
-  final String scene;
+  String get scene => switch (this) {
+    SharePolicy.fpsFirst => appL10n.shareFpsFirstScene,
+    SharePolicy.resolutionFirst => appL10n.shareResolutionFirstScene,
+    SharePolicy.balanced => appL10n.shareBalancedScene,
+  };
 
   /// 选中后的补充说明。
-  final String detail;
+  String get detail => switch (this) {
+    SharePolicy.fpsFirst => appL10n.shareFpsFirstDetail,
+    SharePolicy.resolutionFirst => appL10n.shareResolutionFirstDetail,
+    SharePolicy.balanced => appL10n.shareBalancedDetail,
+  };
 
   /// 默认档：绝大多数共享场景用均衡就够。
   static const SharePolicy fallback = SharePolicy.balanced;

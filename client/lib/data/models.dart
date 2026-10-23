@@ -1,6 +1,7 @@
 /// REST 层的领域模型（与服务端 `app/schemas.py` 对应）。
 library;
 
+import '../core/l10n_ext.dart';
 class User {
   const User({
     required this.id,
@@ -163,7 +164,7 @@ class ServerDescriptor {
 
   factory ServerDescriptor.fromJson(Map<String, dynamic> json) =>
       ServerDescriptor(
-        name: json['name'] as String? ?? '未知服务器',
+        name: json['name'] as String? ?? appL10n.dataUnknownServer,
         version: json['version'] as String? ?? '0.0.0',
         protocolVersion: (json['protocolVersion'] as num?)?.toInt() ?? 1,
         roomCapacity: (json['roomCapacity'] as num?)?.toInt() ?? 5,

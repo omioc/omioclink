@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../core/app_log.dart';
+import '../core/l10n_ext.dart';
 import 'mic_volume.dart';
 
 /// 麦克风音量控制器：持久化 + 即时下发 + 降级（无设备/原生失败 → 只记日志 + 暴露 notice，绝不抛）。
@@ -28,7 +29,9 @@ class MicVolumeController extends ChangeNotifier {
   static Future<void> _discardVolume(double value) async {}
 
   /// 没有别的线索时的降级说明（界面直接显示这句）。
-  static const String unsupportedNotice = '非 Windows 或没有可用的录音设备';
+  ///
+  /// 用 getter 而不是 const：文案要跟着语言走，常量只能存一份死字符串。
+  static String get unsupportedNotice => appL10n.mediaMicVolumeDefaultReason;
 
   final MicVolumePort _port;
   final Future<double?> Function() _load;
@@ -129,7 +132,7 @@ class MicVolumeController extends ChangeNotifier {
       _notice = null;
       AppLog.info('麦克风音量 $label（下发 ${_formatScalar(normalized)}）：成功');
     } else {
-      final reason = _port.lastError ?? '写入麦克风音量失败';
+      final reason = _port.lastError ?? appL10n.mediaMicVolumeWriteFallback;
       _notice = reason;
       AppLog.warn('麦克风音量 $label（下发 ${_formatScalar(normalized)}）：失败，$reason');
     }

@@ -5,6 +5,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:flutter/services.dart';
 
 import '../core/app_log.dart';
+import '../core/l10n_ext.dart';
 import '../signaling/protocol.dart';
 import 'media_models.dart';
 import 'mic_capture.dart';
@@ -250,8 +251,8 @@ class MediaEngine {
     }
     if (choice.missing) {
       _failCapture(
-        reason: '未检测到麦克风设备',
-        message: '这台电脑没有可用的麦克风，无法采集声音',
+        reason: appL10n.mediaMicMissingReason,
+        message: appL10n.mediaMicMissingMessage,
         code: 'microphone_missing',
       );
     }
@@ -266,8 +267,8 @@ class MediaEngine {
     } on Object catch (error) {
       AppLog.error('麦克风采集失败', error: error);
       _failCapture(
-        reason: '无法使用麦克风（无设备或无权限）',
-        message: '无法使用麦克风，请检查系统权限与设备占用',
+        reason: appL10n.mediaMicDeniedReason,
+        message: appL10n.mediaMicDeniedMessage,
         code: 'microphone_denied',
       );
     }
@@ -277,8 +278,8 @@ class MediaEngine {
     if (stream.getAudioTracks().isEmpty) {
       await _disposeStream(stream);
       _failCapture(
-        reason: '麦克风没有可用的采集设备',
-        message: '没能从麦克风读到声音，请检查设备是否可用',
+        reason: appL10n.mediaMicNoTrackReason,
+        message: appL10n.mediaMicNoTrackMessage,
         code: 'microphone_missing',
       );
     }
@@ -384,8 +385,8 @@ class MediaEngine {
       await Helper.selectAudioOutput(deviceId);
     } on Object catch (error) {
       AppLog.warn('切换输出设备失败', error: error);
-      throw const MediaException(
-        '无法切换到所选扬声器，请确认设备仍然可用',
+      throw MediaException(
+        appL10n.mediaAudioOutputFailed,
         code: 'audio_output_switch_failed',
       );
     }
@@ -539,8 +540,8 @@ class MediaEngine {
       );
     } on Object catch (error) {
       AppLog.error('枚举屏幕源失败', error: error);
-      throw const MediaException(
-        '无法枚举屏幕与窗口',
+      throw MediaException(
+        appL10n.mediaScreenEnumFailed,
         code: 'screen_enumeration_failed',
       );
     }
@@ -590,7 +591,10 @@ class MediaEngine {
     if (target == null || target.isEmpty) {
       final sources = await listScreenSources();
       if (sources.isEmpty) {
-        throw const MediaException('没有可共享的屏幕或窗口', code: 'no_screen_source');
+        throw MediaException(
+          appL10n.mediaNoScreenSource,
+          code: 'no_screen_source',
+        );
       }
       target = sources.first.id;
     }
@@ -604,8 +608,8 @@ class MediaEngine {
       _screen = await navigator.mediaDevices.getDisplayMedia(constraints);
     } on Object catch (error) {
       AppLog.error('屏幕采集失败', error: error);
-      throw const MediaException(
-        '无法开始屏幕共享，请检查系统权限',
+      throw MediaException(
+        appL10n.mediaScreenCaptureFailed,
         code: 'screen_capture_denied',
       );
     }
