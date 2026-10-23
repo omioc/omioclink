@@ -27,8 +27,8 @@ __all__ = [
     "Locale",
     "LocaleMiddleware",
     "MissingTextKey",
-    "get_current_locale",
     "parse_accept_language",
+    "reset_current_locale",
     "set_current_locale",
     "t",
 ]
@@ -73,6 +73,17 @@ def get_current_locale() -> Locale:
 def set_current_locale(locale: Locale) -> Token[Locale]:
     """压入 locale，返回可用于恢复的 token（中间件与测试自己负责 reset）。"""
     return _CURRENT_LOCALE.set(locale)
+
+
+def reset_current_locale(token: Token[Locale]) -> None:
+    """恢复 ``set_current_locale`` 之前的 locale。
+
+    为什么要有这个函数而不是让调用方自己碰上下文变量：``ContextVar.reset()``
+    只能拿到变量本身，而 ``_CURRENT_LOCALE`` 是模块私有；WebSocket 端点这类
+    「长连接里压一次 locale」的场景必须能干净地还原，否则同一事件循环里后续的
+    任务会沿用上一条连接的语言。
+    """
+    _CURRENT_LOCALE.reset(token)
 
 
 def parse_accept_language(header: str | None) -> Locale:
@@ -154,7 +165,8 @@ class LocaleMiddleware:
     独立任务里跑，上下文变量要靠任务创建时的上下文复制才能传下去（能work但多一层依赖）；
     这里直接包住下游 app，端点 / 依赖 / 校验器看到的一定是同一个上下文。
 
-    WebSocket 连接不参与协商（信令文案不走这张表），只对 http scope 生效。
+    WebSocket 连接不在这里协商：信令端点按查询参数 ``?lang=`` 自己压一次 locale
+    （见 ``app.signaling.endpoint``），中间件只对 http scope 生效。
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -165,7 +177,7 @@ class LocaleMiddleware:
             await self._app(scope, receive, send)
             return
         locale = parse_accept_language(Headers(scope=scope).get("accept-language"))
-        token = _CURRENT_LOCALE.set(locale)
+        token = set_current_locale(locale)
 
         async def _send(message: Message) -> None:
             if message["type"] == "http.response.start":
@@ -176,7 +188,7 @@ class LocaleMiddleware:
         try:
             await self._app(scope, receive, _send)
         finally:
-            _CURRENT_LOCALE.reset(token)
+            reset_current_locale(token)
 
 
 # --------------------------------------------------------------------------- #
@@ -561,5 +573,148 @@ MESSAGES: Final[dict[str, dict[Locale, str]]] = {
         "en": "At most {maximum} subscription URLs can be saved (currently {count})",
         "ja": "保存できる購読 URL は最大 {maximum} 件です（現在 {count} 件）",
         "ko": "구독 주소는 최대 {maximum}개까지 저장할 수 있습니다 (현재 {count}개)",
+    },
+    # ---- 信令 WebSocket（app.signaling.hub / app.signaling.music）----
+    # 这些文案走信令的 ``error.message`` 字段直接显示在客户端界面上；语言由连接时的
+    # ``?lang=`` 决定（见 app.signaling.endpoint），中文保持改动前的原文。
+    "ws.invalid_json": {
+        "zh": "消息不是合法的 JSON",
+        "en": "The message is not valid JSON",
+        "ja": "メッセージが正しい JSON ではありません",
+        "ko": "메시지가 올바른 JSON이 아닙니다",
+    },
+    "ws.unsupported_message": {
+        "zh": "不支持的消息类型",
+        "en": "Unsupported message type",
+        "ja": "サポートされていないメッセージ種別です",
+        "ko": "지원하지 않는 메시지 유형입니다",
+    },
+    "ws.already_in_room": {
+        "zh": "已经在一个房间中",
+        "en": "You are already in a room",
+        "ja": "すでにルームに参加しています",
+        "ko": "이미 룸에 참여해 있습니다",
+    },
+    "ws.room_not_found": {
+        "zh": "房间不存在",
+        "en": "Room not found",
+        "ja": "ルームが見つかりません",
+        "ko": "룸을 찾을 수 없습니다",
+    },
+    "ws.bad_password": {
+        "zh": "房间密码错误",
+        "en": "Incorrect room password",
+        "ja": "ルームのパスワードが正しくありません",
+        "ko": "룸 비밀번호가 올바르지 않습니다",
+    },
+    "ws.room_full": {
+        "zh": "房间已满",
+        "en": "The room is full",
+        "ja": "ルームが満員です",
+        "ko": "룸 정원이 가득 찼습니다",
+    },
+    "ws.not_in_room": {
+        "zh": "尚未加入房间",
+        "en": "You have not joined a room yet",
+        "ja": "まだルームに参加していません",
+        "ko": "아직 룸에 참여하지 않았습니다",
+    },
+    "ws.peer_unavailable": {
+        "zh": "对端不在线或不在同一房间",
+        "en": "The peer is offline or not in the same room",
+        "ja": "相手がオフラインか、同じルームにいません",
+        "ko": "상대가 오프라인이거나 같은 룸에 없습니다",
+    },
+    "ws.music_disabled": {
+        "zh": "服务器没有开启点歌",
+        "en": "The jukebox is disabled on this server",
+        "ja": "このサーバーではジュークボックスが有効になっていません",
+        "ko": "이 서버에서는 주크박스가 활성화되어 있지 않습니다",
+    },
+    # schema 校验失败：字段名与 pydantic 的原始描述保持原样，只翻译外壳
+    "ws.validation_failed": {
+        "zh": "校验失败",
+        "en": "Validation failed",
+        "ja": "検証に失敗しました",
+        "ko": "검증에 실패했습니다",
+    },
+    "ws.field_validation": {
+        "zh": "字段 {field}: {reason}",
+        "en": "Field {field}: {reason}",
+        "ja": "フィールド {field}: {reason}",
+        "ko": "필드 {field}: {reason}",
+    },
+    # ---- 点歌台：入队与控制的拒绝原因 ----
+    "ws.music_rate_limited": {
+        "zh": "点歌太快了，{wait} 秒后再试",
+        "en": "You are requesting songs too fast, please try again in {wait} seconds",
+        "ja": "曲のリクエストが速すぎます。{wait} 秒後に再試行してください",
+        "ko": "노래 신청이 너무 빠릅니다. {wait}초 후 다시 시도해 주세요",
+    },
+    "ws.music_info_too_large": {
+        "zh": "歌曲信息太大（{size} 字节，上限 {limit}）",
+        "en": "The song data is too large ({size} bytes, limit {limit})",
+        "ja": "曲の情報が大きすぎます（{size} バイト、上限 {limit} バイト）",
+        "ko": "노래 정보가 너무 큽니다 ({size}바이트, 최대 {limit}바이트)",
+    },
+    "ws.music_queue_full": {
+        "zh": "点歌队列已满，等会儿再点",
+        "en": "The jukebox queue is full, please try again later",
+        "ja": "ジュークボックスのキューが満杯です。しばらくしてからリクエストしてください",
+        "ko": "주크박스 대기열이 가득 찼습니다. 잠시 후 다시 신청해 주세요",
+    },
+    "ws.music_personal_limit": {
+        "zh": "每人最多同时点 {limit} 首，等自己的歌播完再点",
+        "en": "Each person can queue at most {limit} songs, please wait until yours finish",
+        "ja": "同時にリクエストできるのは 1 人 {limit} 曲まで。自分の曲が終わるまでお待ちください",
+        "ko": "1인당 최대 {limit}곡까지 신청할 수 있습니다. 자신의 노래가 끝난 후 신청해 주세요",
+    },
+    "ws.music_duplicate_entry": {
+        "zh": "这首歌已经在队列里了",
+        "en": "This song is already in the queue",
+        "ja": "この曲はすでにキューに入っています",
+        "ko": "이 노래는 이미 대기열에 있습니다",
+    },
+    "ws.music_remove_others": {
+        "zh": "只能删除自己点的歌",
+        "en": "You can only remove the songs you requested",
+        "ja": "削除できるのは自分がリクエストした曲だけです",
+        "ko": "자신이 신청한 노래만 삭제할 수 있습니다",
+    },
+    "ws.music_entry_missing": {
+        "zh": "这首歌已经不在队列里了",
+        "en": "This song is no longer in the queue",
+        "ja": "この曲はもうキューにありません",
+        "ko": "이 노래는 더 이상 대기열에 없습니다",
+    },
+    "ws.music_nothing_playing": {
+        "zh": "现在没有正在播放的歌",
+        "en": "Nothing is playing right now",
+        "ja": "現在再生中の曲はありません",
+        "ko": "현재 재생 중인 노래가 없습니다",
+    },
+    "ws.music_not_current": {
+        "zh": "这首歌已经不是当前曲了",
+        "en": "This song is no longer the current track",
+        "ja": "この曲はもう再生中の曲ではありません",
+        "ko": "이 노래는 더 이상 현재 재생 곡이 아닙니다",
+    },
+    "ws.music_clear_owner_only": {
+        "zh": "只有房主可以清空队列",
+        "en": "Only the room owner can clear the queue",
+        "ja": "キューをクリアできるのはルームのオーナーだけです",
+        "ko": "룸 주인만 대기열을 비울 수 있습니다",
+    },
+    "ws.music_skip_forbidden": {
+        "zh": "只有房主或点歌人可以切歌",
+        "en": "Only the room owner or the requester can skip this song",
+        "ja": "この曲をスキップできるのはルームのオーナーまたはリクエストした本人だけです",
+        "ko": "룸 주인 또는 신청자만 이 노래를 건너뛸 수 있습니다",
+    },
+    "ws.music_bad_mode": {
+        "zh": "不支持的播放模式：{mode}",
+        "en": "Unsupported play mode: {mode}",
+        "ja": "サポートされていない再生モードです：{mode}",
+        "ko": "지원하지 않는 재생 모드입니다: {mode}",
     },
 }

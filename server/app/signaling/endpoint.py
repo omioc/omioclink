@@ -2,6 +2,11 @@
 
 鉴权：客户端以 ``ws://host/ws?token=<JWT>`` 建连（也支持 ``Authorization: Bearer`` 头）。
 鉴权失败时先完成握手再以 4401 关闭，让客户端能读到关闭码并给出明确提示。
+
+语言：客户端可再加一个 ``lang=zh|en|ja|ko`` 查询参数，这条连接下发给它的
+``error.message``（``ws.*`` 文案）按它翻译，缺失或非法一律回落中文。为什么不复用
+``Accept-Language`` 头：WebSocket 构造函数在浏览器里不允许自定义请求头，桌面端也统一
+走同一个 URL —— 查询参数是两端都能可靠带上的位置。
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.api.deps import resolve_token_user
 from app.core.config import Settings
 from app.core.errors import UnauthorizedError
+from app.core.i18n import Locale, parse_accept_language, reset_current_locale, set_current_locale
 from app.db.models import User
 from app.signaling.hub import SignalingHub
 from app.signaling.state import CloseCode, Peer
@@ -61,7 +67,30 @@ async def _safe_close(websocket: WebSocket, code: int, reason: str) -> None:
         logger.debug("关闭 WebSocket 失败 reason=%s", reason, exc_info=True)
 
 
+def _connection_locale(websocket: WebSocket) -> Locale:
+    """这条连接的语言：取 ``?lang=``，缺失或非法都回落中文。
+
+    复用 ``parse_accept_language`` 而不是自己比对四个字符串：它已经处理了大小写、
+    ``zh-CN`` 这类带地区子标签的写法和 q 值；另写一套判定，两处迟早会漂开。
+    """
+    return parse_accept_language(websocket.query_params.get("lang"))
+
+
 async def signaling_endpoint(websocket: WebSocket) -> None:
+    """入口：先按 ``?lang=`` 固定这条连接的语言，再跑真正的工作。
+
+    拆出 ``_serve_connection`` 是为了把 locale 的压入 / 还原收在一处：连接的所有出口
+    （鉴权失败的提前 return、正常断开、异常）都要还原上下文变量，否则同一条事件循环里
+    后续的连接会沿用上一条连接的语言。
+    """
+    token = set_current_locale(_connection_locale(websocket))
+    try:
+        await _serve_connection(websocket)
+    finally:
+        reset_current_locale(token)
+
+
+async def _serve_connection(websocket: WebSocket) -> None:
     settings: Settings = websocket.app.state.settings
     hub: SignalingHub = websocket.app.state.hub
     session_factory: async_sessionmaker[AsyncSession] = websocket.app.state.session_factory

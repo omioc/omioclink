@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../core/app_log.dart';
+import '../core/app_locales.dart';
 import '../core/l10n_ext.dart';
 import '../data/server_endpoint.dart';
 import 'protocol.dart';
@@ -136,6 +137,25 @@ class SignalingClient {
     accessToken = token;
   }
 
+  /// 建连地址：在既有查询参数（`token`）之上补一个界面语言。
+  ///
+  /// 服务端按 `?lang=` 决定这条连接下发的错误文案（点歌失败原因等），中文界面下干脆
+  /// 不带：服务端缺省就是中文，URL 因此与改动前逐字一致。其它语言必须**合并**进既有
+  /// 查询参数而不是整体覆盖，`token` 是鉴权必需的，丢了就 4401。
+  Uri _connectionUri() {
+    final base = endpoint.webSocketUri(token: accessToken);
+    final language = AppLocales.activeLanguageCode;
+    if (language == AppLocales.fallback.languageCode) {
+      return base;
+    }
+    return base.replace(
+      queryParameters: <String, String>{
+        ...base.queryParameters,
+        'lang': language,
+      },
+    );
+  }
+
   /// 建立连接（可重复调用；已连接时为 no-op）。
   void connect() {
     if (_disposed || _transport != null) {
@@ -148,7 +168,7 @@ class SignalingClient {
         : SignalingPhase.reconnecting;
     lastError.value = null;
 
-    final uri = endpoint.webSocketUri(token: accessToken);
+    final uri = _connectionUri();
     AppLog.info('信令连接 $uri（第 ${_attempt + 1} 次尝试）');
     try {
       final transport = _transportFactory(uri);

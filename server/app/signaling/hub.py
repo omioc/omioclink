@@ -16,6 +16,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings
+from app.core.i18n import t
 from app.core.security import verify_password
 from app.signaling.music import EnqueueRequest, MusicError, now_ms
 from app.signaling.protocol import (
@@ -222,7 +223,7 @@ class SignalingHub:
         try:
             payload = json.loads(raw)
         except (ValueError, TypeError):
-            await self._error(peer, ErrorCode.INVALID_MESSAGE, "消息不是合法的 JSON")
+            await self._error(peer, ErrorCode.INVALID_MESSAGE, t("ws.invalid_json"))
             return
         try:
             message = parse_client_message(payload)
@@ -259,31 +260,33 @@ class SignalingHub:
         elif isinstance(message, MusicModeMessage):
             await self._handle_music_mode(peer, message)
         else:  # pragma: no cover - 受 discriminated union 保护
-            await self._error(peer, ErrorCode.UNSUPPORTED_MESSAGE, "不支持的消息类型")
+            await self._error(peer, ErrorCode.UNSUPPORTED_MESSAGE, t("ws.unsupported_message"))
 
     async def _handle_join_room(self, peer: Peer, message: JoinRoomMessage) -> None:
         if peer.room_id is not None:
             if peer.room_id == message.room_id:
                 return  # 幂等：重复 join 同一房间直接忽略
-            await self._error(peer, ErrorCode.ALREADY_IN_ROOM, "已经在一个房间中")
+            await self._error(peer, ErrorCode.ALREADY_IN_ROOM, t("ws.already_in_room"))
             return
 
         record = await self.directory.load(message.room_id)
         if record is None:
             await self._error(
-                peer, ErrorCode.ROOM_NOT_FOUND, "房间不存在", ref=message.room_id
+                peer, ErrorCode.ROOM_NOT_FOUND, t("ws.room_not_found"), ref=message.room_id
             )
             return
         if record.has_password and not verify_password(
             message.password or "", record.password_hash
         ):
-            await self._error(peer, ErrorCode.BAD_PASSWORD, "房间密码错误", ref=message.room_id)
+            await self._error(
+                peer, ErrorCode.BAD_PASSWORD, t("ws.bad_password"), ref=message.room_id
+            )
             return
 
         async with self._join_mutex:
             room = self.state.ensure_room(record)
             if room.member_count >= room.capacity:
-                await self._error(peer, ErrorCode.ROOM_FULL, "房间已满", ref=message.room_id)
+                await self._error(peer, ErrorCode.ROOM_FULL, t("ws.room_full"), ref=message.room_id)
                 return
             peer.room_id = room.room_id
             room.peers[peer.peer_id] = peer
@@ -337,7 +340,7 @@ class SignalingHub:
 
     async def _handle_member_state(self, peer: Peer, message: MemberStateMessage) -> None:
         if peer.room_id is None:
-            await self._error(peer, ErrorCode.NOT_IN_ROOM, "尚未加入房间")
+            await self._error(peer, ErrorCode.NOT_IN_ROOM, t("ws.not_in_room"))
             return
         patch: dict[str, bool] = {}
         if message.muted is not None and message.muted != peer.muted:
@@ -364,14 +367,14 @@ class SignalingHub:
         self, peer: Peer, message: OfferRelay | AnswerRelay | CandidateRelay
     ) -> None:
         if peer.room_id is None:
-            await self._error(peer, ErrorCode.NOT_IN_ROOM, "尚未加入房间")
+            await self._error(peer, ErrorCode.NOT_IN_ROOM, t("ws.not_in_room"))
             return
         target = self.state.get_peer(message.dst)
         if target is None or target.room_id != peer.room_id:
             await self._error(
                 peer,
                 ErrorCode.PEER_UNAVAILABLE,
-                "对端不在线或不在同一房间",
+                t("ws.peer_unavailable"),
                 ref=message.dst,
             )
             return
@@ -414,11 +417,11 @@ class SignalingHub:
     async def _handle_music_enqueue(self, peer: Peer, message: MusicEnqueueMessage) -> None:
         room = self._music_room(peer)
         if room is None:
-            await self._error(peer, ErrorCode.NOT_IN_ROOM, "尚未加入房间", ref="music_enqueue")
+            await self._error(peer, ErrorCode.NOT_IN_ROOM, t("ws.not_in_room"), ref="music_enqueue")
             return
         if not self.settings.music_enabled:
             await self._error(
-                peer, ErrorCode.MUSIC_FORBIDDEN, "服务器没有开启点歌", ref="music_enqueue"
+                peer, ErrorCode.MUSIC_FORBIDDEN, t("ws.music_disabled"), ref="music_enqueue"
             )
             return
         try:
@@ -445,14 +448,14 @@ class SignalingHub:
         room = self._music_room(peer)
         if room is None:
             await self._error(
-                peer, ErrorCode.NOT_IN_ROOM, "尚未加入房间", ref="music_enqueue_batch"
+                peer, ErrorCode.NOT_IN_ROOM, t("ws.not_in_room"), ref="music_enqueue_batch"
             )
             return
         if not self.settings.music_enabled:
             await self._error(
                 peer,
                 ErrorCode.MUSIC_FORBIDDEN,
-                "服务器没有开启点歌",
+                t("ws.music_disabled"),
                 ref="music_enqueue_batch",
             )
             return
@@ -481,7 +484,7 @@ class SignalingHub:
     async def _handle_music_remove(self, peer: Peer, message: MusicRemoveMessage) -> None:
         room = self._music_room(peer)
         if room is None:
-            await self._error(peer, ErrorCode.NOT_IN_ROOM, "尚未加入房间", ref="music_remove")
+            await self._error(peer, ErrorCode.NOT_IN_ROOM, t("ws.not_in_room"), ref="music_remove")
             return
         try:
             room.music.remove(
@@ -498,7 +501,7 @@ class SignalingHub:
     async def _handle_music_skip(self, peer: Peer, message: MusicSkipMessage) -> None:
         room = self._music_room(peer)
         if room is None:
-            await self._error(peer, ErrorCode.NOT_IN_ROOM, "尚未加入房间", ref="music_skip")
+            await self._error(peer, ErrorCode.NOT_IN_ROOM, t("ws.not_in_room"), ref="music_skip")
             return
         try:
             room.music.skip(
@@ -515,7 +518,7 @@ class SignalingHub:
     async def _handle_music_clear(self, peer: Peer) -> None:
         room = self._music_room(peer)
         if room is None:
-            await self._error(peer, ErrorCode.NOT_IN_ROOM, "尚未加入房间", ref="music_clear")
+            await self._error(peer, ErrorCode.NOT_IN_ROOM, t("ws.not_in_room"), ref="music_clear")
             return
         try:
             room.music.clear(is_owner=room.owner_id == peer.user_id)
@@ -539,11 +542,11 @@ class SignalingHub:
         """切换播放模式：房间级设置，谁都能改（和点歌一样开放）。"""
         room = self._music_room(peer)
         if room is None:
-            await self._error(peer, ErrorCode.NOT_IN_ROOM, "尚未加入房间", ref="music_mode")
+            await self._error(peer, ErrorCode.NOT_IN_ROOM, t("ws.not_in_room"), ref="music_mode")
             return
         if not self.settings.music_enabled:
             await self._error(
-                peer, ErrorCode.MUSIC_FORBIDDEN, "服务器没有开启点歌", ref="music_mode"
+                peer, ErrorCode.MUSIC_FORBIDDEN, t("ws.music_disabled"), ref="music_mode"
             )
             return
         try:
@@ -690,11 +693,11 @@ class SignalingHub:
 def _format_validation_error(exc: ValidationError) -> str:
     errors = exc.errors()
     if not errors:
-        return "校验失败"
+        return t("ws.validation_failed")
     # loc 形如 ("join_room", "roomId")：取末段即线上字段名（pydantic 用 alias）。
     # 判别式不匹配时 loc 为空元组，此时只回报 pydantic 的原始描述。
     loc = errors[0].get("loc") or ()
-    reason = errors[0].get("msg", "校验失败")
+    reason = errors[0].get("msg", t("ws.validation_failed"))
     if not loc:
         return str(reason)
-    return f"字段 {loc[-1]}: {reason}"
+    return t("ws.field_validation", field=loc[-1], reason=reason)

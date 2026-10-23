@@ -18,6 +18,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.i18n import t
 from app.signaling.protocol import (
     ErrorCode,
     MusicCurrent,
@@ -207,7 +208,7 @@ class RoomMusic:
         last = self._last_enqueue_ms.get(peer_id)
         if last is not None and now - last < ENQUEUE_COOLDOWN_MS:
             wait = (ENQUEUE_COOLDOWN_MS - (now - last) + 999) // 1000
-            raise MusicError(ErrorCode.MUSIC_RATE_LIMITED, f"点歌太快了，{wait} 秒后再试")
+            raise MusicError(ErrorCode.MUSIC_RATE_LIMITED, t("ws.music_rate_limited", wait=wait))
 
         added: list[MusicEntry] = []
         for item in items:
@@ -220,18 +221,18 @@ class RoomMusic:
                 if strict:
                     raise MusicError(
                         ErrorCode.MUSIC_INVALID_ENTRY,
-                        f"歌曲信息太大（{size} 字节，上限 {MAX_MUSIC_INFO_BYTES}）",
+                        t("ws.music_info_too_large", size=size, limit=MAX_MUSIC_INFO_BYTES),
                     )
                 continue
             if len(self.queue) >= MAX_QUEUE_SIZE:
                 if strict:
-                    raise MusicError(ErrorCode.MUSIC_QUEUE_FULL, "点歌队列已满，等会儿再点")
+                    raise MusicError(ErrorCode.MUSIC_QUEUE_FULL, t("ws.music_queue_full"))
                 break
             if self._mine_count(peer_id) >= PER_USER_QUEUE_LIMIT:
                 if strict:
                     raise MusicError(
                         ErrorCode.MUSIC_QUEUE_FULL,
-                        f"每人最多同时点 {PER_USER_QUEUE_LIMIT} 首，等自己的歌播完再点",
+                        t("ws.music_personal_limit", limit=PER_USER_QUEUE_LIMIT),
                     )
                 break
             if any(
@@ -239,7 +240,7 @@ class RoomMusic:
                 for entry in self._entries()
             ):
                 if strict:
-                    raise MusicError(ErrorCode.MUSIC_INVALID_ENTRY, "这首歌已经在队列里了")
+                    raise MusicError(ErrorCode.MUSIC_INVALID_ENTRY, t("ws.music_duplicate_entry"))
                 continue
             self._seq += 1
             entry = MusicEntry(
@@ -271,26 +272,26 @@ class RoomMusic:
             if entry.entry_id != entry_id:
                 continue
             if not is_owner and entry.requested_by.peer_id != peer_id:
-                raise MusicError(ErrorCode.MUSIC_FORBIDDEN, "只能删除自己点的歌")
+                raise MusicError(ErrorCode.MUSIC_FORBIDDEN, t("ws.music_remove_others"))
             self.queue.pop(index)
             self.revision += 1
             return
-        raise MusicError(ErrorCode.MUSIC_NOT_FOUND, "这首歌已经不在队列里了")
+        raise MusicError(ErrorCode.MUSIC_NOT_FOUND, t("ws.music_entry_missing"))
 
     def skip(self, *, peer_id: str, is_owner: bool, entry_id: str | None, now: int) -> None:
         """切歌：房主或当前曲点歌人可切。"""
         current = self.current
         if current is None:
-            raise MusicError(ErrorCode.MUSIC_NOT_FOUND, "现在没有正在播放的歌")
+            raise MusicError(ErrorCode.MUSIC_NOT_FOUND, t("ws.music_nothing_playing"))
         if entry_id is not None and entry_id != current.entry_id:
-            raise MusicError(ErrorCode.MUSIC_NOT_FOUND, "这首歌已经不是当前曲了")
+            raise MusicError(ErrorCode.MUSIC_NOT_FOUND, t("ws.music_not_current"))
         self._check_current_control(peer_id=peer_id, is_owner=is_owner)
         self._advance(now)
 
     def clear(self, *, is_owner: bool) -> None:
         """清空队列并停止（房主专属）。"""
         if not is_owner:
-            raise MusicError(ErrorCode.MUSIC_FORBIDDEN, "只有房主可以清空队列")
+            raise MusicError(ErrorCode.MUSIC_FORBIDDEN, t("ws.music_clear_owner_only"))
         if self.is_empty:
             return
         self.queue.clear()
@@ -305,7 +306,7 @@ class RoomMusic:
         比不生效还难受。
         """
         if mode not in MUSIC_MODES:
-            raise MusicError(ErrorCode.MUSIC_INVALID_ENTRY, f"不支持的播放模式：{mode}")
+            raise MusicError(ErrorCode.MUSIC_INVALID_ENTRY, t("ws.music_bad_mode", mode=mode))
         if mode == self.mode:
             return
         self.mode = mode
@@ -359,9 +360,9 @@ class RoomMusic:
     def _check_current_control(self, *, peer_id: str, is_owner: bool) -> None:
         current = self.current
         if current is None:
-            raise MusicError(ErrorCode.MUSIC_NOT_FOUND, "现在没有正在播放的歌")
+            raise MusicError(ErrorCode.MUSIC_NOT_FOUND, t("ws.music_nothing_playing"))
         if not is_owner and current.requested_by.peer_id != peer_id:
-            raise MusicError(ErrorCode.MUSIC_FORBIDDEN, "只有房主或点歌人可以切歌")
+            raise MusicError(ErrorCode.MUSIC_FORBIDDEN, t("ws.music_skip_forbidden"))
 
     def _ensure_started(self, now: int) -> None:
         if self.current is not None or not self.queue:
