@@ -63,7 +63,7 @@
   "shellVoiceSection": "음성",
   "shellOnlineMembers": "온라인 멤버",
   "shellMemberSelf": "{name}(나)",
-  "shellPunchFailure": "일부 멤버가 직접 연결되지 않습니다. 대부분 대칭형 NAT이거나 UDP를 차단하는 네트워크 때문입니다. 양쪽을 모바일 핫스폿이나 가정용 인터넷으로 바꾼 뒤 다시 시도하세요.",
+  "shellPunchFailure": "일부 멤버가 직접 연결되지 않습니다. 원인은 대개 대칭형 NAT 또는 UDP 차단입니다. 양쪽을 모바일 핫스폿이나 가정용 회선으로 바꾼 뒤 다시 시도하세요.",
   "shellConnectionQuality": "연결 품질",
   "shellDirectConnected": "직접 연결",
   "shellDirectConnectedValue": "멤버 {total}명 중 {connected}명",
@@ -86,7 +86,7 @@
   "roomsTabCreated": "내가 만든",
   "roomsTabCreatedShort": "만든 룸",
   "roomsTabJoined": "참가한 룸",
-  "roomsTabJoinedShort": "참가한",
+  "roomsTabJoinedShort": "참가한 룸",
   "roomsTabPublic": "공개",
   "roomsCount": "{count}개",
   "roomsDoubleTapHint": "룸을 두 번 클릭하면 바로 들어갑니다",
@@ -112,7 +112,7 @@
   "roomsRoomFull": "룸이 가득 찼습니다",
   "roomsEnterRoom": "룸 들어가기",
   "roomsDissolveTitle": "룸 해산",
-  "roomsDissolveMessage": "룸의 모든 멤버 연결이 끊어집니다. 「{name}」을(를) 해산할까요?",
+  "roomsDissolveMessage": "룸의 모든 멤버 연결이 끊어집니다. 「{name}」 룸을 해산할까요?",
   "roomsDissolve": "해산",
-  "roomsRoomFullCannotEnter": "룸이 가득 차서 지금은 들어갈 수 없습니다"
+  "roomsRoomFullCannotEnter": "룸이 가득 찼습니다"
 }
