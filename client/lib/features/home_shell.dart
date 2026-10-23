@@ -9,10 +9,12 @@ import '../app_state.dart';
 import '../core/app_log.dart';
 import '../core/app_theme.dart';
 import '../core/formatting.dart';
+import '../core/l10n_ext.dart';
 import '../core/platform.dart';
 import '../data/api_client.dart';
 import '../data/avatar_picker.dart';
 import '../data/models.dart';
+import '../l10n/generated/app_l10n.dart';
 import '../media/media_engine.dart';
 import '../media/media_models.dart';
 import '../music/music_free_library.dart';
@@ -48,10 +50,10 @@ enum RoomListSource {
 }
 
 /// 列表标题：左栏小标题与中栏大标题共用，跟着当前这一套走。
-String _roomListTitle(RoomListSource source) => switch (source) {
-  RoomListSource.created => '我创建的房间',
-  RoomListSource.joined => '我加入的房间',
-  RoomListSource.public => '公开房间',
+String _roomListTitle(AppL10n l10n, RoomListSource source) => switch (source) {
+  RoomListSource.created => l10n.roomsTitleCreated,
+  RoomListSource.joined => l10n.roomsTitleJoined,
+  RoomListSource.public => l10n.roomsTitlePublic,
 };
 
 /// 左/中/右三栏主界面。进入房间后中栏切换为通话视图、右栏切换为语音面板。
@@ -253,6 +255,7 @@ class _HomeShellState extends State<HomeShell> {
   Future<void> _enterRoom(Room room) async {
     final state = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = context.l10n;
     // 已经在这个房间里：直接回到通话视图，别再来一次进房流程
     if (state.isInRoom(room.roomId)) {
       setState(() => _showCall = true);
@@ -260,7 +263,9 @@ class _HomeShellState extends State<HomeShell> {
     }
     final count = state.memberCountFor(room);
     if (count >= room.capacity) {
-      messenger.showSnackBar(const SnackBar(content: Text('房间已满，暂时进不去')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.roomsRoomFullCannotEnter)),
+      );
       return;
     }
     if (room.hasPassword && !state.hasRememberedRoomPassword(room.roomId)) {
@@ -344,6 +349,7 @@ class _SideNav extends StatelessWidget {
     final pending = state.friendRequests
         .where((r) => r.direction == FriendRequestDirection.incoming)
         .length;
+    final l10n = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -357,10 +363,10 @@ class _SideNav extends StatelessWidget {
               onChanged: onQueryChanged,
               style: const TextStyle(fontSize: 12.5),
               cursorHeight: 15,
-              decoration: const InputDecoration(
-                hintText: '搜索房间或好友',
-                prefixIcon: Icon(Icons.search_rounded, size: 15),
-                prefixIconConstraints: BoxConstraints(
+              decoration: InputDecoration(
+                hintText: l10n.shellSearchHint,
+                prefixIcon: const Icon(Icons.search_rounded, size: 15),
+                prefixIconConstraints: const BoxConstraints(
                   minWidth: 32,
                   minHeight: 30,
                 ),
@@ -378,7 +384,7 @@ class _SideNav extends StatelessWidget {
               if (inCall) ...[
                 NavRow(
                   icon: Icons.graphic_eq_rounded,
-                  label: session.room?.name ?? '通话中',
+                  label: session.room?.name ?? l10n.shellInCall,
                   selected: showCall,
                   accent: context.palette.success,
                   onTap: onEnterCall,
@@ -399,7 +405,7 @@ class _SideNav extends StatelessWidget {
               // 「我的房间」＝我**创建**的房间：与下面 tab 的「我加入的」是两套逻辑
               NavRow(
                 icon: Icons.home_rounded,
-                label: '我的房间',
+                label: l10n.shellMyRooms,
                 selected:
                     !showCall &&
                     section == NavSection.rooms &&
@@ -416,7 +422,7 @@ class _SideNav extends StatelessWidget {
               ),
               NavRow(
                 icon: Icons.group_rounded,
-                label: '好友',
+                label: l10n.shellFriends,
                 selected: !showCall && section == NavSection.friends,
                 onTap: () => onSectionChanged(NavSection.friends),
                 trailing: pending > 0
@@ -450,22 +456,27 @@ class _SideNav extends StatelessWidget {
               ),
               NavRow(
                 icon: Icons.palette_rounded,
-                label: '主题',
+                label: l10n.shellTheme,
                 selected: !showCall && section == NavSection.theme,
                 onTap: () => onSectionChanged(NavSection.theme),
               ),
               NavRow(
                 icon: Icons.settings_rounded,
-                label: '设置',
+                label: l10n.shellSettings,
                 selected: !showCall && section == NavSection.settings,
                 onTap: () => onSectionChanged(NavSection.settings),
               ),
             ],
           ),
         ),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(14, AppSpacing.lg, 14, AppSpacing.sm),
-          child: SectionLabel(text: '服务器'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            14,
+            AppSpacing.lg,
+            14,
+            AppSpacing.sm,
+          ),
+          child: SectionLabel(text: l10n.shellServerSection),
         ),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 12),
@@ -476,7 +487,7 @@ class _SideNav extends StatelessWidget {
           child: OutlinedButton.icon(
             onPressed: () => showJoinRoomDialog(context),
             icon: const Icon(Icons.login_rounded, size: 14),
-            label: const Text('加入房间'),
+            label: Text(l10n.roomsJoinRoom),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(AppSizes.control),
               padding: EdgeInsets.zero,
@@ -498,9 +509,9 @@ class _SideNav extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 14, 6, 4),
           child: SectionLabel(
-            text: _roomListTitle(roomSource),
+            text: _roomListTitle(l10n, roomSource),
             trailing: IconButton(
-              tooltip: '创建房间',
+              tooltip: l10n.roomsCreateRoom,
               onPressed: () => showCreateRoomDialog(context),
               icon: Icon(
                 Icons.add_rounded,
@@ -519,11 +530,9 @@ class _SideNav extends StatelessWidget {
                     ),
                     child: Text(
                       switch (roomSource) {
-                        RoomListSource.created =>
-                          '还没有你创建的房间。点右上角 + 创建，或用房间号加入好友的房间',
-                        RoomListSource.joined =>
-                          '还没有加入过房间。点右上角 + 创建，或用房间号加入好友的房间',
-                        RoomListSource.public => '服务器上还没有公开房间',
+                        RoomListSource.created => l10n.shellEmptyRoomsCreated,
+                        RoomListSource.joined => l10n.shellEmptyRoomsJoined,
+                        RoomListSource.public => l10n.roomsEmptyPublicTitle,
                       },
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -594,7 +603,7 @@ class _SideNav extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        user?.displayName ?? '未登录',
+                        user?.displayName ?? l10n.shellNotSignedIn,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 12.5,
@@ -603,7 +612,7 @@ class _SideNav extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        state.isLoggedIn ? '在线' : '离线',
+                        state.isLoggedIn ? l10n.shellOnline : l10n.shellOffline,
                         style: TextStyle(
                           color: state.isLoggedIn
                               ? context.palette.success
@@ -616,7 +625,7 @@ class _SideNav extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: '退出登录',
+                  tooltip: l10n.shellSignOut,
                   onPressed: () => state.logout(),
                   icon: const Icon(Icons.logout_rounded, size: 14),
                 ),
@@ -683,13 +692,14 @@ class _VoicePanelState extends State<_VoicePanel> {
   @override
   Widget build(BuildContext context) {
     final members = widget.session.members;
+    final l10n = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(14, 14, 14, 10),
-          child: SectionLabel(text: '语音'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+          child: SectionLabel(text: l10n.shellVoiceSection),
         ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
@@ -745,7 +755,7 @@ class _VoicePanelState extends State<_VoicePanel> {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.md),
             child: SectionLabel(
-              text: '在线成员',
+              text: l10n.shellOnlineMembers,
               trailing: Text(
                 formatCapacity(
                   members.length,
@@ -781,6 +791,10 @@ class _VoicePanelState extends State<_VoicePanel> {
                       );
                       final speaking = member.speaking || level.speaking;
                       final silent = member.muted || view.mutedLocally;
+                      // 自己那一行在名字后标「我」：同场通话里重名时也分得清谁是谁
+                      final nameLabel = view.local
+                          ? l10n.shellMemberSelf(member.displayName)
+                          : member.displayName;
                       return Row(
                         // 顶对齐 + 名字那格钉成头像高度：头像和名字的中线才对齐。
                         // 整列垂直居中的话，别人那一行多了音量推子、列比头像高，
@@ -806,9 +820,7 @@ class _VoicePanelState extends State<_VoicePanel> {
                                   child: Align(
                                     alignment: Alignment.centerLeft,
                                     child: Text(
-                                      view.local
-                                          ? '${member.displayName}（我）'
-                                          : member.displayName,
+                                      nameLabel,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(fontSize: 12),
                                     ),
@@ -872,8 +884,7 @@ class _VoicePanelState extends State<_VoicePanel> {
             Padding(
               padding: EdgeInsets.all(AppSpacing.md),
               child: Text(
-                '有成员无法直连：多为对称型 NAT 或网络封锁 UDP，'
-                '建议双方切换到手机热点或家庭宽带后重试',
+                l10n.shellPunchFailure,
                 style: TextStyle(
                   color: context.palette.warning,
                   fontSize: 11,
@@ -890,15 +901,26 @@ class _VoicePanelState extends State<_VoicePanel> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SectionLabel(text: '连接质量'),
+                  SectionLabel(text: l10n.shellConnectionQuality),
                   const SizedBox(height: AppSpacing.sm),
                   _kv(
                     context,
-                    '已直连',
-                    '${widget.session.connectedPeerCount}/${widget.session.peerCount} 位成员',
+                    l10n.shellDirectConnected,
+                    l10n.shellDirectConnectedValue(
+                      widget.session.connectedPeerCount,
+                      widget.session.peerCount,
+                    ),
                   ),
-                  _kv(context, '上行', formatKbps(widget.session.stats.outgoingKbps)),
-                  _kv(context, '下行', formatKbps(widget.session.stats.incomingKbps)),
+                  _kv(
+                    context,
+                    l10n.shellUplink,
+                    formatKbps(widget.session.stats.outgoingKbps),
+                  ),
+                  _kv(
+                    context,
+                    l10n.shellDownlink,
+                    formatKbps(widget.session.stats.incomingKbps),
+                  ),
                 ],
               ),
             ),
@@ -915,34 +937,44 @@ class _OverviewPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final info = state.serverInfo;
+    final l10n = context.l10n;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, AppSpacing.xl),
       children: [
-        const SectionLabel(text: '服务器状态'),
+        SectionLabel(text: l10n.shellServerStatus),
         const SizedBox(height: AppSpacing.sm),
         PanelCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _kv(context, '名称', info?.name ?? '—'),
-              _kv(context, '地址', state.endpoint?.display ?? '未连接'),
+              _kv(context, l10n.shellServerName, info?.name ?? '—'),
               _kv(
                 context,
-                '房间容量',
+                l10n.shellServerAddress,
+                state.endpoint?.display ?? l10n.shellNotConnected,
+              ),
+              _kv(
+                context,
+                l10n.shellRoomCapacity,
                 info == null
                     ? '—'
-                    : '${info.roomCapacity} 人（上限 ${info.maxRoomCapacity}）',
+                    : l10n.shellRoomCapacityValue(
+                        info.roomCapacity,
+                        info.maxRoomCapacity,
+                      ),
               ),
             ],
           ),
         ),
         const SizedBox(height: 18),
-        SectionLabel(text: '在线好友（${state.onlineFriends.length}）'),
+        SectionLabel(
+          text: l10n.shellOnlineFriends(state.onlineFriends.length),
+        ),
         const SizedBox(height: AppSpacing.sm),
         if (state.friends.isEmpty)
           Text(
-            '还没有好友',
+            l10n.shellNoFriends,
             style: TextStyle(
               color: context.palette.textMuted,
               fontSize: 11.5,
@@ -987,7 +1019,7 @@ class _OverviewPanel extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        friend.online ? '在线' : '离线',
+                        friend.online ? l10n.shellOnline : l10n.shellOffline,
                         style: TextStyle(
                           fontSize: 10.5,
                           height: 1.3,
@@ -1109,37 +1141,38 @@ class _CompactNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final items = <Widget>[
       // 通话项只在房间里出现：手机上没有左栏可以挂「通话中」常驻项
       if (inCall)
         _CompactNavItem(
           icon: Icons.graphic_eq_rounded,
-          label: '通话',
+          label: l10n.shellCall,
           selected: showCall,
           accent: context.palette.success,
           onTap: onEnterCall,
         ),
       _CompactNavItem(
         icon: Icons.forum_rounded,
-        label: '房间',
+        label: l10n.shellRooms,
         selected: !showCall && section == NavSection.rooms,
         onTap: () => onSection(NavSection.rooms),
       ),
       _CompactNavItem(
         icon: Icons.group_rounded,
-        label: '好友',
+        label: l10n.shellFriends,
         selected: !showCall && section == NavSection.friends,
         onTap: () => onSection(NavSection.friends),
       ),
       _CompactNavItem(
         icon: Icons.palette_rounded,
-        label: '主题',
+        label: l10n.shellTheme,
         selected: !showCall && section == NavSection.theme,
         onTap: () => onSection(NavSection.theme),
       ),
       _CompactNavItem(
         icon: Icons.settings_rounded,
-        label: '设置',
+        label: l10n.shellSettings,
         selected: !showCall && section == NavSection.settings,
         onTap: () => onSection(NavSection.settings),
       ),
@@ -1240,6 +1273,7 @@ class _CompactRoomsPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final l10n = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1258,7 +1292,7 @@ class _CompactRoomsPane extends StatelessWidget {
                     children: [
                       Flexible(
                         child: Text(
-                          _roomListTitle(roomSource),
+                          _roomListTitle(l10n, roomSource),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppText.pageTitle,
@@ -1277,7 +1311,7 @@ class _CompactRoomsPane extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: '刷新',
+                  tooltip: l10n.roomsRefresh,
                   onPressed: () => state.refreshRooms(),
                   icon: Icon(
                     Icons.refresh_rounded,
@@ -1286,7 +1320,7 @@ class _CompactRoomsPane extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: '输入房间号加入',
+                  tooltip: l10n.roomsJoinByCode,
                   onPressed: () => showJoinRoomDialog(context),
                   icon: Icon(
                     Icons.login_rounded,
@@ -1295,7 +1329,7 @@ class _CompactRoomsPane extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: '创建房间',
+                  tooltip: l10n.roomsCreateRoom,
                   onPressed: () => showCreateRoomDialog(context),
                   icon: Icon(
                     Icons.add_rounded,
@@ -1331,10 +1365,10 @@ class _CompactRoomsPane extends StatelessWidget {
               textAlignVertical: TextAlignVertical.center,
               onChanged: onQueryChanged,
               style: AppText.field,
-              decoration: const InputDecoration(
-                hintText: '搜索房间',
-                prefixIcon: Icon(Icons.search_rounded, size: 16),
-                prefixIconConstraints: BoxConstraints(
+              decoration: InputDecoration(
+                hintText: l10n.roomsSearchHint,
+                prefixIcon: const Icon(Icons.search_rounded, size: 16),
+                prefixIconConstraints: const BoxConstraints(
                   minWidth: 34,
                   minHeight: 30,
                 ),
@@ -1399,6 +1433,7 @@ class _CompactRoomTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final members = context.watch<AppState>().memberCountFor(room);
+    final l10n = context.l10n;
     return Material(
       color: context.palette.panel,
       borderRadius: AppRadii.card,
@@ -1458,7 +1493,7 @@ class _CompactRoomTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '房间号 ${room.roomId}',
+                      l10n.roomsRoomId(room.roomId),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1505,6 +1540,7 @@ class _CompactRoomSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final l10n = context.l10n;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -1542,9 +1578,8 @@ class _CompactRoomSheet extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          '房间号 ${room.roomId}'
-                          '${room.ownerName == null ? '' : ' · 房主 ${room.ownerName}'}'
-                          ' · ${formatCapacity(state.memberCountFor(room), room.capacity)}',
+                          '${_roomIdLine(l10n, room)} · '
+                          '${formatCapacity(state.memberCountFor(room), room.capacity)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -1557,7 +1592,7 @@ class _CompactRoomSheet extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    tooltip: '关闭',
+                    tooltip: l10n.shellClose,
                     onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(Icons.close_rounded, size: 18),
                   ),

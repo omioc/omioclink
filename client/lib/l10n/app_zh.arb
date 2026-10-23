@@ -80,5 +80,151 @@
     }
   },
   "connectIceNotProvided": "未下发（使用内置列表）",
-  "connectListSeparator": "、"
+  "connectListSeparator": "、",
+  "shellSearchHint": "搜索房间或好友",
+  "shellInCall": "通话中",
+  "shellMyRooms": "我的房间",
+  "shellFriends": "好友",
+  "shellTheme": "主题",
+  "shellSettings": "设置",
+  "shellServerSection": "服务器",
+  "shellEmptyRoomsCreated": "还没有你创建的房间。点右上角 + 创建，或用房间号加入好友的房间",
+  "shellEmptyRoomsJoined": "还没有加入过房间。点右上角 + 创建，或用房间号加入好友的房间",
+  "shellNotSignedIn": "未登录",
+  "shellOnline": "在线",
+  "shellOffline": "离线",
+  "shellSignOut": "退出登录",
+  "shellVoiceSection": "语音",
+  "shellOnlineMembers": "在线成员",
+  "shellMemberSelf": "{name}（我）",
+  "@shellMemberSelf": {
+    "description": "语音面板里自己那一行：名字后面标「我」",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "shellPunchFailure": "有成员无法直连：多为对称型 NAT 或网络封锁 UDP，建议双方切换到手机热点或家庭宽带后重试",
+  "shellConnectionQuality": "连接质量",
+  "shellDirectConnected": "已直连",
+  "shellDirectConnectedValue": "{connected}/{total} 位成员",
+  "@shellDirectConnectedValue": {
+    "description": "连接质量里那一行的值",
+    "placeholders": {
+      "connected": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "shellUplink": "上行",
+  "shellDownlink": "下行",
+  "shellServerStatus": "服务器状态",
+  "shellServerName": "名称",
+  "shellServerAddress": "地址",
+  "shellNotConnected": "未连接",
+  "shellRoomCapacity": "房间容量",
+  "shellRoomCapacityValue": "{min} 人（上限 {max}）",
+  "@shellRoomCapacityValue": {
+    "description": "服务器信息里的房间容量值：默认人数与上限",
+    "placeholders": {
+      "min": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "shellOnlineFriends": "在线好友（{count}）",
+  "@shellOnlineFriends": {
+    "description": "右栏在线好友的小标题",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellNoFriends": "还没有好友",
+  "shellCall": "通话",
+  "shellRooms": "房间",
+  "shellClose": "关闭",
+  "roomsTitleCreated": "我创建的房间",
+  "roomsTitleJoined": "我加入的房间",
+  "roomsTitlePublic": "公开房间",
+  "roomsTabCreated": "我创建的",
+  "roomsTabCreatedShort": "我创建",
+  "roomsTabJoined": "我加入的",
+  "roomsTabJoinedShort": "我加入",
+  "roomsTabPublic": "公开",
+  "roomsCount": "{count} 个",
+  "@roomsCount": {
+    "description": "房间列表标题右侧的房间数量",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "roomsDoubleTapHint": "双击房间直接进入",
+  "roomsRefresh": "刷新",
+  "roomsJoinRoom": "加入房间",
+  "roomsCreateRoom": "创建房间",
+  "roomsJoinByCode": "输入房间号加入",
+  "roomsSearchHint": "搜索房间",
+  "roomsEmptyCreatedTitle": "还没有你创建的房间",
+  "roomsEmptyCreatedHint": "创建一个，或去「我加入的」看看进过的房间",
+  "roomsEmptyJoinedTitle": "还没有加入过房间",
+  "roomsEmptyJoinedHint": "可以创建一个，或用好友给你的房间号加入",
+  "roomsEmptyPublicTitle": "服务器上还没有公开房间",
+  "roomsEmptyPublicHint": "私有房间不会出现在这里，需要房间号才能加入",
+  "roomsRoomId": "房间号 {id}",
+  "@roomsRoomId": {
+    "description": "房间卡片上的房间号",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "roomsRoomOwner": "房主 {name}",
+  "@roomsRoomOwner": {
+    "description": "房间号后面的房主",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "roomsCopyRoomId": "复制房间号",
+  "roomsRoomIdCopied": "房间号 {id} 已复制",
+  "@roomsRoomIdCopied": {
+    "description": "复制房间号成功的提示",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "roomsPasswordHint": "房间密码",
+  "roomsPasswordRemembered": "已经记住这个房间的密码，双击房间可直接进入",
+  "roomsPasswordWillRemember": "密码会被记住，下次进来不用再输",
+  "roomsBackToCall": "回到通话",
+  "roomsRoomFull": "房间已满",
+  "roomsEnterRoom": "进入房间",
+  "roomsDissolveTitle": "解散房间",
+  "roomsDissolveMessage": "房间内所有成员都会被断开，确定解散「{name}」吗",
+  "@roomsDissolveMessage": {
+    "description": "解散房间确认框的正文",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "roomsDissolve": "解散",
+  "roomsRoomFullCannotEnter": "房间已满，暂时进不去"
 }

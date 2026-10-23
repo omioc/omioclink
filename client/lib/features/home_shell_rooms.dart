@@ -35,6 +35,7 @@ class _ScopeTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       height: 34,
       padding: const EdgeInsets.all(3),
@@ -51,7 +52,9 @@ class _ScopeTabs extends StatelessWidget {
             Expanded(
               child: _tab(
                 context,
-                compactLabel ? '我创建' : '我创建的',
+                compactLabel
+                    ? l10n.roomsTabCreatedShort
+                    : l10n.roomsTabCreated,
                 createdCount!,
                 RoomListSource.created,
               ),
@@ -61,13 +64,22 @@ class _ScopeTabs extends StatelessWidget {
           Expanded(
             child: _tab(
               context,
-              compactLabel ? '我加入' : '我加入的',
+              compactLabel
+                  ? l10n.roomsTabJoinedShort
+                  : l10n.roomsTabJoined,
               joinedCount,
               RoomListSource.joined,
             ),
           ),
           const SizedBox(width: 3),
-          Expanded(child: _tab(context, '公开', publicCount, RoomListSource.public)),
+          Expanded(
+            child: _tab(
+              context,
+              l10n.roomsTabPublic,
+              publicCount,
+              RoomListSource.public,
+            ),
+          ),
         ],
       ),
     );
@@ -147,6 +159,7 @@ class _RoomsPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final l10n = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -157,10 +170,13 @@ class _RoomsPane extends StatelessWidget {
           child: Row(
             children: [
               // 标题跟着当前这一套走（我创建的 / 我加入的 / 公开）
-              Text(_roomListTitle(roomSource), style: AppText.pageTitle),
+              Text(
+                _roomListTitle(l10n, roomSource),
+                style: AppText.pageTitle,
+              ),
               const SizedBox(width: 10),
               Text(
-                '${rooms.length} 个',
+                l10n.roomsCount(rooms.length),
                 style: TextStyle(
                   color: context.palette.textMuted,
                   fontSize: 11.5,
@@ -170,7 +186,7 @@ class _RoomsPane extends StatelessWidget {
               if (rooms.isNotEmpty) ...[
                 const SizedBox(width: 14),
                 Text(
-                  '双击房间直接进入',
+                  l10n.roomsDoubleTapHint,
                   style: TextStyle(
                     color: context.palette.textMuted,
                     fontSize: 11,
@@ -182,7 +198,7 @@ class _RoomsPane extends StatelessWidget {
               TextButton.icon(
                 onPressed: () => state.refreshRooms(),
                 icon: const Icon(Icons.refresh_rounded, size: 14),
-                label: const Text('刷新'),
+                label: Text(l10n.roomsRefresh),
                 style: TextButton.styleFrom(
                   foregroundColor: context.palette.textMuted,
                   textStyle: const TextStyle(fontSize: 12),
@@ -192,13 +208,13 @@ class _RoomsPane extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: () => showJoinRoomDialog(context),
                 icon: const Icon(Icons.login_rounded, size: 14),
-                label: const Text('加入房间'),
+                label: Text(l10n.roomsJoinRoom),
               ),
               const SizedBox(width: 8),
               FilledButton.icon(
                 onPressed: () => showCreateRoomDialog(context),
                 icon: const Icon(Icons.add_rounded, size: 15),
-                label: const Text('创建房间'),
+                label: Text(l10n.roomsCreateRoom),
               ),
             ],
           ),
@@ -243,21 +259,22 @@ class _EmptyRooms extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final (icon, title, hint) = switch (roomSource) {
       RoomListSource.created => (
         Icons.meeting_room_outlined,
-        '还没有你创建的房间',
-        '创建一个，或去「我加入的」看看进过的房间',
+        l10n.roomsEmptyCreatedTitle,
+        l10n.roomsEmptyCreatedHint,
       ),
       RoomListSource.joined => (
         Icons.exit_to_app_rounded,
-        '还没有加入过房间',
-        '可以创建一个，或用好友给你的房间号加入',
+        l10n.roomsEmptyJoinedTitle,
+        l10n.roomsEmptyJoinedHint,
       ),
       RoomListSource.public => (
         Icons.public_off_rounded,
-        '服务器上还没有公开房间',
-        '私有房间不会出现在这里，需要房间号才能加入',
+        l10n.roomsEmptyPublicTitle,
+        l10n.roomsEmptyPublicHint,
       ),
     };
     return Center(
@@ -306,13 +323,13 @@ class _EmptyRooms extends StatelessWidget {
                 OutlinedButton.icon(
                   onPressed: () => showJoinRoomDialog(context),
                   icon: const Icon(Icons.login_rounded, size: 14),
-                  label: const Text('输入房间号加入'),
+                  label: Text(l10n.roomsJoinByCode),
                 ),
                 const SizedBox(width: 8),
                 FilledButton.icon(
                   onPressed: () => showCreateRoomDialog(context),
                   icon: const Icon(Icons.add_rounded, size: 15),
-                  label: const Text('创建房间'),
+                  label: Text(l10n.roomsCreateRoom),
                 ),
               ],
             ),
@@ -366,6 +383,7 @@ class _RoomCardState extends State<_RoomCard> {
   @override
   Widget build(BuildContext context) {
     final room = widget.room;
+    final l10n = context.l10n;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovering = true),
@@ -430,8 +448,7 @@ class _RoomCardState extends State<_RoomCard> {
                           ],
                         ),
                         Text(
-                          '房间号 ${room.roomId}'
-                          '${room.ownerName == null ? '' : ' · 房主 ${room.ownerName}'}',
+                          _roomIdLine(l10n, room),
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: context.palette.textMuted,
@@ -470,7 +487,7 @@ class _RoomCardState extends State<_RoomCard> {
                       if (room.online) ...[
                         const SizedBox(width: 6),
                         Text(
-                          '通话中',
+                          l10n.shellInCall,
                           style: TextStyle(
                             fontSize: 10.5,
                             height: 1.2,
@@ -486,7 +503,7 @@ class _RoomCardState extends State<_RoomCard> {
                     width: 26,
                     child: (_hovering || widget.expanded)
                         ? IconButton(
-                            tooltip: '复制房间号',
+                            tooltip: l10n.roomsCopyRoomId,
                             onPressed: () async {
                               await Clipboard.setData(
                                 ClipboardData(text: room.roomId),
@@ -496,7 +513,7 @@ class _RoomCardState extends State<_RoomCard> {
                               }
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('房间号 ${room.roomId} 已复制'),
+                                  content: Text(l10n.roomsRoomIdCopied(room.roomId)),
                                 ),
                               );
                             },
@@ -607,6 +624,7 @@ class _RoomDetailState extends State<_RoomDetail> {
     final isOwner = room.ownerId == state.user?.id;
     // 自己正待在这个房间里（通话中）
     final inThisRoom = state.isInRoom(room.roomId);
+    final l10n = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -623,17 +641,17 @@ class _RoomDetailState extends State<_RoomDetail> {
               obscureText: true,
               onSubmitted: (_) => _join(),
               style: const TextStyle(fontSize: 12.5),
-              decoration: const InputDecoration(
-                hintText: '房间密码',
-                prefixIcon: Icon(Icons.key_rounded, size: 14),
+              decoration: InputDecoration(
+                hintText: l10n.roomsPasswordHint,
+                prefixIcon: const Icon(Icons.key_rounded, size: 14),
               ),
             ),
           ),
           const SizedBox(height: 6),
           Text(
             state.hasRememberedRoomPassword(room.roomId)
-                ? '已经记住这个房间的密码，双击房间可直接进入'
-                : '密码会被记住，下次进来不用再输',
+                ? l10n.roomsPasswordRemembered
+                : l10n.roomsPasswordWillRemember,
             style: TextStyle(
               color: context.palette.textMuted,
               fontSize: 10.5,
@@ -650,7 +668,7 @@ class _RoomDetailState extends State<_RoomDetail> {
               FilledButton.icon(
                 onPressed: widget.onReturnToCall,
                 icon: const Icon(Icons.meeting_room_rounded, size: 14),
-                label: const Text('回到通话'),
+                label: Text(l10n.roomsBackToCall),
               )
             else
               FilledButton.icon(
@@ -662,7 +680,7 @@ class _RoomDetailState extends State<_RoomDetail> {
                         child: CircularProgressIndicator(strokeWidth: 1.8),
                       )
                     : const Icon(Icons.login_rounded, size: 14),
-                label: Text(room.isFull ? '房间已满' : '进入房间'),
+                label: Text(room.isFull ? l10n.roomsRoomFull : l10n.roomsEnterRoom),
               ),
             if (isOwner) ...[
               const SizedBox(width: 8),
@@ -670,16 +688,16 @@ class _RoomDetailState extends State<_RoomDetail> {
                 onPressed: () async {
                   final confirmed = await showConfirmDialog(
                     context,
-                    title: '解散房间',
-                    message: '房间内所有成员都会被断开，确定解散「${room.name}」吗',
-                    confirmText: '解散',
+                    title: l10n.roomsDissolveTitle,
+                    message: l10n.roomsDissolveMessage(room.name),
+                    confirmText: l10n.roomsDissolve,
                   );
                   if (confirmed) {
                     await state.deleteRoom(room.roomId);
                   }
                 },
                 icon: const Icon(Icons.delete_outline_rounded, size: 14),
-                label: const Text('解散'),
+                label: Text(l10n.roomsDissolve),
               ),
             ],
           ],
@@ -687,4 +705,14 @@ class _RoomDetailState extends State<_RoomDetail> {
       ],
     );
   }
+}
+
+/// 房间号那一行：房间号 +（有房主时）房主；桌面卡片与手机端详情共用一份拼法。
+///
+/// 分隔符留在代码里：四个语言的取值都只是「房主 X」，把「 · 」也塞进 ARB
+/// 会让每个译文都得带一段与语言无关的标点，反而更容易被译错。
+String _roomIdLine(AppL10n l10n, Room room) {
+  final owner = room.ownerName;
+  return l10n.roomsRoomId(room.roomId) +
+      (owner == null ? '' : ' · ${l10n.roomsRoomOwner(owner)}');
 }
