@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../core/app_theme.dart';
+import '../core/l10n_ext.dart';
 import '../media/media_models.dart';
 import '../signaling/protocol.dart';
 
@@ -275,12 +276,12 @@ class WindowTitleBar extends StatelessWidget {
             const Spacer(),
             _WindowButton(
               icon: Icons.remove,
-              tooltip: '最小化',
+              tooltip: context.l10n.shellWindowMinimize,
               onTap: () => windowManager.minimize(),
             ),
             _WindowButton(
               icon: Icons.crop_square_rounded,
-              tooltip: '最大化',
+              tooltip: context.l10n.shellWindowMaximize,
               onTap: () async {
                 if (await windowManager.isMaximized()) {
                   await windowManager.unmaximize();
@@ -291,7 +292,7 @@ class WindowTitleBar extends StatelessWidget {
             ),
             _WindowButton(
               icon: Icons.close,
-              tooltip: '关闭',
+              tooltip: context.l10n.shellClose,
               danger: true,
               onTap: () => windowManager.close(),
             ),

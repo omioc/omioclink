@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../core/app_theme.dart';
 import '../core/formatting.dart';
+import '../core/l10n_ext.dart';
 import '../core/platform.dart';
 import '../media/media_models.dart';
 import '../room/room_models.dart';
@@ -206,7 +207,7 @@ class _RoomTabs extends StatelessWidget {
             children: [
               _tab(
                 context,
-                label: '屏幕共享',
+                label: context.l10n.callTabScreenShare,
                 icon: Icons.desktop_windows_outlined,
                 selected: !kiosk,
                 onTap: () => onChanged(false),
@@ -214,7 +215,7 @@ class _RoomTabs extends StatelessWidget {
               const SizedBox(width: 3),
               _tab(
                 context,
-                label: '点歌台',
+                label: context.l10n.callTabMusic,
                 icon: Icons.library_music_outlined,
                 selected: kiosk,
                 onTap: () => onChanged(true),
@@ -315,7 +316,7 @@ class _Header extends StatelessWidget {
               children: [
                 Flexible(
                   child: Text(
-                    room?.name ?? '房间',
+                    room?.name ?? context.l10n.callRoomFallbackName,
                     overflow: TextOverflow.ellipsis,
                     style: AppText.pageTitle,
                   ),
@@ -344,7 +345,10 @@ class _Header extends StatelessWidget {
                   StatusDot(color: context.palette.success, size: 5),
                   const SizedBox(width: 6),
                   Text(
-                    '已直连 ${session.connectedPeerCount}/${session.peerCount}',
+                    context.l10n.callDirectConnected(
+                      session.connectedPeerCount,
+                      session.peerCount,
+                    ),
                     style: TextStyle(
                       color: context.palette.textMuted,
                       fontSize: 11.5,
@@ -374,7 +378,7 @@ class _Header extends StatelessWidget {
           ],
           const SizedBox(width: 6),
           PopupMenuButton<String>(
-            tooltip: '更多',
+            tooltip: context.l10n.callMore,
             iconSize: 16,
             icon: const Icon(Icons.more_vert_rounded),
             onSelected: (value) async {
@@ -388,16 +392,25 @@ class _Header extends StatelessWidget {
                   await state.leaveRoom();
               }
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem<String>(value: 'recover', child: Text('重连所有成员')),
-              PopupMenuItem<String>(value: 'diagnostics', child: Text('网络诊断')),
-              PopupMenuItem<String>(value: 'leave', child: Text('离开房间')),
+            itemBuilder: (context) => [
+              PopupMenuItem<String>(
+                value: 'recover',
+                child: Text(context.l10n.callReconnectAll),
+              ),
+              PopupMenuItem<String>(
+                value: 'diagnostics',
+                child: Text(context.l10n.callDiagnostics),
+              ),
+              PopupMenuItem<String>(
+                value: 'leave',
+                child: Text(context.l10n.callLeaveRoom),
+              ),
             ],
           ),
           const SizedBox(width: 4),
           if (compact)
             IconButton(
-              tooltip: '离开房间',
+              tooltip: context.l10n.callLeaveRoom,
               onPressed: () => context.read<AppState>().leaveRoom(),
               icon: Icon(
                 Icons.logout_rounded,
@@ -409,7 +422,7 @@ class _Header extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: () => context.read<AppState>().leaveRoom(),
               icon: const Icon(Icons.logout_rounded, size: 14),
-              label: const Text('离开'),
+              label: Text(context.l10n.callLeave),
             ),
         ],
       ),
@@ -529,7 +542,9 @@ class _MemberTile extends StatelessWidget {
           ),
           const SizedBox(height: 7),
           Text(
-            view.local ? '${member.displayName}（我）' : member.displayName,
+            view.local
+                ? context.l10n.shellMemberSelf(member.displayName)
+                : member.displayName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -579,7 +594,7 @@ class _InviteTile extends StatelessWidget {
           ),
           const SizedBox(height: 7),
           Text(
-            '邀请好友',
+            context.l10n.callInviteFriend,
             style: TextStyle(
               fontSize: 10.5,
               height: 1.3,
@@ -629,7 +644,7 @@ class _Stage extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               Text(
-                '还没有人在共享屏幕',
+                context.l10n.callNoOneSharing,
                 style: TextStyle(
                   color: context.palette.textPrimary,
                   fontSize: 13.5,
@@ -639,7 +654,9 @@ class _Stage extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                selfSharing ? '正在启动共享…' : '点击下方「分享屏幕」开始',
+                selfSharing
+                    ? context.l10n.callShareStarting
+                    : context.l10n.callShareHint,
                 style: TextStyle(
                   color: context.palette.textMuted,
                   fontSize: 11.5,
@@ -701,8 +718,10 @@ class _Stage extends StatelessWidget {
                           const SizedBox(height: AppSpacing.sm),
                           Text(
                             sharingSelf
-                                ? '正在启动共享…'
-                                : '正在接收 ${activeSharer.displayName} 的屏幕…',
+                                ? context.l10n.callShareStarting
+                                : context.l10n.callReceivingScreen(
+                                    activeSharer.displayName,
+                                  ),
                             style: TextStyle(
                               // 这块是共享画面的舞台，底色固定是黑的（见上面 PanelCard 的
                               // Colors.black）：文字不能跟着主题走，浅色主题下会变成深灰压黑
@@ -739,8 +758,10 @@ class _Stage extends StatelessWidget {
                       const SizedBox(width: 6),
                       Text(
                         sharingSelf
-                            ? '你正在共享屏幕 · 本地预览'
-                            : '${activeSharer.displayName} 正在共享屏幕',
+                            ? context.l10n.callSharingSelfBadge
+                            : context.l10n.callSharingBadge(
+                                activeSharer.displayName,
+                              ),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -756,7 +777,7 @@ class _Stage extends StatelessWidget {
               top: AppSpacing.md,
               child: _StageButton(
                 icon: Icons.fullscreen_rounded,
-                tooltip: '全屏观看（Esc 退出）',
+                tooltip: context.l10n.callFullscreenTooltip,
                 onPressed: openFullscreen,
               ),
             ),
@@ -894,9 +915,9 @@ class _ChatPanelState extends State<_ChatPanel> {
                   color: context.palette.textMuted,
                 ),
                 const SizedBox(width: 7),
-                const Text(
-                  '房间聊天',
-                  style: TextStyle(
+                Text(
+                  context.l10n.callChatTitle,
+                  style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
                     height: 1.3,
@@ -905,7 +926,7 @@ class _ChatPanelState extends State<_ChatPanel> {
                 const Spacer(),
                 if (messages.isEmpty)
                   Text(
-                    '暂无消息',
+                    context.l10n.callChatEmpty,
                     style: TextStyle(
                       color: context.palette.textMuted,
                       fontSize: 10.5,
@@ -945,7 +966,9 @@ class _ChatPanelState extends State<_ChatPanel> {
                                 children: [
                                   Text(
                                     message.isMine
-                                        ? '${message.displayName}（我）'
+                                        ? context.l10n.shellMemberSelf(
+                                            message.displayName,
+                                          )
                                         : message.displayName,
                                     style: TextStyle(
                                       fontSize: 11,
@@ -1001,14 +1024,14 @@ class _ChatPanelState extends State<_ChatPanel> {
                         );
                       }
                     },
-                    decoration: const InputDecoration(
-                      hintText: '输入消息…',
+                    decoration: InputDecoration(
+                      hintText: context.l10n.callChatHint,
                     ),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 IconButton(
-                  tooltip: '发送',
+                  tooltip: context.l10n.callSend,
                   onPressed: () {
                     if (controller.text.trim().isEmpty) {
                       return;
@@ -1064,7 +1087,9 @@ class _ControlBar extends StatelessWidget {
               icon: session.microphoneMuted
                   ? Icons.mic_off_rounded
                   : Icons.mic_rounded,
-              label: session.microphoneMuted ? '取消静音' : '静音',
+              label: session.microphoneMuted
+                  ? context.l10n.callUnmute
+                  : context.l10n.callMute,
               active: session.microphoneMuted,
               highlighted: !session.microphoneMuted && mic.speaking,
               level: session.microphoneMuted || !mic.healthy
@@ -1078,7 +1103,7 @@ class _ControlBar extends StatelessWidget {
             icon: session.speakerEnabled
                 ? Icons.headset_rounded
                 : Icons.headset_off_rounded,
-            label: '耳机/扬声器',
+            label: context.l10n.callSpeaker,
             active: !session.speakerEnabled,
             onTap: session.toggleSpeaker,
           ),
@@ -1087,13 +1112,15 @@ class _ControlBar extends StatelessWidget {
           if (!compact)
             _ControlButton(
               icon: Icons.screen_share_rounded,
-              label: sharing ? '停止共享' : '分享屏幕',
+              label: sharing
+                  ? context.l10n.callStopShare
+                  : context.l10n.callShareScreen,
               highlighted: sharing,
               onTap: onToggleShare,
             ),
           _ControlButton(
             icon: Icons.tune_rounded,
-            label: '更多',
+            label: context.l10n.callMore,
             onTap: () => showDiagnosticsDialog(context),
           ),
         ],
@@ -1251,7 +1278,7 @@ class _CompactStageArea extends StatelessWidget {
           bottom: AppSpacing.sm,
           child: FloatingActionButton.small(
             heroTag: 'call-chat',
-            tooltip: '聊天',
+            tooltip: context.l10n.callChat,
             elevation: 0,
             backgroundColor: context.palette.panelElevated,
             foregroundColor: context.palette.accent,

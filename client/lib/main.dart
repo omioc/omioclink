@@ -12,6 +12,7 @@ import 'core/app_locales.dart';
 import 'core/app_log.dart';
 import 'core/app_paths.dart';
 import 'core/app_theme.dart';
+import 'core/l10n_ext.dart';
 import 'core/log_file.dart';
 import 'core/platform.dart';
 
@@ -270,10 +271,10 @@ class _RootState extends State<_Root> with WindowListener {
           ),
         );
     final statusText = !connected
-        ? '未连接服务器'
+        ? context.l10n.shellStatusDisconnected
         : sessionActive
-        ? '房间内 · ${roomName ?? ''}'
-        : '已连接到服务器';
+        ? context.l10n.shellStatusInRoom(roomName ?? '')
+        : context.l10n.shellStatusConnected;
     final statusColor = !connected
         ? context.palette.textMuted
         : sessionActive
@@ -305,8 +306,11 @@ class _RootState extends State<_Root> with WindowListener {
             valueListenable: signaling.phase,
             builder: (context, phase, _) => _ReconnectBar(
               text: phase == SignalingPhase.reconnecting
-                  ? '信令连接中断，正在自动重连…'
-                  : '信令连接失败：${signaling.lastError.value ?? '未知原因'}',
+                  ? context.l10n.shellReconnecting
+                  : context.l10n.shellReconnectFailed(
+                      signaling.lastError.value ??
+                          context.l10n.shellReconnectUnknownReason,
+                    ),
               danger: phase == SignalingPhase.failed,
             ),
           ),
@@ -380,7 +384,7 @@ class _ErrorBanner extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: '知道了',
+            tooltip: context.l10n.shellGotIt,
             onPressed: onDismiss,
             iconSize: 14,
             icon: Icon(Icons.close_rounded, color: context.palette.danger),

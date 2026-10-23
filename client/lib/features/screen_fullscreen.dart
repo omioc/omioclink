@@ -7,6 +7,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../core/app_log.dart';
 import '../core/app_theme.dart';
+import '../core/l10n_ext.dart';
 import '../core/platform.dart';
 import '../room/room_session.dart';
 
@@ -181,8 +182,8 @@ class _ScreenFullscreenViewState extends State<ScreenFullscreenView> {
                           const SizedBox(height: AppSpacing.md),
                           Text(
                             selfSharing
-                                ? '正在启动共享…'
-                                : '正在接收 $name 的屏幕…',
+                                ? context.l10n.callShareStarting
+                                : context.l10n.callReceivingScreen(name),
                             style: TextStyle(
                               // 黑底舞台上的文字：不跟主题走，浅色主题的深灰字在这里看不清
                               color: Colors.white70,
@@ -215,22 +216,22 @@ class _ScreenFullscreenViewState extends State<ScreenFullscreenView> {
                                           AlignmentDirectional.centerStart,
                                       child: _NameBadge(
                                         text: selfSharing
-                                            ? '你正在共享屏幕 · 本地预览'
-                                            : '$name 正在共享屏幕',
+                                            ? context.l10n.callSharingSelfBadge
+                                            : context.l10n.callSharingBadge(name),
                                       ),
                                     ),
                                   ),
                                   _ControlButton(
                                     icon: Icons.fullscreen_exit_rounded,
-                                    label: '退出全屏（Esc）',
+                                    label: context.l10n.callExitFullscreen,
                                     onPressed: _exit,
                                   ),
                                 ],
                               ),
                               const Spacer(),
-                              const Text(
-                                'Esc 或双击画面退出全屏',
-                                style: TextStyle(
+                              Text(
+                                context.l10n.callFullscreenExitHint,
+                                style: const TextStyle(
                                   color: Colors.white54,
                                   fontSize: 11,
                                 ),

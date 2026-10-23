@@ -226,5 +226,86 @@
     }
   },
   "roomsDissolve": "解散",
-  "roomsRoomFullCannotEnter": "房间已满，暂时进不去"
+  "roomsRoomFullCannotEnter": "房间已满，暂时进不去",
+  "shellStatusDisconnected": "未连接服务器",
+  "shellStatusConnected": "已连接到服务器",
+  "shellStatusInRoom": "房间内 · {name}",
+  "@shellStatusInRoom": {
+    "description": "自绘标题栏里的连接状态：已经在房间里",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "shellReconnecting": "信令连接中断，正在自动重连…",
+  "shellReconnectFailed": "信令连接失败：{reason}",
+  "@shellReconnectFailed": {
+    "description": "底部重连条的正文：失败时带上原因",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "shellReconnectUnknownReason": "未知原因",
+  "shellGotIt": "知道了",
+  "shellWindowMinimize": "最小化",
+  "shellWindowMaximize": "最大化",
+  "callTabScreenShare": "屏幕共享",
+  "callTabMusic": "点歌台",
+  "callRoomFallbackName": "房间",
+  "callDirectConnected": "已直连 {connected}/{total}",
+  "@callDirectConnected": {
+    "description": "通话页标题栏里的直连人数",
+    "placeholders": {
+      "connected": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "callMore": "更多",
+  "callReconnectAll": "重连所有成员",
+  "callDiagnostics": "网络诊断",
+  "callLeaveRoom": "离开房间",
+  "callLeave": "离开",
+  "callInviteFriend": "邀请好友",
+  "callNoOneSharing": "还没有人在共享屏幕",
+  "callShareStarting": "正在启动共享…",
+  "callShareHint": "点击下方「分享屏幕」开始",
+  "callReceivingScreen": "正在接收 {name} 的屏幕…",
+  "@callReceivingScreen": {
+    "description": "共享画面还没到时的占位文案",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "callSharingSelfBadge": "你正在共享屏幕 · 本地预览",
+  "callSharingBadge": "{name} 正在共享屏幕",
+  "@callSharingBadge": {
+    "description": "压在大画面左上角的「谁在共享」标签",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "callFullscreenTooltip": "全屏观看（Esc 退出）",
+  "callExitFullscreen": "退出全屏（Esc）",
+  "callFullscreenExitHint": "Esc 或双击画面退出全屏",
+  "callChatTitle": "房间聊天",
+  "callChatEmpty": "暂无消息",
+  "callChatHint": "输入消息…",
+  "callSend": "发送",
+  "callMute": "静音",
+  "callUnmute": "取消静音",
+  "callSpeaker": "耳机/扬声器",
+  "callShareScreen": "分享屏幕",
+  "callStopShare": "停止共享",
+  "callChat": "聊天"
 }
