@@ -965,13 +965,18 @@ class _ChartsPaneState extends State<_ChartsPane> {
     if (library.chartsLoading && groups.isEmpty) {
       return MusicLoading(label: context.l10n.musicNavCharts);
     }
-    if (groups.isEmpty) {
+    // 还没点过「加载」：给加载按钮（没插件时给装音源的指路）
+    if (!library.chartsLoaded) {
       return _emptyState(context);
     }
 
-    // 按音源归组（保持插件返回的顺序）
-    final platforms = <String>[];
-    final byPlatform = <String, List<MusicFreeTopListGroup>>{};
+    // 音源 tab = 所有**声明了能提供榜单**的插件（按插件顺序），再加上真拿到数据的
+    // （防御：插件没声明能力却返回了分组）。某个音源这次超时没回来，它的 tab 也要在，
+    // 点进去说明原因并给重试——否则「装了 6 个插件只看见 1 个音源」。
+    final platforms = <String>[...library.chartPlatforms];
+    final byPlatform = <String, List<MusicFreeTopListGroup>>{
+      for (final platform in platforms) platform: <MusicFreeTopListGroup>[],
+    };
     for (final group in groups) {
       byPlatform
           .putIfAbsent(group.platform, () {
@@ -979,6 +984,9 @@ class _ChartsPaneState extends State<_ChartsPane> {
             return <MusicFreeTopListGroup>[];
           })
           .add(group);
+    }
+    if (platforms.isEmpty) {
+      return _emptyState(context);
     }
     // 选中的音源被重载掉（插件变了）就回落到第一个
     final selected = _platform != null && byPlatform.containsKey(_platform)
@@ -1007,6 +1015,10 @@ class _ChartsPaneState extends State<_ChartsPane> {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
+              // 这个音源没给数据：说明是「超时/失败」还是「压根没提供」，并给重试
+              if (selectedGroups.isEmpty) {
+                return _platformEmpty(context, selected);
+              }
               // 每行固定三个卡片：以前宽屏三列、常规两列，卡片显得偏大；
               // 现在门槛降到 340（点歌台里还要让出右侧队列栏），
               // 只有窄到实在放不下三张时才退化成 2 / 1 列。
@@ -1055,6 +1067,24 @@ class _ChartsPaneState extends State<_ChartsPane> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 某个音源这一屏没有内容：区分「这次没回来（超时/失败）」和「本来就没提供」，
+  /// 两种情况都给重试——重试只重跑失败的那个音源，成功的走缓存。
+  Widget _platformEmpty(BuildContext context, String platform) {
+    final l10n = context.l10n;
+    final failure = library.chartFailures[platform];
+    return _IdleHint(
+      icon: Icons.leaderboard_outlined,
+      text: failure == null
+          ? l10n.pluginNoCharts
+          : l10n.musicSourceNoData(musicPlatformLabel(platform)),
+      hint: failure,
+      action: TextButton(
+        onPressed: () => unawaited(library.loadCharts(force: true)),
+        child: Text(l10n.musicRetry),
+      ),
     );
   }
 
@@ -1377,9 +1407,12 @@ class _SheetsPaneState extends State<_SheetsPane> {
       }
     }
 
-    // 第一层：音源（保持插件返回的顺序）
-    final platforms = <String>[];
-    final byPlatform = <String, List<MusicFreeTag>>{};
+    // 第一层：音源 = 能提供歌单标签的插件（按插件顺序），再加上真返回了标签的。
+    // 某个音源这次超时也不让它消失：tab 留着，点进去说明原因并给重试。
+    final platforms = <String>[...library.sheetPlatforms];
+    final byPlatform = <String, List<MusicFreeTag>>{
+      for (final platform in platforms) platform: <MusicFreeTag>[],
+    };
     for (final tag in chips) {
       byPlatform
           .putIfAbsent(tag.platform, () {
@@ -1388,6 +1421,9 @@ class _SheetsPaneState extends State<_SheetsPane> {
           })
           .add(tag);
     }
+    if (platforms.isEmpty) {
+      return _emptyState(context);
+    }
     final selected = library.selectedTag;
     final platform = _platform != null && byPlatform.containsKey(_platform)
         ? _platform!
@@ -1395,6 +1431,11 @@ class _SheetsPaneState extends State<_SheetsPane> {
               ? selected.platform
               : platforms.first);
     final sourceTags = byPlatform[platform]!;
+    // 切了音源 / 还没选过类别 → 自动选这个音源下的第一个类别
+    if (sourceTags.isNotEmpty &&
+        (selected == null || selected.platform != platform)) {
+      _scheduleAutoSelect(sourceTags.first);
+    }
     // 切了音源 / 还没选过类别 → 自动选这个音源下的第一个类别
     if (selected == null || selected.platform != platform) {
       _scheduleAutoSelect(sourceTags.first);
@@ -1466,9 +1507,18 @@ class _SheetsPaneState extends State<_SheetsPane> {
                       hasScrollBody: false,
                       child: MusicEmptyHint(
                         icon: Icons.queue_music,
-                        text:
-                            library.sheetsError ??
-                            context.l10n.musicSheetCategoryEmpty,
+                        // 这个音源一个标签都没给：区分「这次没回来」和「本来就没有」
+                        text: sourceTags.isEmpty
+                            ? (library.tagFailures[platform] == null
+                                  ? context.l10n.pluginNoSheets
+                                  : context.l10n.musicSourceNoData(
+                                      musicPlatformLabel(platform),
+                                    ))
+                            : (library.sheetsError ??
+                                  context.l10n.musicSheetCategoryEmpty),
+                        hint: sourceTags.isEmpty
+                            ? library.tagFailures[platform]
+                            : null,
                       ),
                     )
                   else ...[

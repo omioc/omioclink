@@ -383,7 +383,8 @@ module.exports = {
 
     final empty = await failing.recommendTags();
     expect(empty.isEmpty, isTrue, reason: '插件抛错只能返回空');
-    expect(host.calls, hasLength(1));
+    // 失败/超时会补跑一次（冷启动时第一个音源常超时），所以同一个音源一共问了两遍
+    expect(host.calls, hasLength(2));
 
     host.dispose();
     final restartHost = _CountingHost(paths: paths);
@@ -391,6 +392,36 @@ module.exports = {
     final tags = await restarted.recommendTags();
     expect(tags.isEmpty, isFalse, reason: '失败那次没写缓存，重启后应该重新问插件');
     expect(restartHost.calls, hasLength(1));
+  });
+
+  test('一个音源失败不会让其它音源消失：失败的那个被记下来并补跑一次', () async {
+    final paths = PluginPaths(
+      root: '${tempRoot.path}${Platform.pathSeparator}mixed',
+    );
+    final host = _MixedHost(paths: paths);
+    final service = MusicFreeService(MusicFreePlugins(host: host, paths: paths));
+
+    final groups = await service.topLists();
+    expect(
+      groups.map((group) => group.platform).toSet(),
+      <String>{'好音源'},
+      reason: '好的那个照常返回',
+    );
+    expect(
+      service.lastTopListFailures.keys,
+      contains('坏音源'),
+      reason: '失败的那个要留个记录，界面才能把它的 tab 摆出来并说明原因',
+    );
+    expect(
+      host.calls.where((call) => call.endsWith('@bad-hash')).length,
+      2,
+      reason: '失败的音源补跑一次（冷启动容易超时），成功的不会重跑',
+    );
+    expect(
+      host.calls.where((call) => call.endsWith('@good-hash')).length,
+      1,
+    );
+    host.dispose();
   });
 }
 
@@ -469,5 +500,56 @@ class _CountingHost extends MusicFreeHost {
         };
     }
     return null;
+  }
+}
+
+/// 两个音源：一个正常返回榜单，一个直接抛错。
+///
+/// 用来钉住「某个音源失败不该让其它音源/分组一起消失」这条：从前 tab 是从
+/// 「拿到数据的分组」生成的，坏掉的那个会让用户以为只装了一个音源。
+class _MixedHost extends MusicFreeHost {
+  _MixedHost({required super.paths});
+
+  final List<String> calls = <String>[];
+
+  static const MusicFreePlugin _good = MusicFreePlugin(
+    hash: 'good-hash',
+    platform: '好音源',
+    path: 'musicfree-plugins/good-hash.js',
+    version: '1.0.0',
+    supportedMethods: <String>[MusicFreeCapabilities.getTopLists],
+  );
+
+  static const MusicFreePlugin _bad = MusicFreePlugin(
+    hash: 'bad-hash',
+    platform: '坏音源',
+    path: 'musicfree-plugins/bad-hash.js',
+    version: '1.0.0',
+    supportedMethods: <String>[MusicFreeCapabilities.getTopLists],
+  );
+
+  @override
+  List<MusicFreePlugin> get plugins => const <MusicFreePlugin>[_good, _bad];
+
+  @override
+  Future<dynamic> invoke(
+    String hash,
+    String method,
+    List<Object?> args, {
+    Duration timeout = const Duration(seconds: 20),
+    bool flushWrites = true,
+  }) async {
+    calls.add('$method@$hash');
+    if (hash == 'bad-hash') {
+      throw const MusicFreeException('这个音源坏了');
+    }
+    return <dynamic>[
+      <String, dynamic>{
+        'title': '榜单分组',
+        'data': <dynamic>[
+          <String, dynamic>{'id': 'top-1', 'title': '榜单条目'},
+        ],
+      },
+    ];
   }
 }

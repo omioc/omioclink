@@ -185,6 +185,7 @@
   "musicSheetsLoad": "인기 플레이리스트 불러오기",
   "musicLoadOnDemandHint": "아래 버튼을 눌러야 음원에 요청합니다(이 화면을 열기만 하면 불러오지 않습니다)",
   "musicGoPlugins": "「플러그인」에서 설치",
+  "musicSourceNoData": "{platform} 이(가) 아무것도 반환하지 않았습니다",
   "musicMenuExpand": "메뉴 펼치기",
   "musicMenuCollapse": "메뉴 접기",
   "musicSearchTypeMusic": "음악",

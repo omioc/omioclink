@@ -571,6 +571,7 @@ class MusicFreeService {
   Future<void> _waitWithDeadline(
     List<Future<void>> futures, {
     required String label,
+    Duration? deadline,
   }) async {
     if (futures.isEmpty) {
       lastListTimedOut = false;
@@ -580,7 +581,7 @@ class MusicFreeService {
     try {
       await Future.wait<void>(
         futures,
-      ).timeout(listTimeout * 3 + const Duration(seconds: 10));
+      ).timeout(deadline ?? listTimeout * 3 + const Duration(seconds: 10));
     } on TimeoutException {
       lastListTimedOut = true;
       AppLog.warn('获取$label超时，先显示已经返回的音源（有插件卡住了）');
@@ -676,68 +677,102 @@ class MusicFreeService {
       targets.length,
       (_) => <MusicFreeTopListGroup>[],
     );
+    lastTopListFailures.clear();
+
+    /// 跑一个音源；返回它是不是**失败**（超时 / 抛异常），失败原因记进
+    /// [lastTopListFailures] 供界面在对应 tab 里说明。
+    Future<bool> loadOne(int index, Duration timeout) async {
+      final plugin = targets[index];
+      final cacheKey = _listCacheKey(MusicFreeCapabilities.getTopLists, plugin);
+      if (!refresh) {
+        final cached = await _readTopListGroups(cacheKey);
+        if (cached != null) {
+          perPlugin[index] = cached;
+          lastTopListFailures.remove(plugin.platform);
+          return false;
+        }
+      }
+      try {
+        final raw = await plugins.host.invoke(
+          plugin.hash,
+          MusicFreeCapabilities.getTopLists,
+          <Object?>[],
+          timeout: timeout,
+          flushWrites: false,
+        );
+        if (raw is! List) {
+          return false;
+        }
+        final groups = <MusicFreeTopListGroup>[];
+        for (final group in raw) {
+          if (group is! Map) {
+            continue;
+          }
+          final title = group['title']?.toString() ?? plugin.platform;
+          final data = group['data'];
+          final items = <MusicFreeSheet>[];
+          if (data is List) {
+            for (final item in data) {
+              final sheet = _toSheet(plugin, item);
+              if (sheet != null) {
+                items.add(sheet);
+              }
+            }
+          }
+          if (items.isNotEmpty) {
+            groups.add(
+              MusicFreeTopListGroup(
+                platform: plugin.platform,
+                title: title,
+                items: items,
+              ),
+            );
+          }
+        }
+        perPlugin[index] = groups;
+        lastTopListFailures.remove(plugin.platform);
+        // 空结果不落盘：这一秒插件抽风，写进去接下来 6 小时都会显示「插件没有排行榜」。
+        if (groups.isNotEmpty) {
+          await _writeCacheNow(cacheKey, <String, dynamic>{
+            'groups': groups.map((item) => item.toJson()).toList(growable: false),
+          });
+        }
+        return false;
+      } on Object catch (error) {
+        // 榜单失败不记账到搜索熔断里：两个方法族互不连坐。
+        AppLog.warn('获取榜单失败 ${plugin.platform}', error: error);
+        lastTopListFailures[plugin.platform] = error is MusicFreeException
+            ? error.message
+            : '$error';
+        return true;
+      }
+    }
+
+    final retry = <int>[];
     await _waitWithDeadline(<Future<void>>[
       for (var index = 0; index < targets.length; index += 1)
         () async {
-          final plugin = targets[index];
-          final cacheKey = _listCacheKey(MusicFreeCapabilities.getTopLists, plugin);
-          if (!refresh) {
-            final cached = await _readTopListGroups(cacheKey);
-            if (cached != null) {
-              perPlugin[index] = cached;
-              return;
-            }
-          }
-          try {
-            final raw = await plugins.host.invoke(
-              plugin.hash,
-              MusicFreeCapabilities.getTopLists,
-              <Object?>[],
-              timeout: listTimeout,
-              flushWrites: false,
-            );
-            if (raw is! List) {
-              return;
-            }
-            final groups = <MusicFreeTopListGroup>[];
-            for (final group in raw) {
-              if (group is! Map) {
-                continue;
-              }
-              final title = group['title']?.toString() ?? plugin.platform;
-              final data = group['data'];
-              final items = <MusicFreeSheet>[];
-              if (data is List) {
-                for (final item in data) {
-                  final sheet = _toSheet(plugin, item);
-                  if (sheet != null) {
-                    items.add(sheet);
-                  }
-                }
-              }
-              if (items.isNotEmpty) {
-                groups.add(
-                  MusicFreeTopListGroup(
-                    platform: plugin.platform,
-                    title: title,
-                    items: items,
-                  ),
-                );
-              }
-            }
-            perPlugin[index] = groups;
-            // 空结果不落盘：这一秒插件抽风，写进去接下来 6 小时都会显示「插件没有排行榜」。
-            if (groups.isNotEmpty) {
-              await _writeCacheNow(cacheKey, <String, dynamic>{
-                'groups': groups.map((item) => item.toJson()).toList(growable: false),
-              });
-            }
-          } on Object catch (error) {
-            // 榜单失败不记账到搜索熔断里：两个方法族互不连坐。
-            AppLog.warn('获取榜单失败 ${plugin.platform}', error: error);
+          if (await loadOne(index, listTimeout)) {
+            retry.add(index);
           }
         }(),
     ], label: '榜单');
+
+    // 补跑一轮失败的音源：冷启动时 6 个音源抢同一个 worker，第一个还要顺带把
+    // QuickJS 与插件源码热起来，[listTimeout]（4 秒）够不着很正常——结果就是
+    // 「装了 6 个插件，排行榜只有一个音源」。第一轮已经把运行时热了，这一轮通常
+    // 几百毫秒就回来；只补失败的，成功的不会重跑。
+    if (retry.isNotEmpty) {
+      AppLog.info('榜单：补跑 ${retry.length} 个失败/超时的音源');
+      await _waitWithDeadline(<Future<void>>[
+        for (final index in retry) () async {
+          await loadOne(index, listTimeout * 2);
+        }(),
+        // 补跑给足预算：冷启动时几个音源抢同一个 worker，每个都要先编译一遍，
+        // 只按单个音源的 8 秒上限会让排在后面的几个一起被切掉。
+      ], label: '榜单(补跑)', deadline: listTimeout * (retry.length + 1));
+    }
+
     final groups = <MusicFreeTopListGroup>[
       for (final item in perPlugin) ...item,
     ];
@@ -748,6 +783,11 @@ class MusicFreeService {
     }
     return groups;
   }
+
+  /// 上一次 [topLists] 里**失败或超时**的音源（platform → 原因）。
+  ///
+  /// 界面据此在对应音源的 tab 里说明「这个音源这次没回来」，而不是让它整个消失。
+  final Map<String, String> lastTopListFailures = <String, String>{};
 
   Future<MusicFreeTrackPage> topListDetail(MusicFreeSheet sheet, {int page = 1}) async {
     return _sheetTracks(
@@ -773,77 +813,106 @@ class MusicFreeService {
       targets.length,
       (_) => const MusicFreeTags(),
     );
+    lastTagFailures.clear();
+
+    /// 跑一个音源；返回它是不是**失败**（超时 / 抛异常）。
+    Future<bool> loadOne(int index, Duration timeout) async {
+      final plugin = targets[index];
+      final cacheKey = _listCacheKey(
+        MusicFreeCapabilities.getRecommendSheetTags,
+        plugin,
+      );
+      if (!refresh) {
+        final cached = await _readTags(cacheKey);
+        if (cached != null) {
+          perPlugin[index] = cached;
+          lastTagFailures.remove(plugin.platform);
+          return false;
+        }
+      }
+      try {
+        final raw = await plugins.host.invoke(
+          plugin.hash,
+          MusicFreeCapabilities.getRecommendSheetTags,
+          <Object?>[],
+          timeout: timeout,
+          flushWrites: false,
+        );
+        if (raw is! Map) {
+          return false;
+        }
+        final pinned = <MusicFreeTag>[];
+        final pinnedData = raw['pinned'];
+        if (pinnedData is List) {
+          for (final item in pinnedData) {
+            final tag = _toTag(plugin, item);
+            if (tag != null) {
+              pinned.add(tag);
+            }
+          }
+        }
+        final groups = <MusicFreeTagGroup>[];
+        final groupData = raw['data'];
+        if (groupData is List) {
+          for (final group in groupData) {
+            if (group is! Map) {
+              continue;
+            }
+            final tags = <MusicFreeTag>[];
+            final tagList = group['data'];
+            if (tagList is List) {
+              for (final item in tagList) {
+                final tag = _toTag(plugin, item);
+                if (tag != null) {
+                  tags.add(tag);
+                }
+              }
+            }
+            if (tags.isNotEmpty) {
+              groups.add(
+                MusicFreeTagGroup(
+                  title: group['title']?.toString() ?? plugin.platform,
+                  tags: tags,
+                ),
+              );
+            }
+          }
+        }
+        final pluginTags = MusicFreeTags(pinned: pinned, groups: groups);
+        perPlugin[index] = pluginTags;
+        lastTagFailures.remove(plugin.platform);
+        // 空结果不落盘：这一秒插件抽风，写进去接下来 6 小时都会显示「没有热门歌单」。
+        if (!pluginTags.isEmpty) {
+          await _writeCacheNow(cacheKey, pluginTags.toJson());
+        }
+        return false;
+      } on Object catch (error) {
+        AppLog.warn('获取歌单标签失败 ${plugin.platform}', error: error);
+        lastTagFailures[plugin.platform] = error is MusicFreeException
+            ? error.message
+            : '$error';
+        return true;
+      }
+    }
+
+    final retry = <int>[];
     await _waitWithDeadline(<Future<void>>[
       for (var index = 0; index < targets.length; index += 1)
         () async {
-          final plugin = targets[index];
-          final cacheKey = _listCacheKey(MusicFreeCapabilities.getRecommendSheetTags, plugin);
-          if (!refresh) {
-            final cached = await _readTags(cacheKey);
-            if (cached != null) {
-              perPlugin[index] = cached;
-              return;
-            }
-          }
-          try {
-            final raw = await plugins.host.invoke(
-              plugin.hash,
-              MusicFreeCapabilities.getRecommendSheetTags,
-              <Object?>[],
-              timeout: listTimeout,
-              flushWrites: false,
-            );
-            if (raw is! Map) {
-              return;
-            }
-            final pinned = <MusicFreeTag>[];
-            final pinnedData = raw['pinned'];
-            if (pinnedData is List) {
-              for (final item in pinnedData) {
-                final tag = _toTag(plugin, item);
-                if (tag != null) {
-                  pinned.add(tag);
-                }
-              }
-            }
-            final groups = <MusicFreeTagGroup>[];
-            final groupData = raw['data'];
-            if (groupData is List) {
-              for (final group in groupData) {
-                if (group is! Map) {
-                  continue;
-                }
-                final tags = <MusicFreeTag>[];
-                final tagList = group['data'];
-                if (tagList is List) {
-                  for (final item in tagList) {
-                    final tag = _toTag(plugin, item);
-                    if (tag != null) {
-                      tags.add(tag);
-                    }
-                  }
-                }
-                if (tags.isNotEmpty) {
-                  groups.add(
-                    MusicFreeTagGroup(
-                      title: group['title']?.toString() ?? plugin.platform,
-                      tags: tags,
-                    ),
-                  );
-                }
-              }
-            }
-            final pluginTags = MusicFreeTags(pinned: pinned, groups: groups);
-            perPlugin[index] = pluginTags;
-            // 空结果不落盘：这一秒插件抽风，写进去接下来 6 小时都会显示「没有热门歌单」。
-            if (!pluginTags.isEmpty) {
-              await _writeCacheNow(cacheKey, pluginTags.toJson());
-            }
-          } on Object catch (error) {
-            AppLog.warn('获取歌单标签失败 ${plugin.platform}', error: error);
+          if (await loadOne(index, listTimeout)) {
+            retry.add(index);
           }
         }(),
     ], label: '歌单标签');
+    // 与榜单同理：冷启动时第一个音源要顺带热运行时，4 秒够不着很常见。
+    if (retry.isNotEmpty) {
+      AppLog.info('歌单标签：补跑 ${retry.length} 个失败/超时的音源');
+      await _waitWithDeadline(<Future<void>>[
+        for (final index in retry) () async {
+          await loadOne(index, listTimeout * 2);
+        }(),
+      ], label: '歌单标签(补跑)', deadline: listTimeout * (retry.length + 1));
+    }
     final tags = MusicFreeTags(
       pinned: <MusicFreeTag>[for (final item in perPlugin) ...item.pinned],
       groups: <MusicFreeTagGroup>[for (final item in perPlugin) ...item.groups],
@@ -853,6 +922,12 @@ class MusicFreeService {
     }
     return tags;
   }
+
+  /// 上一次 [recommendTags] 里**失败或超时**的音源（platform → 原因）。
+  ///
+  /// 与 [lastTopListFailures] 同一个用途：让对应音源的 tab 留在界面上并说明原因，
+  /// 而不是「装了一堆插件只看见一个音源」。
+  final Map<String, String> lastTagFailures = <String, String>{};
 
   Future<MusicFreeTrackPage> recommendSheetsByTag(MusicFreeTag tag, {int page = 1}) async {
     final plugin = _pluginOf(tag.platform);

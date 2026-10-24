@@ -84,6 +84,36 @@ class MusicFreeLibrary extends ChangeNotifier {
 
   bool get hasPlugins => plugins.isNotEmpty;
 
+  /// 声明了某个能力的音源（按插件顺序去重）。
+  ///
+  /// 榜单 / 歌单的 tab 用它来**摆全**：某个音源这次超时没回来，它的 tab 也要在，
+  /// 点进去说明原因并给重试。从前 tab 是从「拿到数据的分组」里生成的，于是
+  /// 「装了 6 个插件、排行榜只有 1 个音源」——正是用户看到的样子。
+  List<String> _platformsWith(String method) {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final plugin in _service.withMethod(method)) {
+      if (seen.add(plugin.platform)) {
+        result.add(plugin.platform);
+      }
+    }
+    return result;
+  }
+
+  /// 能提供排行榜的音源（插件顺序）。
+  List<String> get chartPlatforms =>
+      _platformsWith(MusicFreeCapabilities.getTopLists);
+
+  /// 能提供热门歌单标签的音源（插件顺序）。
+  List<String> get sheetPlatforms =>
+      _platformsWith(MusicFreeCapabilities.getRecommendSheetTags);
+
+  /// 上一次拉榜单失败/超时的音源（platform → 原因）。
+  Map<String, String> get chartFailures => _service.lastTopListFailures;
+
+  /// 上一次拉歌单标签失败/超时的音源（platform → 原因）。
+  Map<String, String> get tagFailures => _service.lastTagFailures;
+
   /// 把「之前装过的插件」从磁盘登记出来（只读元数据、不编译 JS），然后通知界面。
   ///
   /// 启动时调一次：设置页 / 点歌台一打开就能看到已有的插件列表，而不是空着等用户

@@ -185,6 +185,7 @@
   "musicSheetsLoad": "Load playlists",
   "musicLoadOnDemandHint": "Nothing is requested until you press the button below; this screen does not auto-load",
   "musicGoPlugins": "Open “Plugins” to install",
+  "musicSourceNoData": "{platform} returned nothing",
   "musicMenuExpand": "Expand menu",
   "musicMenuCollapse": "Collapse menu",
   "musicSearchTypeMusic": "Music",

@@ -420,6 +420,15 @@
   "@musicGoPlugins": {
     "description": "没装音源时空态里的按钮：跳到左栏的插件页"
   },
+  "musicSourceNoData": "{platform} 这个音源没有返回数据",
+  "@musicSourceNoData": {
+    "description": "某个音源这一屏没数据时的说明（超时/失败都会走到这里）",
+    "placeholders": {
+      "platform": {
+        "type": "String"
+      }
+    }
+  },
   "musicMenuExpand": "展开菜单",
   "musicMenuCollapse": "收起菜单",
   "musicSearchTypeMusic": "音乐",
