@@ -617,4 +617,40 @@ void main() {
     );
     expect(restartedHost.isReady, isTrue);
   });
+
+  test('重启后第一次调用「还没编译」的插件必须返回，不能挂着', () async {
+    await plugins.syncSubscription(urls: <String>['$base/sub.json']);
+
+    // 模拟重启：元数据登记了，worker 里什么都没有
+    final restartedHost = MusicFreeHost(
+      paths: PluginPaths(root: tempRoot.path),
+      bundleSource: bundle,
+    );
+    addTearDown(restartedHost.dispose);
+    final restarted = MusicFreePlugins(
+      host: restartedHost,
+      paths: PluginPaths(root: tempRoot.path),
+    );
+    await restarted.restoreInstalled();
+    final hash = restarted.plugins.first.hash;
+    expect(restartedHost.isCompiled(hash), isFalse);
+
+    // 这时直接调用：内部走 `_ensureCompiled`（现场编译）。曾经这里因为
+    // `whenComplete` 返回了被移除的那个 future 而自等死锁——编译日志照打，
+    // 调用却永远不返回，界面上就是「这个音源一直不来」，连失败都不报。
+    final result = await restartedHost
+        .invoke(
+          hash,
+          MusicFreeCapabilities.search,
+          <Object?>['测试', 1, 'single'],
+          timeout: const Duration(seconds: 20),
+        )
+        .timeout(
+          const Duration(seconds: 40),
+          onTimeout: () => fail('按需编译的插件调用没有返回：_ensureCompiled 又挂住了'),
+        );
+
+    expect(result, isA<Map<dynamic, dynamic>>());
+    expect(restartedHost.isCompiled(hash), isTrue);
+  });
 }

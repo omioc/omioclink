@@ -1252,8 +1252,17 @@ class MusicFreeHost {
       return inflight;
     }
     final future = _compileFromDisk(hash);
-    _compiling[hash] = future.whenComplete(() => _compiling.remove(hash));
-    return _compiling[hash]!;
+    // 收尾必须写成**块体**：`whenComplete(() => _compiling.remove(hash))` 会把被移除的
+    // 那个 future **自己**当返回值交回去，whenComplete 于是去等它——自己等自己，永远
+    // 不完成。踩到的现象：重启后（元数据复用、还没编译的插件）第一次调用某个音源，
+    // 日志里「插件.按需编译 xxx」正常打出来，但调用方一直挂着：超时在 `_call` 里，
+    // 这里压根没走到，所以连一句失败都不报，界面上就是那个音源一直不来（聚合总闸
+    // 到点才收场）。
+    final tracked = future.whenComplete(() {
+      _compiling.remove(hash);
+    });
+    _compiling[hash] = tracked;
+    return tracked;
   }
 
   Future<void> _compileFromDisk(String hash) async {
