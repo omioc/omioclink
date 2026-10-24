@@ -941,6 +941,29 @@ class MusicFreeHost {
   /// 白占一个下载槽位（手机上池固定 2，见 [_defaultPoolSize]）。
   int get workerPoolSize => _poolSize;
 
+  /// 插件集合/编译状态变化时的通知（界面据此重建列表）。
+  ///
+  /// 以前只有「用户点了某个按钮」那条路径会 notify：后台预编译、按需编译、
+  /// worker 掉线全都不通知，界面上看到的还是旧状态——手机端尤其明显。
+  void Function()? onPluginsChanged;
+
+  /// 等这个 hash 正在进行的编译落地（没在编译就立即返回）。
+  ///
+  /// 卸载时用：编译是几十秒的长活，磁盘上的文件删掉之后它才收尾，收尾的
+  /// `loadPlugin` 会把已经删掉的插件又发布回内存——用户看到的是「选 2 个却
+  /// 加载了 3 个」，多出来的那个怎么删都删不掉。
+  Future<void> settleCompile(String hash) async {
+    final inflight = _compiling[hash];
+    if (inflight == null) {
+      return;
+    }
+    try {
+      await inflight;
+    } on Object {
+      // 编译失败无所谓：调用方只关心「有没有在飞的会把它写回来」
+    }
+  }
+
   final List<_WorkerLink> _links = <_WorkerLink>[];
   final Map<int, _PendingCall> _pending = <int, _PendingCall>{};
 
@@ -1024,6 +1047,9 @@ class MusicFreeHost {
       }
       try {
         await _ensureCompiled(hash);
+        // 每编译好一个就刷新一次：手机上池只有 2 个 worker，编译是几十秒的长活，
+        // 等整批跑完再刷新，界面看起来就是「卡住不动」。
+        onPluginsChanged?.call();
       } on Object catch (error) {
         AppLog.debug('后台编译插件失败（$hash）：$error');
       }
@@ -1056,6 +1082,7 @@ class MusicFreeHost {
     _owner[hash] = link;
     link.hashes.add(hash);
     await _rememberMetadata(plugin);
+    onPluginsChanged?.call();
     return plugin;
   }
 
@@ -1088,6 +1115,7 @@ class MusicFreeHost {
     _plugins.remove(hash);
     link?.hashes.remove(hash);
     link?.to?.send(<String, dynamic>{'id': 0, 'op': 'unload', 'hash': hash});
+    onPluginsChanged?.call();
   }
 
   Future<void> flushPending({
@@ -1151,7 +1179,16 @@ class MusicFreeHost {
     }
     final code = await file.readAsString();
     final watch = Stopwatch()..start();
-    final plugin = await loadPlugin(hash: hash, code: code, path: path);
+    // srcUrl 必须带上：按需编译出来的这份插件要是丢了来源地址，之后「更新」与
+    // 「重选插件」都无法按订阅地址认出它，删也删不掉（「选 2 个却加载 3 个」）。
+    final meta = _metadata[hash];
+    final srcUrl = meta is Map ? (meta['srcUrl']?.toString() ?? '') : '';
+    final plugin = await loadPlugin(
+      hash: hash,
+      code: code,
+      path: path,
+      srcUrl: srcUrl,
+    );
     AppLog.timing('插件.按需编译 ${plugin.platform}', watch.elapsed);
   }
 
@@ -1251,6 +1288,12 @@ class MusicFreeHost {
         (dynamic message) => _onMessage(link, message),
         onDone: () => _onWorkerGone(link),
       );
+      // isolate 退出必须能被发现：对端死亡不会关闭本端 ReceivePort，`onDone`
+      // 也永远不会触发，于是 link 一直显得「就绪」，它的 pending 调用只能等满
+      // 超时（编译 120s、调用 20s）——手机上就是「加载一两个就卡死」。
+      final exitPort = ReceivePort();
+      link.exitPort = exitPort;
+      exitPort.listen((_) => _onWorkerGone(link));
       link.isolate = await Isolate.spawn(
         musicFreeWorkerMain,
         <Object?>[
@@ -1263,8 +1306,11 @@ class MusicFreeHost {
           },
         ],
         debugName: 'musicfree-worker-${link.index}',
+        onExit: exitPort.sendPort,
+        onError: exitPort.sendPort,
       );
-      await completer.future;
+      // 冷启动要编译 577KB 运行时：起不来又不退出时不能把整条串行链拖死
+      await completer.future.timeout(const Duration(seconds: 30));
       _timing('插件.worker#${link.index} 就绪（含引擎预热）', watch.elapsed);
     } on Object {
       link.starting = null;
@@ -1324,7 +1370,11 @@ class MusicFreeHost {
     }
   }
 
-  /// worker 挂了：把它的插件标成「未编译」，下次调用会从磁盘重新装。
+  /// worker 挂了（崩溃 / 被杀 / 启动失败）：作废它的编译状态、让它的在途调用
+  /// 立刻失败，并回收端口。
+  ///
+  /// 以前这里只清 `_owner`：pending 没人 complete，调用方要等满超时（编译 120s）
+  /// 才报错，link 也一直留在池里显得能用。手机上「加载一两个就卡住」就是这么来的。
   void _onWorkerGone(_WorkerLink link) {
     link.to = null;
     final starting = link.starting;
@@ -1332,12 +1382,33 @@ class MusicFreeHost {
     if (starting != null && !starting.isCompleted) {
       starting.completeError(MusicFreeException(appL10n.pluginWorkerStartFailed));
     }
+    final lost = <int>[
+      for (final entry in _pending.entries)
+        if (identical(entry.value.link, link)) entry.key,
+    ];
+    for (final id in lost) {
+      final call = _pending.remove(id);
+      if (call != null && !call.completer.isCompleted) {
+        call.completer.completeError(
+          MusicFreeException(appL10n.pluginWorkerStartFailed),
+        );
+      }
+    }
+    link.inFlight = 0;
     for (final hash in link.hashes.toList(growable: false)) {
       if (identical(_owner[hash], link)) {
+        // 只作废「已编译」状态：插件仍在列表里，下次调用会从磁盘重装
         _owner[hash] = null;
       }
     }
     link.hashes.clear();
+    link.exitPort?.close();
+    link.exitPort = null;
+    link.from?.close();
+    link.from = null;
+    if (!_disposed) {
+      onPluginsChanged?.call();
+    }
   }
 
   /// 发一条请求并等 JSON 回复；worker 死亡/超时都抛 [MusicFreeException]。
@@ -1416,6 +1487,10 @@ class _WorkerLink {
   final int index;
   Isolate? isolate;
   ReceivePort? from;
+
+  /// isolate 退出（含异常退出）的通知端口：对端死亡不会关闭 [from]，必须靠
+  /// `onExit`/`onError` 才能发现 worker 已经没了。
+  ReceivePort? exitPort;
   SendPort? to;
   Completer<void>? starting;
 

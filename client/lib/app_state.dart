@@ -523,6 +523,9 @@ class AppState extends ChangeNotifier {
 
   Future<void>? _musicPluginsInflight;
 
+  /// 装载过程中又点了「刷新订阅」：记一笔，等这一轮结束后补跑一次（force 不能丢）。
+  bool _musicPluginsForceQueued = false;
+
   /// 拉取服务器下发的订阅并同步本地插件；并发调用共用同一次请求。
   ///
   /// 同步规则在 `MusicFreePlugins.syncSubscription` 里：签名没变不动本地插件，
@@ -530,7 +533,15 @@ class AppState extends ChangeNotifier {
   Future<void> _loadMusicPlugins({bool force = false}) {
     final inflight = _musicPluginsInflight;
     if (inflight != null) {
-      // 装载中又点了一次按钮：复用同一轮，绝不开第二份安装
+      // 装载中又点了一次按钮：复用同一轮，但 force 不能丢——用户点了「刷新订阅」
+      // 却什么都不发生，看起来就是「点了没反应」。等这一轮结束补跑一次。
+      if (force && !_musicPluginsForceQueued) {
+        _musicPluginsForceQueued = true;
+        return inflight.then((_) async {
+          _musicPluginsForceQueued = false;
+          await _loadMusicPlugins(force: true);
+        });
+      }
       return inflight;
     }
     late final Future<void> future;

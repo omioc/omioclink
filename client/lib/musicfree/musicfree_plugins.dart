@@ -142,11 +142,18 @@ class _Preferences {
 class MusicFreePlugins {
   MusicFreePlugins({required this.host, PluginPaths? paths, http.Client? httpClient})
     : paths = paths ?? PluginPaths(),
-      _http = httpClient ?? http.Client();
+      _http = httpClient ?? http.Client() {
+    // 后台编译 / 按需编译 / worker 掉线都会改插件集合：把通知转出去，
+    // 界面才不会停在旧状态（手机端一屏就一两个插件，看不到进度很像卡死）。
+    host.onPluginsChanged = () => onPluginsChanged?.call();
+  }
 
   final MusicFreeHost host;
   final PluginPaths paths;
   final http.Client _http;
+
+  /// 插件集合变化回调（由界面层接到 `MusicFreeLibrary.notifyListeners`）。
+  void Function()? onPluginsChanged;
 
   _Preferences _prefs = _Preferences();
   bool _prefsLoaded = false;
@@ -332,7 +339,10 @@ class MusicFreePlugins {
       }
 
       // worker 池会按需补到 3 个，QuickJS 各自并行编译
-      final lanes = queue.length < 3 ? queue.length : 3;
+      // 并发路数不能超过 worker 池：手机上池只有 2 个（见
+      // MusicFreeHost.workerPoolSize），第三路只会排队等 worker 却先把文件下下来了。
+      final maxLanes = host.workerPoolSize < 3 ? host.workerPoolSize : 3;
+      final lanes = queue.length < maxLanes ? queue.length : maxLanes;
       await Future.wait<void>(<Future<void>>[
         for (var i = 0; i < lanes; i += 1) pump(),
       ]);
@@ -429,6 +439,7 @@ class MusicFreePlugins {
       selection[url] = selected.map((entry) => entry.url).toList(growable: false);
       return (entries: entries, selected: selected);
     }
+
 
     if (force) {
       // 用户主动点「刷新订阅」：只装选中的，并且把这条订阅装过的旧的先卸掉。
@@ -796,6 +807,10 @@ class MusicFreePlugins {
   }
 
   Future<void> _removePlugin(MusicFreePlugin plugin) async {
+    host.unload(plugin.hash);
+    // 后台预编译可能正在跑这个插件：等它收尾、再卸一次，否则它会把刚删掉的
+    // 插件重新发布回内存（「选 2 个却加载了 3 个」的那个多出来的）。
+    await host.settleCompile(plugin.hash);
     host.unload(plugin.hash);
     // 元数据也要一起清：否则下次启动会从缓存里「复活」一个已经删掉的插件
     await host.forgetMetadata(plugin.hash);

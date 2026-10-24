@@ -50,7 +50,11 @@ class MusicFreeLibrary extends ChangeNotifier {
     required MusicFreePlugins plugins,
     MusicFreeService? service,
   }) : _plugins = plugins,
-       _service = service ?? MusicFreeService(plugins);
+       _service = service ?? MusicFreeService(plugins) {
+    // 后台预编译、按需编译、worker 掉线都会改插件集合：把通知接到库的变更上，
+    // 界面才会重建（否则卡片一直停在旧状态，看着像卡死）。
+    _plugins.onPluginsChanged = notifyListeners;
+  }
 
   final MusicFreePlugins _plugins;
   final MusicFreeService _service;
