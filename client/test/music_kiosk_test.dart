@@ -11,6 +11,7 @@ import 'package:omioclink_client/data/music_models.dart';
 import 'package:omioclink_client/data/server_endpoint.dart';
 import 'package:omioclink_client/features/music/music_kiosk.dart';
 import 'package:omioclink_client/features/music/music_widgets.dart';
+import 'package:omioclink_client/features/music_plugin_card.dart';
 import 'package:omioclink_client/features/music/playback_mode.dart';
 import 'package:omioclink_client/music/music_favorites.dart';
 import 'package:omioclink_client/music/music_free_library.dart';
@@ -313,10 +314,16 @@ void main() {
   Future<void> pumpKiosk(
     WidgetTester tester, {
     MusicFavorites? withFavorites,
+    Size size = const Size(1320, 860),
   }) async {
-    // 点歌台是三栏桌面布局：默认 800×600 会溢出
-    await tester.binding.setSurfaceSize(const Size(1320, 860));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // 点歌台是三栏桌面布局：默认 800×600 会溢出；手机窄屏用例自己传尺寸。
+    //
+    // 必须改 view 而不是只 `setSurfaceSize`：后者只改渲染面尺寸，`MediaQuery` 仍是
+    // 800×600，`useCompactLayout` 于是把手机会判成桌面（右侧 210dp 的队列栏把内容挤到
+    // 几十像素），测出来的排版和真机不是一个东西。
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = size;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.dark(),
@@ -352,6 +359,43 @@ void main() {
     // 旧模式已经删掉
     expect(find.text('推荐'), findsNothing);
     expect(find.text('最近点过'), findsNothing);
+  });
+
+  testWidgets('手机窄屏打开「插件」页：按钮换到标题下面，插件行不横向溢出', (tester) async {
+    // 360×800 的竖屏手机：左栏 92 + 边距之后，卡片内容宽只剩两百出头
+    await pumpKiosk(tester, size: const Size(360, 800));
+    // 榜单页（含底部播放条）在窄屏上本来就有 1px 级别的纵向溢出，与本用例无关：先清掉，
+    // 免得它盖住插件页自己的断言。
+    tester.takeException();
+
+    await tester.tap(find.byIcon(Icons.extension_outlined));
+    await tester.pumpAndSettle();
+
+    final card = tester.getRect(find.byType(MusicPluginCard));
+    // 卡片真拿到了内容区的宽（而不是被队列栏挤成几十像素那种「假窄」）
+    expect(card.width, greaterThan(200));
+
+    // 标题与两个按钮都在，且按钮在标题**下面**一行：挤在标题右侧时两者的纵向范围会重叠
+    expect(find.text('音乐插件'), findsOneWidget);
+    final title = tester.getRect(find.text('音乐插件'));
+    final refresh = tester.getRect(find.text('刷新订阅'));
+    expect(find.text('更新全部'), findsOneWidget);
+    expect(
+      refresh.top,
+      greaterThanOrEqualTo(title.bottom),
+      reason: '窄屏时「刷新订阅 / 更新全部」应该换到标题下面一行',
+    );
+
+    // 插件行：名称与操作按钮都落在卡片横向范围内（溢出会跑到卡片外面）
+    for (final label in <String>['kg', '卸载']) {
+      final rect = tester.getRect(find.text(label));
+      expect(rect.left, greaterThanOrEqualTo(card.left - 0.5), reason: label);
+      expect(rect.right, lessThanOrEqualTo(card.right + 0.5), reason: label);
+    }
+
+    // 横向溢出就是这次要修的那个「排版炸」；纵向是上面提到的既有 1px 问题，不在此列
+    final error = tester.takeException();
+    expect('$error', isNot(contains('on the right')), reason: '插件页不该再横向溢出');
   });
 
   testWidgets('搜索结果点心形收进「我喜欢」，从导航进去还能再点一遍', (tester) async {

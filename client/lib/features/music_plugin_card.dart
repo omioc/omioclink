@@ -203,91 +203,129 @@ class _MusicPluginCardState extends State<MusicPluginCard> {
     return AnimatedBuilder(
       animation: library,
       builder: (context, _) {
-        final l10n = context.l10n;
         final plugins = library.plugins;
         return PanelCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SectionLabel(
-                text: l10n.settingsMusicPlugins,
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextButton.icon(
-                      onPressed: _busy || widget.onRefreshSubscription == null
-                          ? null
-                          : _refresh,
-                      icon: _busy
-                          ? const SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.sync, size: 16),
-                      // 装载期间把文案也换掉：只把按钮变灰不够明显，
-                      // 用户会以为「点了没反应」，然后继续点
-                      label: Text(
-                        _busy
-                            ? l10n.settingsPluginsLoading
-                            : l10n.settingsPluginsRefreshSubscription,
-                      ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // 手机上（点歌台右栏、设置页）卡片内容宽只有两百多 dp：小标题右边那两个
+              // 按钮、插件行里的「开关 + 4 个按钮」都会把一行撑爆，看上去就是一堆黄黑
+              // 溢出条。这里按**卡片内容宽**切成竖排，桌面宽布局维持原样。
+              final compact = constraints.maxWidth < 320;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _header(compact),
+                  const SizedBox(height: AppSpacing.sm),
+                  _kv(
+                    context,
+                    context.l10n.pluginWord,
+                    plugins.isEmpty
+                        ? context.l10n.settingsPluginsNone
+                        : context.l10n.settingsPluginsCount(
+                            plugins.length,
+                            library.enabledPlugins.length,
+                          ),
+                  ),
+                  _kv(
+                    context,
+                    context.l10n.settingsSubscriptionUrls,
+                    widget.subscriptionUrls.isEmpty
+                        ? context.l10n.settingsSubscriptionNotProvided
+                        : widget.subscriptionUrls.join(
+                            context.l10n.connectListSeparator,
+                          ),
+                  ),
+                  _qualityRow(),
+                  if (library.syncMessage != null)
+                    _hintText(library.syncMessage!, context.palette.textMuted),
+                  if (library.syncError != null)
+                    _hintText(
+                      context.l10n.settingsPluginsSyncFailed(library.syncError!),
+                      context.palette.danger,
                     ),
-                    const SizedBox(width: AppSpacing.xs),
-                    TextButton(
-                      onPressed: _busy || plugins.isEmpty
-                          ? null
-                          : () => unawaited(library.updateAllPlugins()),
-                      child: Text(l10n.settingsPluginsUpdateAll),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              _kv(
-                context,
-                l10n.pluginWord,
-                plugins.isEmpty
-                    ? l10n.settingsPluginsNone
-                    : l10n.settingsPluginsCount(
+                  const SizedBox(height: AppSpacing.sm),
+                  if (plugins.isEmpty)
+                    _emptyHint()
+                  else
+                    for (var i = 0; i < plugins.length; i += 1)
+                      _pluginBlock(
+                        plugins[i],
+                        i,
                         plugins.length,
-                        library.enabledPlugins.length,
+                        compact: compact,
                       ),
-              ),
-              _kv(
-                context,
-                l10n.settingsSubscriptionUrls,
-                widget.subscriptionUrls.isEmpty
-                    ? l10n.settingsSubscriptionNotProvided
-                    : widget.subscriptionUrls.join(l10n.connectListSeparator),
-              ),
-              _qualityRow(),
-              if (library.syncMessage != null)
-                _hintText(library.syncMessage!, context.palette.textMuted),
-              if (library.syncError != null)
-                _hintText(
-                  l10n.settingsPluginsSyncFailed(library.syncError!),
-                  context.palette.danger,
-                ),
-              const SizedBox(height: AppSpacing.sm),
-              if (plugins.isEmpty)
-                _emptyHint()
-              else
-                for (var i = 0; i < plugins.length; i += 1)
-                  _pluginBlock(plugins[i], i, plugins.length),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                l10n.settingsPluginsHint(MusicFreePlugins.defaultSelectionSize),
-                style: TextStyle(
-                  color: context.palette.textMuted,
-                  fontSize: 11,
-                  height: 1.5,
-                ),
-              ),
-            ],
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    context.l10n.settingsPluginsHint(
+                      MusicFreePlugins.defaultSelectionSize,
+                    ),
+                    style: TextStyle(
+                      color: context.palette.textMuted,
+                      fontSize: 11,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         );
       },
+    );
+  }
+
+  /// 小标题 + 「刷新订阅 / 全部更新」。
+  ///
+  /// 宽的时候按钮挂在标题右侧；窄的时候按钮换到标题下面一行（用 Wrap，日 / 韩文案
+  /// 更长也不会溢出）。
+  Widget _header(bool compact) {
+    final l10n = context.l10n;
+    final refresh = TextButton.icon(
+      onPressed: _busy || widget.onRefreshSubscription == null
+          ? null
+          : _refresh,
+      icon: _busy
+          ? const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.sync, size: 16),
+      // 装载期间把文案也换掉：只把按钮变灰不够明显，
+      // 用户会以为「点了没反应」，然后继续点
+      label: Text(
+        _busy ? l10n.settingsPluginsLoading : l10n.settingsPluginsRefreshSubscription,
+      ),
+    );
+    final updateAll = TextButton(
+      onPressed: _busy || library.plugins.isEmpty
+          ? null
+          : () => unawaited(library.updateAllPlugins()),
+      child: Text(l10n.settingsPluginsUpdateAll),
+    );
+    if (!compact) {
+      return SectionLabel(
+        text: l10n.settingsMusicPlugins,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            refresh,
+            const SizedBox(width: AppSpacing.xs),
+            updateAll,
+          ],
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionLabel(text: l10n.settingsMusicPlugins),
+        Wrap(
+          spacing: AppSpacing.xs,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [refresh, updateAll],
+        ),
+      ],
     );
   }
 
@@ -361,7 +399,17 @@ class _MusicPluginCardState extends State<MusicPluginCard> {
     );
   }
 
-  Widget _pluginBlock(MusicFreePlugin plugin, int index, int total) {
+  /// 一个插件块。
+  ///
+  /// [compact]（卡片内容宽 < 320，手机上就是这种情况）时「名称 + 详情」与「开关 +
+  /// 4 个按钮」不可能挤在一行，改成上下两行：上行信息 + 开关，下行操作按钮用 Wrap
+  /// （日 / 韩文案更长时自己换行，不会溢出）。宽布局仍是原来那一行。
+  Widget _pluginBlock(
+    MusicFreePlugin plugin,
+    int index,
+    int total, {
+    required bool compact,
+  }) {
     final l10n = context.l10n;
     final source = _sourceOf(plugin);
     final details = <String>[
@@ -369,6 +417,96 @@ class _MusicPluginCardState extends State<MusicPluginCard> {
       if (source.isNotEmpty) source,
       l10n.settingsPluginMethodsCount(plugin.supportedMethods.length),
     ].join(' · ');
+
+    final info = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                plugin.platform,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: context.palette.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (!plugin.enabled) ...[
+              const SizedBox(width: 6),
+              Text(
+                l10n.settingsPluginDisabled,
+                style: TextStyle(color: context.palette.warning, fontSize: 11),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          details,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: context.palette.textMuted, fontSize: 11),
+        ),
+      ],
+    );
+
+    // 手机上这一行固定宽度太贵：把两个排序按钮收成 32dp 的紧凑点击区
+    final moveUp = IconButton(
+      onPressed: _busy || index <= 0
+          ? null
+          : () => unawaited(library.movePlugin(plugin.hash, -1)),
+      iconSize: 16,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+      tooltip: l10n.settingsPluginMoveUp,
+      icon: const Icon(Icons.arrow_upward),
+    );
+    final moveDown = IconButton(
+      onPressed: _busy || index >= total - 1
+          ? null
+          : () => unawaited(library.movePlugin(plugin.hash, 1)),
+      iconSize: 16,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+      tooltip: l10n.settingsPluginMoveDown,
+      icon: const Icon(Icons.arrow_downward),
+    );
+    final configure = plugin.userVariables.isEmpty
+        ? null
+        : TextButton(
+            onPressed: _busy ? null : () => unawaited(_editVariables(plugin)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 32),
+            ),
+            child: Text(
+              l10n.settingsPluginConfigureAction,
+              style: const TextStyle(fontSize: 11),
+            ),
+          );
+    final uninstall = TextButton(
+      onPressed: _busy ? null : () => unawaited(_confirmUninstall(plugin)),
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size(0, 32),
+      ),
+      child: Text(
+        l10n.settingsPluginUninstall,
+        style: TextStyle(fontSize: 11, color: context.palette.danger),
+      ),
+    );
+    final toggle = Switch(
+      value: plugin.enabled,
+      onChanged: _busy
+          ? null
+          : (next) => unawaited(library.setPluginEnabled(plugin.hash, next)),
+    );
+
     return Container(
       margin: const EdgeInsets.only(top: AppSpacing.xs),
       padding: const EdgeInsets.symmetric(
@@ -383,115 +521,28 @@ class _MusicPluginCardState extends State<MusicPluginCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            plugin.platform,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: context.palette.textPrimary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        if (!plugin.enabled) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            l10n.settingsPluginDisabled,
-                            style: TextStyle(
-                              color: context.palette.warning,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      details,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: context.palette.textMuted,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // 手机上这一行固定宽度太贵：把两个排序按钮收成 32dp 的紧凑点击区
-              IconButton(
-                onPressed: _busy || index <= 0
-                    ? null
-                    : () => unawaited(library.movePlugin(plugin.hash, -1)),
-                iconSize: 16,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 32,
-                  height: 32,
-                ),
-                tooltip: l10n.settingsPluginMoveUp,
-                icon: const Icon(Icons.arrow_upward),
-              ),
-              IconButton(
-                onPressed: _busy || index >= total - 1
-                    ? null
-                    : () => unawaited(library.movePlugin(plugin.hash, 1)),
-                iconSize: 16,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 32,
-                  height: 32,
-                ),
-                tooltip: l10n.settingsPluginMoveDown,
-                icon: const Icon(Icons.arrow_downward),
-              ),
-              if (plugin.userVariables.isNotEmpty)
-                TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () => unawaited(_editVariables(plugin)),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: const Size(0, 32),
-                  ),
-                  child: Text(
-                    l10n.settingsPluginConfigureAction,
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                ),
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => unawaited(_confirmUninstall(plugin)),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: const Size(0, 32),
-                ),
-                child: Text(
-                  l10n.settingsPluginUninstall,
-                  style: TextStyle(fontSize: 11, color: context.palette.danger),
-                ),
-              ),
-              Switch(
-                value: plugin.enabled,
-                onChanged: _busy
-                    ? null
-                    : (next) =>
-                          unawaited(library.setPluginEnabled(plugin.hash, next)),
-              ),
-            ],
-          ),
+          if (compact) ...[
+            Row(children: [Expanded(child: info), toggle]),
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                moveUp,
+                moveDown,
+                ?configure,
+                uninstall,
+              ],
+            ),
+          ] else
+            Row(
+              children: [
+                Expanded(child: info),
+                moveUp,
+                moveDown,
+                ?configure,
+                uninstall,
+                toggle,
+              ],
+            ),
           if (plugin.loadError != null)
             Padding(
               padding: const EdgeInsets.only(top: 2),
