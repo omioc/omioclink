@@ -96,12 +96,17 @@ class MusicBadge extends StatelessWidget {
             Icon(icon, size: 10, color: tint),
             const SizedBox(width: 3),
           ],
-          Text(
-            text,
-            style: TextStyle(
-              color: tint,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              style: TextStyle(
+                color: tint,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -202,38 +207,51 @@ class _MusicSongTileState extends State<MusicSongTile> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            track.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: widget.playing
-                                  ? context.palette.success
-                                  : context.palette.textPrimary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
+                    // 手机竖屏一行只有 60~80dp 留给标题：来源徽章写的是插件全名
+                    // （「网易云音乐」这种），它不参与弹性分配，会先把标题挤成 0 宽
+                    // ——`maxLines:1` 下 0 宽就是什么都不画，看着像没有歌名。
+                    // 所以窄行直接不显示徽章，宽行才给出来源。
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final showBadge =
+                            widget.showPlatform && constraints.maxWidth >= 280;
+                        return Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                track.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: widget.playing
+                                      ? context.palette.success
+                                      : context.palette.textPrimary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        if (widget.playing) ...[
-                          const SizedBox(width: 6),
-                          Icon(
-                            Icons.graphic_eq,
-                            size: 13,
-                            color: context.palette.success,
-                          ),
-                        ],
-                        if (widget.showPlatform) ...[
-                          const SizedBox(width: 6),
-                          MusicBadge(
-                            text: musicPlatformLabel(track.platform),
-                            color: context.palette.accent,
-                          ),
-                        ],
-                      ],
+                            if (widget.playing) ...[
+                              const SizedBox(width: 6),
+                              Icon(
+                                Icons.graphic_eq,
+                                size: 13,
+                                color: context.palette.success,
+                              ),
+                            ],
+                            if (showBadge) ...[
+                              const SizedBox(width: 6),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 96),
+                                child: MusicBadge(
+                                  text: musicPlatformLabel(track.platform),
+                                  color: context.palette.accent,
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
                     ),
                     if (subtitle.isNotEmpty)
                       Padding(

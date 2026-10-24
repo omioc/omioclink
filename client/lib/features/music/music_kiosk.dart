@@ -1942,7 +1942,6 @@ class _KioskNowPlayingBar extends StatelessWidget {
     // 用户会以为按钮没生效——就是这条。
     final hasTrack = current != null;
     final playing = hasTrack && player.playing;
-    final paused = hasTrack && !player.playing;
     // 播放失败 / 音源不可用都要落在这条上：以前它们只写进日志，
     // 用户看到的就是「点了没反应」。
     final error = player.error ?? (track == null ? player.sourceError : null);
@@ -1972,8 +1971,6 @@ class _KioskNowPlayingBar extends StatelessWidget {
                 : _trackSummary(
                     context,
                     track,
-                    playing: playing,
-                    paused: paused,
                     error: error,
                   ),
           ),
@@ -2048,41 +2045,25 @@ class _KioskNowPlayingBar extends StatelessWidget {
   Widget _trackSummary(
     BuildContext context,
     MusicTrack track, {
-    required bool playing,
-    required bool paused,
     required String? error,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            Flexible(
-              child: Text(
-                track.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: context.palette.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            MusicBadge(
-              // 三态：在播 / 已暂停 / 还没轮到它。暂停时不能沿用「即将播放」，
-              // 那是给「有下一首但还没开始」的队列看的。
-              text: playing
-                  ? context.l10n.musicSyncPlaying
-                  : (paused ? context.l10n.musicPaused : context.l10n.musicUpNext),
-              color: playing
-                  ? context.palette.success
-                  : context.palette.textSecondary,
-              icon: playing ? Icons.link : null,
-            ),
-          ],
+        // 这一行以前后面跟着一颗「同步播放中 / 已暂停 / 即将播放」胶囊：手机
+        // 竖屏下胶囊不参与弹性分配，自己就把整行占满，歌名被挤成 0 宽——看着
+        // 就是「不显示歌曲名字」。播放状态右侧的播放/暂停按钮已经说明了，
+        // 所以这里只留歌名，让它独占整行。
+        Text(
+          track.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: context.palette.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(height: 2),
         Text(

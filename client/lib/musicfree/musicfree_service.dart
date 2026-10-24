@@ -1145,7 +1145,9 @@ class MusicFreeService {
     return MusicTrack(
       platform: resolvedPlatform,
       id: id,
-      name: item['title']?.toString() ?? '',
+      // 插件给的名字键不统一（MusicFree 官方是 title，但社区插件常写 name /
+      // songName），只认 title 会让整行变成空白标题——列表和队列都救不回来。
+      name: (item['title'] ?? item['name'] ?? item['songName'] ?? '').toString(),
       artists: artists,
       album: (albumName == null || albumName.isEmpty) && (artwork == null || artwork.isEmpty)
           ? null

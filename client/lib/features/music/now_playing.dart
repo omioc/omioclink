@@ -102,19 +102,12 @@ class NowPlayingBar extends StatelessWidget {
 }
 
 class _TrackSummary extends StatelessWidget {
-  const _TrackSummary({required this.view, this.error, this.showBadge = true});
+  const _TrackSummary({required this.view, this.error});
 
   final NowPlayingView? view;
 
   /// 播放/音源错误：有值时顶掉副标题那一行，用红色显示。
   final String? error;
-
-  /// 是否显示「同步播放中 / 即将播放」胶囊。
-  ///
-  /// 房间氛围音卡片表头已经有同一颗了，卡片里再挂一颗就是重复；
-  /// 底部播放条没有表头，那边保留。
-  final bool showBadge;
-
   @override
   Widget build(BuildContext context) {
     final current = view;
@@ -149,31 +142,17 @@ class _TrackSummary extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            Flexible(
-              child: Text(
-                current.track.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: context.palette.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            if (showBadge) ...<Widget>[
-              const SizedBox(width: AppSpacing.sm),
-              MusicBadge(
-                text: current.playing
-                    ? context.l10n.musicSyncPlaying
-                    : context.l10n.musicUpNext,
-                color: current.playing ? context.palette.success : context.palette.textSecondary,
-                icon: current.playing ? Icons.link : null,
-              ),
-            ],
-          ],
+        // 歌名独占整行：以前后面跟一颗「同步播放中 / 即将播放」胶囊，手机窄屏下
+        // 胶囊会把标题挤成 0 宽，看着像没有歌名。状态在右侧的播放控件上已有体现。
+        Text(
+          current.track.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: context.palette.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(height: 2),
         Text(
@@ -435,8 +414,7 @@ class AmbientCard extends StatelessWidget {
                       seed: view.track.id.hashCode,
                     ),
                   const SizedBox(width: AppSpacing.sm),
-                  // 卡片表头已有状态胶囊，这里不重复挂
-                  Expanded(child: _TrackSummary(view: view, showBadge: false)),
+                  Expanded(child: _TrackSummary(view: view)),
                   const SizedBox(width: AppSpacing.sm),
                   _TransportControls(
                     playing: player.playing,

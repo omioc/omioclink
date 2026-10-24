@@ -225,7 +225,7 @@ class MusicEntry {
     musicInfo:
         (json['musicInfo'] as Map?)?.cast<String, dynamic>() ??
         const <String, dynamic>{},
-    title: json['title'] as String? ?? '',
+    title: _musicEntryTitle(json),
     artist: json['artist'] as String? ?? '',
     durationMs: (json['durationMs'] as num?)?.toInt(),
     requestedBy: MusicRequester.fromJson(
@@ -752,3 +752,23 @@ Map<String, dynamic> musicModeMessage({required String mode}) => {
   'type': 'music_mode',
   'mode': mode,
 };
+
+/// 队列条目/播放条要显示的歌名。
+///
+/// `title` 是空串时回退到 `musicInfo`：老客户端与部分实现只把名字写在
+/// `musicInfo`（`title`/`name`/`songName` 三种键都见过）里，不回退的话队列和
+/// 点歌台会渲染成一行空白——手机端尤其明显（那一行只有歌名，没有别的兜底）。
+String _musicEntryTitle(Map<String, dynamic> json) {
+  final title = (json['title'] as String? ?? '').trim();
+  if (title.isNotEmpty) {
+    return title;
+  }
+  final info = (json['musicInfo'] as Map?)?.cast<String, dynamic>();
+  for (final key in const <String>['title', 'name', 'songName']) {
+    final value = info?[key]?.toString().trim() ?? '';
+    if (value.isNotEmpty) {
+      return value;
+    }
+  }
+  return '';
+}

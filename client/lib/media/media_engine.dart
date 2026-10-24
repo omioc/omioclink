@@ -14,6 +14,7 @@ import 'peer_audio_mixer.dart';
 import 'screen_capture.dart';
 import 'screen_policy_governor.dart';
 import 'share_policy.dart';
+import 'system_output_device.dart';
 import 'uplink_budget.dart';
 
 /// 媒体层的对外回调（由 `RoomSession` 实现，把本地 SDP / 候选交给信令送出）。
@@ -71,7 +72,21 @@ class _PeerSlot {
 
   RTCDataChannel? dataChannel;
 
+  /// 屏幕流里的回环音频（系统/应用声音）的发送通道。
+  ///
+  /// 和 [audioSender]（麦克风）分开：投屏带声音时两条音频各走各的 m 行，
+  /// 复用一个 sender 会把麦克风顶掉。
+  RTCRtpSender? screenAudioSender;
+
   RTCVideoRenderer? audioRenderer;
+
+  /// 音频渲染器是否已经初始化过。
+  ///
+  /// 重协商后同一条连接会再来一条远端音轨，重复 `initialize()` 在原生侧会抛异常，
+  /// 而调用点（[_handleRemoteTrack]）是 `unawaited` 进来的：一抛就把后面的
+  /// `srcObject` 绑定与音量接管全跳过，表现就是「对端在说、本机一点声音都没有」。
+  bool audioRendererReady = false;
+
   RTCVideoRenderer? screenRenderer;
   MediaStream? remoteAudioStream;
   MediaStream? remoteScreenStream;
@@ -108,10 +123,25 @@ class MediaEngine {
     try {
       navigator.mediaDevices.ondevicechange = (_) {
         audioDevicesVersion.value += 1;
+        _onAudioDevicesChanged();
       };
     } on Object catch (error) {
       AppLog.debug('订阅音频设备变更失败：$error');
     }
+  }
+
+  /// 系统播放设备可能换人了（插拔耳机、在系统设置里改默认）：通话中重新对齐一次。
+  ///
+  /// 只在通话中处理：空闲时下一次进房（[startLocalAudio] / [ensurePeer]）会自己对齐，
+  /// 而**出房还原**本身也会触发设备变更事件——那时再对齐一次，就会把刚还原的设置
+  /// 又改回去，来回打架。
+  void _onAudioDevicesChanged() {
+    if (!windowsOutputRoutingAvailable || _peers.isEmpty) {
+      return;
+    }
+    _voiceOutputEndpoint = null;
+    AppLog.info('系统播放设备变了：通话中无法立刻切换，重新进房后语音会跟到新设备');
+    unawaited(_applyVoiceOutput());
   }
 
   /// 用服务器下发的 STUN 列表刷新配置（只影响之后新建的连接）。
@@ -165,6 +195,18 @@ class MediaEngine {
   String? _audioInputId;
   String? _audioOutputId;
 
+  /// 语音当前被固定到的播放端点（null = 还没接管）。
+  ///
+  /// 「跟随系统」时它是系统默认**设备**（＝音乐那只），手选时就是用户挑的那只。
+  String? _voiceOutputEndpoint;
+
+  /// 为了把语音挪到 [_voiceOutputEndpoint]，我们临时改掉了系统的默认**通信**
+  /// 设备；这里存原值，出房时还原（null = 没动过系统设置）。
+  String? _restoreCommEndpoint;
+
+  /// 在途的那次「对齐」：采集与建连会同时调用，共用同一次尝试。
+  Future<void>? _voiceOutputInFlight;
+
   /// 这台机器此前是否真的枚举到过输入设备。
   ///
   /// 用来区分两种「空表」：**从没枚举到过**（多半真没有麦克风）与**曾经有、
@@ -216,6 +258,15 @@ class MediaEngine {
     return tracks.first;
   }
 
+  /// 屏幕流里的回环音频轨（投屏时选了「分享应用/系统声音」才有）。
+  MediaStreamTrack? get _screenAudioTrack {
+    final tracks = _screen?.getAudioTracks();
+    if (tracks == null || tracks.isEmpty) {
+      return null;
+    }
+    return tracks.first;
+  }
+
   MediaStreamTrack? get _screenTrack {
     final tracks = _screen?.getVideoTracks();
     if (tracks == null || tracks.isEmpty) {
@@ -257,6 +308,10 @@ class MediaEngine {
       );
     }
     final target = choice.deviceId;
+
+    // 语音要落到和音乐同一只设备，而音频设备模块起播时才会去读系统的默认通信
+    // 设备：趁播放还没起来，先把它对到目标设备上。
+    await _applyVoiceOutput();
 
     MediaStream stream;
     try {
@@ -370,25 +425,114 @@ class MediaEngine {
 
   /// 切换扬声器/耳机输出设备（空串表示跟随系统默认）。
   ///
-  /// 走原生 `selectAudioOutput` 改音频设备模块的播放设备——这是桌面端唯一
-  /// 生效的方式（`getUserMedia` 的约束只作用于采集）。空串表示不指定，
-  /// 交给系统默认设备，不做切换。
+  /// 空串不是「不指定」，而是**和音乐用同一只设备**：Windows 有两个默认播放
+  /// 设备，「默认设备」给音乐这类媒体流，「默认通信设备」给 VoIP。libwebrtc 的
+  /// 音频设备模块走的是后者，所以「跟着系统」必须把它摆到和音乐一致
+  /// （见 [_applyVoiceOutput]）。手选的设备同理。
   Future<void> switchAudioOutput(String deviceId) async {
     if (deviceId == _audioOutputId) {
       return;
     }
     _audioOutputId = deviceId;
-    if (deviceId.isEmpty || kIsWeb) {
+    if (kIsWeb || !windowsOutputRoutingAvailable) {
       return;
     }
+    // 目标换了就让「对齐」重新跑：同值也要重新确认一次（设备可能被拔掉）
+    _voiceOutputEndpoint = null;
+    if (await _alignVoiceOutputOnce()) {
+      return;
+    }
+    // 「跟随系统」失败就按系统原样播，不打扰用户；手选设备失败要让他知道
+    if (deviceId.isEmpty) {
+      return;
+    }
+    throw MediaException(
+      appL10n.mediaAudioOutputFailed,
+      code: 'audio_output_switch_failed',
+    );
+  }
+
+  /// 让「别人说话」和「放音乐」落到同一只播放设备上。
+  ///
+  /// 为什么这么绕：libwebrtc 的音频设备模块播放时用 Windows 的默认**通信**设备，
+  /// 而音乐（media_kit/mpv）用默认**设备**，两者可以指向不同硬件（实测一台机器：
+  /// 耳机是默认设备、显示器是默认通信设备），表现就是「放歌在耳机、别人说话在
+  /// 显示器」。而 flutter_webrtc 的 `selectAudioOutput` 在 Windows 上是空实现
+  /// （实测 `SetPlayoutDevice` 连越界索引都返回成功，音频设备模块的设备从没被
+  /// 改过），所以只能从系统侧把「默认通信设备」指向目标设备——音频设备模块
+  /// 起播时会重新读这个默认值。
+  ///
+  /// 调用点都在起播之前（采集开始前 / 建连前）；失败一律不抛，进房路径不能被它
+  /// 带崩，语音退回系统原来的通信设备。
+  Future<void> _applyVoiceOutput() async {
+    if (kIsWeb || _disposed || !windowsOutputRoutingAvailable) {
+      return;
+    }
+    final inFlight = _voiceOutputInFlight;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+    final attempt = _alignVoiceOutputOnce();
+    _voiceOutputInFlight = attempt;
     try {
-      await Helper.selectAudioOutput(deviceId);
-    } on Object catch (error) {
-      AppLog.warn('切换输出设备失败', error: error);
-      throw MediaException(
-        appL10n.mediaAudioOutputFailed,
-        code: 'audio_output_switch_failed',
-      );
+      await attempt;
+    } finally {
+      _voiceOutputInFlight = null;
+    }
+  }
+
+  /// 解析目标设备并把系统默认通信设备指过去；返回是否已经对齐。
+  Future<bool> _alignVoiceOutputOnce() async {
+    if (!windowsOutputRoutingAvailable) {
+      return false;
+    }
+    final target = voiceOutputTarget(
+      chosen: _audioOutputId ?? '',
+      mediaDefault: windowsDefaultOutputEndpointId(),
+    );
+    if (target.isEmpty) {
+      AppLog.debug('取不到系统默认播放设备，语音继续跟系统的默认通信设备走');
+      return false;
+    }
+    if (target == _voiceOutputEndpoint) {
+      return true;
+    }
+    final current = windowsDefaultOutputEndpointId(communications: true);
+    if (current == null) {
+      return false;
+    }
+    if (current == target) {
+      // 系统本来就把通信设备指向同一只：不动系统设置，也就没得还原
+      _voiceOutputEndpoint = target;
+      AppLog.info('语音播放设备 = $target（与音乐同一只，系统通信设备本来就一致）');
+      return true;
+    }
+    if (!windowsPointCommunicationOutputAt(target)) {
+      return false;
+    }
+    _restoreCommEndpoint ??= current;
+    _voiceOutputEndpoint = target;
+    AppLog.info('语音播放设备 → $target（与音乐同一只；已把系统默认通信设备临时指向它）');
+    return true;
+  }
+
+  /// 出房/释放时把系统默认通信设备还原成我们看到的原值。
+  ///
+  /// 只还原「还是我们那只」的情况：中途用户自己改过，就以他的选择为准。
+  void _restoreCommunicationOutput() {
+    final restoreTo = _restoreCommEndpoint;
+    final applied = _voiceOutputEndpoint;
+    _restoreCommEndpoint = null;
+    _voiceOutputEndpoint = null;
+    if (restoreTo == null || applied == null || !windowsOutputRoutingAvailable) {
+      return;
+    }
+    if (windowsDefaultOutputEndpointId(communications: true) != applied) {
+      return;
+    }
+    if (windowsPointCommunicationOutputAt(restoreTo)) {
+      AppLog.info('已把系统默认通信设备还原为 $restoreTo');
     }
   }
 
@@ -520,16 +664,41 @@ class MediaEngine {
         types: <SourceType>[SourceType.Screen, SourceType.Window],
         thumbnailSize: ThumbnailSize(thumbnailWidth, thumbnailHeight),
       );
-      final mapped = sources
-          .map(
-            (source) => ScreenSource(
-              id: source.id,
-              name: source.name,
-              isWindow: source.type == SourceType.Window,
-              thumbnail: source.thumbnail,
-            ),
-          )
-          .toList(growable: false);
+      // 窗口列表是原生异步枚举的：第一次调用经常只回来一部分（剩下还在枚举），
+      // 用户看到的就是「投屏能选的应用不全」。隔一小会儿再要一次，按 id 合并
+      // 两次结果——第二趟通常已经补齐，名字以第二次为准。
+      final merged = <String, ScreenSource>{
+        for (final source in sources)
+          source.id: ScreenSource(
+            id: source.id,
+            name: source.name,
+            isWindow: source.type == SourceType.Window,
+            thumbnail: source.thumbnail,
+          ),
+      };
+      if (sources.isNotEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 260));
+        try {
+          final again = await desktopCapturer.getSources(
+            types: <SourceType>[SourceType.Screen, SourceType.Window],
+            thumbnailSize: ThumbnailSize(thumbnailWidth, thumbnailHeight),
+          );
+          for (final source in again) {
+            final existing = merged[source.id];
+            if (existing == null || existing.thumbnail == null) {
+              merged[source.id] = ScreenSource(
+                id: source.id,
+                name: source.name.isEmpty ? (existing?.name ?? '') : source.name,
+                isWindow: source.type == SourceType.Window,
+                thumbnail: source.thumbnail ?? existing?.thumbnail,
+              );
+            }
+          }
+        } on Object catch (error) {
+          AppLog.debug('补枚举屏幕源失败（用第一趟结果）：$error');
+        }
+      }
+      final mapped = merged.values.toList(growable: false);
       return await attachScreenThumbnails(
         mapped,
         fetch: (sourceId) => _screenThumbnail(
@@ -771,6 +940,7 @@ class MediaEngine {
     for (final slot in _peers.values) {
       await _replaceScreenTrack(slot, null);
     }
+    await _dropScreenAudioFromAllPeers();
   }
 
   /// 把采到的屏幕流挂到本地预览渲染器上。
@@ -836,6 +1006,9 @@ class MediaEngine {
       'sdpSemantics': 'unified-plan',
     };
 
+    // 音频设备模块是随建连/采集起来的，而它只在起播前读取系统的默认通信设备：
+    // 趁这条连接还没有音轨，先把语音落点对到和音乐同一只设备。
+    await _applyVoiceOutput();
     AppLog.info('创建 PeerConnection peer=$peerId（原生未初始化时此处会初始化 WebRTC 工厂）');
     final pc = await createPeerConnection(configuration);
     AppLog.info('PeerConnection 已创建 peer=$peerId');
@@ -1114,6 +1287,8 @@ class MediaEngine {
       await _disposeSlot(slot);
     }
     peerAudio.clear();
+    // 播放停了：把临时改过的系统默认通信设备还原回去
+    _restoreCommunicationOutput();
   }
 
   Future<void> _disposeSlot(_PeerSlot slot) async {
@@ -1172,9 +1347,19 @@ class MediaEngine {
 
     if (track.kind == 'audio') {
       AppLog.info('收到远端音频轨 peer=${slot.peerId}，初始化播放渲染器…');
-      slot.audioRenderer ??= RTCVideoRenderer();
-      await slot.audioRenderer!.initialize();
-      AppLog.info('远端音频渲染器已就绪 peer=${slot.peerId}');
+      final renderer = slot.audioRenderer ??= RTCVideoRenderer();
+      // 渲染器只初始化一次，而且失败也要继续往下走：这条路径是 `unawaited`
+      // 进来的，异常冒出去就只剩一条「异步未捕获异常」，`srcObject` 绑定与音量
+      // 接管全都不再执行——表现就是「对端在说、本机一点声音都没有」。
+      if (!slot.audioRendererReady) {
+        try {
+          await renderer.initialize();
+          slot.audioRendererReady = true;
+          AppLog.info('远端音频渲染器已就绪 peer=${slot.peerId}');
+        } on Object catch (error) {
+          AppLog.warn('远端音频渲染器初始化失败 peer=${slot.peerId}', error: error);
+        }
+      }
       final audioStream =
           stream ?? await createLocalMediaStream('remote-audio-${slot.peerId}');
       if (stream == null) {
@@ -1184,9 +1369,17 @@ class MediaEngine {
       slot.remoteAudioTrack = track;
       // 把远端音频挂到 renderer 上即开始播放；音量/静音交给状态机接管
       // （点击可能早于音轨到达，attach 会按已保存的值重放一次）
-      slot.audioRenderer!.srcObject = audioStream;
+      try {
+        renderer.srcObject = audioStream;
+      } on Object catch (error) {
+        AppLog.warn('绑定远端音频渲染器失败 peer=${slot.peerId}', error: error);
+      }
       await _attachPeerAudio(slot);
-      AppLog.info('收到远端音频 peer=${slot.peerId}');
+      AppLog.info(
+        '收到远端音频 peer=${slot.peerId} '
+        '轨道enabled=${track.enabled} 静音=${track.muted}',
+      );
+      unawaited(_reportRemoteAudio(slot, track));
       return;
     }
 
@@ -1218,6 +1411,46 @@ class MediaEngine {
       );
       unawaited(_reportScreenFrames(slot, renderer));
     }
+  }
+
+  /// 挂上远端音轨之后回报一次「到底有没有真的出声」。
+  ///
+  /// 和 [_reportScreenFrames] 同一个用途：出现「对端电平在动、本机却没有声音」时，
+  /// 这条日志能把问题一分为二——`samples=0` 说明压根没解码（传输/协商那一层），
+  /// `samples>0` 而本机仍听不到，就只剩「被静音」这一种可能：成员音量 0、本地
+  /// 静音开关，或者播放设备根本不是在用的那一只。
+  Future<void> _reportRemoteAudio(_PeerSlot slot, MediaStreamTrack track) async {
+    await Future<void>.delayed(const Duration(seconds: 4));
+    if (slot.closed) {
+      return;
+    }
+    var inbound = '无 inbound-rtp';
+    try {
+      for (final report in await slot.pc.getStats()) {
+        if (report.type != 'inbound-rtp') {
+          continue;
+        }
+        final values = report.values;
+        final kind = values['kind'] ?? values['mediaType'];
+        if (kind != null && kind != 'audio') {
+          continue;
+        }
+        final bytes = values['bytesReceived'];
+        final samples = values['totalSamplesReceived'];
+        final level = values['audioLevel'];
+        inbound = 'bytes=$bytes samples=$samples level=$level';
+        break;
+      }
+    } on Object catch (error) {
+      inbound = '读取失败：$error';
+    }
+    AppLog.info(
+      '远端音频播放自检 peer=${slot.peerId} '
+      '音轨enabled=${track.enabled} 静音=${track.muted} '
+      '增益=${peerAudio.gainOf(slot.peerId).toStringAsFixed(2)} '
+      '本地静音=${peerAudio.isSilenced(slot.peerId)} '
+      '渲染器已绑=${slot.remoteAudioStream != null} $inbound',
+    );
   }
 
   /// 轨道由静音转成有画面时，把渲染器重挂一遍。
@@ -1415,6 +1648,8 @@ class MediaEngine {
     for (final slot in _peers.values) {
       await _replaceScreenTrack(slot, _screenTrack);
     }
+    // 声音跟着画面一起挂：投屏带应用/系统音频时，这一路是独立的 m 行
+    await _applyScreenAudioToAllPeers();
   }
 
   Future<void> _replaceAudioTrack(
@@ -1558,6 +1793,46 @@ class MediaEngine {
     }
     slot.needsRenegotiation = false;
     await negotiate(slot.peerId);
+  }
+
+  /// 把屏幕流里的回环音频（系统 / 选中的应用声音）挂到每个成员上。
+  ///
+  /// 只挂「还没挂过」的：投屏过程中有人进房时也会走这里补齐。声音和画面是两条
+  /// 独立 m 行——麦克风那条 `audioSender` 不能被顶掉，对端才听得见人说话。
+  Future<void> _applyScreenAudioToAllPeers() async {
+    final track = _screenAudioTrack;
+    final screen = _screen;
+    if (track == null || screen == null) {
+      return;
+    }
+    for (final slot in _peers.values.toList(growable: false)) {
+      if (slot.closed || slot.screenAudioSender != null) {
+        continue;
+      }
+      try {
+        final sender = await slot.pc.addTrack(track, screen);
+        slot.screenAudioSender = sender;
+        AppLog.info('为成员 ${slot.peerId} 挂上屏幕声音（应用 / 系统音频）');
+        await _maybeRenegotiate(slot);
+      } on Object catch (error) {
+        AppLog.warn('挂屏幕声音失败 peer=${slot.peerId}', error: error);
+      }
+    }
+  }
+
+  /// 停止共享时把屏幕声音收掉。
+  ///
+  /// 用 `replaceTrack(null)` 而不是 `removeTrack`：不需要重新协商，对端那条 m 行
+  /// 直接变静音，下一次共享还能复用同一个 sender。
+  Future<void> _dropScreenAudioFromAllPeers() async {
+    for (final slot in _peers.values.toList(growable: false)) {
+      final sender = slot.screenAudioSender;
+      if (sender == null) {
+        continue;
+      }
+      slot.screenAudioSender = null;
+      await _safeReplace(slot, sender, null);
+    }
   }
 
   Future<RTCRtpSender?> _senderForKind(_PeerSlot slot, String kind) async {
