@@ -222,9 +222,11 @@ void main() {
 
   test('同一个关键词并发两轮：只认最新那轮的结果（旧轮迟到也不覆盖）', () async {
     final paths = PluginPaths(root: tempDir.path);
-    final plugins = MusicFreePlugins(
+    // 搜索也要求「装着插件」才发请求（没插件时直接清空，不打扰用户）
+    final plugins = _FakePlugins(
       host: MusicFreeHost(bundleSource: '', paths: paths),
       paths: paths,
+      items: <MusicFreePlugin>[_installedPlugin()],
     );
     final racing = _RacingService(plugins);
     final racingLibrary = MusicFreeLibrary(plugins: plugins, service: racing);
@@ -252,7 +254,7 @@ void main() {
     expect(racingLibrary.searching, isFalse);
   });
 
-  test('没有插件时不去拉榜单/歌单，也不再顺手同步订阅', () async {
+  test('没有插件时不去拉榜单/歌单，也不自动装插件', () async {
     library.dispose();
     final paths = PluginPaths(root: tempDir.path);
     final plugins = MusicFreePlugins(
@@ -261,23 +263,22 @@ void main() {
     );
     final counter = _WarmUpService(plugins);
     library = MusicFreeLibrary(plugins: plugins, service: counter);
-    var syncCalls = 0;
-    library.requestSync = () async {
-      syncCalls += 1;
-    };
 
+    // 显式调用（界面上的「加载…」按钮 / 搜索）在没有插件时也不该发出任何请求：
+    // 自动装插件的那条路已经从库里删掉了（见 `requestSync` 被移除的注释）。
     await library.loadCharts();
     await library.loadTagSections();
+    await library.search('七里香');
 
     expect(counter.chartCalls, 0, reason: '没装音源就不该去拉榜单');
     expect(counter.tagCalls, 0, reason: '没装音源也不该去拉歌单标签');
-    expect(syncCalls, 0, reason: '打开榜单/歌单不该偷偷装插件');
     expect(library.chartGroups, isEmpty);
     expect(
       library.chartsError,
       isNull,
       reason: '这是「还没装音源」，不是加载失败，界面不该挂一个重试按钮',
     );
+    expect(library.query, isEmpty, reason: '没插件时搜索直接清空，不发请求也不留半截状态');
   });
 
   test('warmUp 不碰插件：进房只读音质偏好，排行榜要等点开点歌台', () async {

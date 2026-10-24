@@ -107,22 +107,12 @@ class MusicFreeLibrary extends ChangeNotifier {
   String? get syncError => _syncError;
   String? get syncMessage => _syncMessage;
 
-  /// 「插件还没装好，帮我再同步一次」的回调（`AppState` 接到 `_loadMusicPlugins`）。
-  ///
-  /// 手机首次登录时同步可能还在失败重试里；用户这时点进点歌台，这里补一次请求，
-  /// 比让他在「还没有安装音乐插件」的空列表前面猜要强。
-  Future<void> Function()? requestSync;
-
-  /// 没有可用插件时顺手请求一次订阅同步（正在同步时不叠加）。
-  void _ensurePlugins() {
-    if (hasPlugins || _syncing) {
-      return;
-    }
-    final sync = requestSync;
-    if (sync != null) {
-      unawaited(sync());
-    }
-  }
+  // 这里曾经有一个 `requestSync` + `_ensurePlugins()`：没有插件时，打开点歌台
+  // 或点一个搜索都会顺手触发一次订阅同步（起 QuickJS、把插件源码装进去）。
+  // 现在**一律不自动装载**：装音源只由用户在本机点「插件 → 刷新订阅」触发，
+  // 界面缺音源时给指路文案（`pluginNoneInstalled`）。理由是他亲眼看到「还在转」
+  // 的那个加载其实是我们替他发起的——一次装载少则几秒、多则二十几秒，
+  // 用户既没要求、也不知道在等什么。
 
   /// 刷新订阅时让用户挑要安装哪些插件（由设置页注入：那里有 BuildContext，
   /// 能弹框）。为 null 时按「上次的选择 / 默认前 6 个」走，不弹框。
@@ -363,7 +353,11 @@ class MusicFreeLibrary extends ChangeNotifier {
   /// 不再等最后一个音源——这是 MusicFree 看起来「秒出」的关键。
   /// [refresh] 为 true 时跳过本地缓存（用户手动重试 / 换插件之后）。
   Future<void> search(String keyword, {bool refresh = false}) async {
-    _ensurePlugins();
+    // 没有插件就不发请求、也不自动装插件：界面给的是「去左侧插件安装」的指路
+    if (!hasPlugins) {
+      clearSearch();
+      return;
+    }
     final trimmed = keyword.trim();
     if (trimmed.isEmpty) {
       clearSearch();
@@ -450,11 +444,14 @@ class MusicFreeLibrary extends ChangeNotifier {
   bool get chartsLoading => _chartsLoading;
   String? get chartsError => _chartsError;
 
-  /// 拉排行榜。
+  /// 是否**由用户手动**拉过一次排行榜（决定空态该显示「点按钮加载」还是「插件没提供」）。
+  bool get chartsLoaded => _chartsLoaded;
+
+  /// 拉排行榜（只在用户点了「加载排行榜」或按了重试时调用）。
   ///
-  /// **没有插件时不去拉、也不再顺手同步订阅**：以前这里会触发一次插件装载，
-  /// 于是每次点开排行榜都先跑一轮装载进度、装完还是空——那既费 CPU 又让人看不懂。
-  /// 现在直接留空态，由界面提示「点左侧『插件』装音源」（文案见 `pluginNoneInstalled`）。
+  /// **不自动加载、也不顺手同步订阅**：以前一进点歌台（或切到这一屏）就会发起请求，
+  /// 没有插件时还顺带跑一轮插件装载——用户看到的就是「明明没让我加载，它却一直在转」。
+  /// 现在没有插件就直接留空态（文案见 `pluginNoneInstalled`），有插件也要用户点了才取。
   Future<void> loadCharts({bool force = false}) async {
     if (!hasPlugins) {
       if (_chartGroups.isNotEmpty || _chartsError != null) {
@@ -506,6 +503,9 @@ class MusicFreeLibrary extends ChangeNotifier {
   List<MusicFreeSheet> get sheets => _sheets;
   MusicFreeTag? get selectedTag => _selectedTag;
   bool get tagsLoading => _tagsLoading;
+
+  /// 是否**由用户手动**拉过一次标签（决定空态该显示「点按钮加载」还是「插件没提供」）。
+  bool get tagsLoaded => _tagsLoaded;
   bool get sheetsLoading => _sheetsLoading;
   String? get sheetsError => _sheetsError;
 

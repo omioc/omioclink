@@ -300,10 +300,26 @@ void main() {
     }
   });
 
+  /// 屏幕上没有这个按钮就跳过（榜单/歌单已经加载过时不会再出现）。
+  Future<void> tapIfPresent(WidgetTester tester, String label) async {
+    final finder = find.text(label);
+    if (finder.evaluate().isEmpty) {
+      return;
+    }
+    await tester.tap(finder);
+    await tester.pumpAndSettle();
+  }
+
   /// [withFavorites] 用来指定这一轮挂载用哪份本机收藏（默认就是 setUp 里那份）。
+  ///
+  /// [loadCharts] / [loadSheets] = 挂载后是否替用户点一下空态里的「加载…」按钮。
+  /// 榜单/歌单现在**不会**自己加载，所以要看内容的用例得自己点；专门验证
+  /// 「不自动加载」的用例把它们关掉。
   Future<void> pumpKiosk(
     WidgetTester tester, {
     MusicFavorites? withFavorites,
+    bool loadCharts = true,
+    bool loadSheets = false,
   }) async {
     // 点歌台是三栏桌面布局：默认 800×600 会溢出
     await tester.binding.setSurfaceSize(const Size(1320, 860));
@@ -323,6 +339,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    if (loadCharts) {
+      await tapIfPresent(tester, '加载排行榜');
+    }
+    if (loadSheets) {
+      await tapIfPresent(tester, '加载热门歌单');
+    }
   }
 
   testWidgets('左导航：排行榜 / 热门歌单，分割线下面才是「我喜欢」（搜索走上面的搜索框）', (
@@ -405,7 +427,7 @@ void main() {
     expect(favorites.contains(_track('s1', '上次喜欢的歌')), isTrue);
   });
 
-  testWidgets('没有插件时不再自动同步订阅，直接提示去左侧「插件」装音源', (tester) async {
+  testWidgets('没有插件时排行榜不自己加载，指路去「插件」装音源', (tester) async {
     // 「一个插件都没装」的世界：真实的空插件表 + 空数据的服务层。
     library.dispose();
     final paths = PluginPaths(root: tempDir.path);
@@ -417,21 +439,42 @@ void main() {
       plugins: plugins,
       service: _FakeService(plugins, empty: true),
     );
-    // 数一数「自动同步订阅」有没有被调用：这正是这次改掉的行为
-    var syncCalls = 0;
-    library.requestSync = () async {
-      syncCalls += 1;
-    };
     await pumpKiosk(tester);
 
+    // 进点歌台**不会**自己去加载（以前这里会转圈，还会顺手跑一轮插件装载）
+    expect(find.byType(CircularProgressIndicator), findsNothing);
     // 文案直接指路：去左侧「插件」装音源（而不是让人翻设置页）
     expect(find.text('没有安装音源插件'), findsOneWidget);
     expect(find.text('请点击左侧菜单的「插件」安装必要的音源插件'), findsOneWidget);
-    // 打开排行榜**不再**顺手拉订阅：以前每次点开都先跑一轮插件装载
-    expect(syncCalls, 0);
     expect(find.text('队列还是空的'), findsOneWidget);
     expect(find.text('房间播放队列 (0)'), findsOneWidget);
+
+    // 空态里的按钮直接把人送到插件页（不用自己去找左栏）
+    await tester.tap(find.text('去「插件」安装'));
+    await tester.pumpAndSettle();
+    expect(find.text('音乐插件'), findsOneWidget);
+    expect(find.text('刷新订阅'), findsOneWidget);
   });
+
+  testWidgets('有插件也不自动拉榜单：点「加载排行榜」才请求，点完就出内容', (tester) async {
+    // 先用默认的（装着一条插件的）library 挂上去
+    await pumpKiosk(tester);
+    // pumpKiosk 已经点过加载按钮，这里清回「还没加载」再看一次
+    library.reset();
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('还没有加载排行榜'), findsOneWidget);
+    expect(find.text('加载排行榜'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing, reason: '没点就不该转圈');
+
+    await tester.tap(find.text('加载排行榜'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('热门榜单'), findsOneWidget);
+    expect(find.text('还没有加载排行榜'), findsNothing);
+  });
+
 
   testWidgets('左导航「插件」在「我喜欢」下面，点开就是插件管理卡片', (tester) async {
     await pumpKiosk(tester);
@@ -528,6 +571,7 @@ void main() {
 
     await tester.tap(find.text('热门歌单'));
     await tester.pumpAndSettle();
+    await tapIfPresent(tester, '加载热门歌单');
     expect(find.text('纯音乐歌单'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), '周杰伦');
@@ -696,6 +740,7 @@ void main() {
 
     await tester.tap(find.text('热门歌单'));
     await tester.pumpAndSettle();
+    await tapIfPresent(tester, '加载热门歌单');
 
     // 标签（pinned + 分组）与歌单列表
     expect(find.text('流行'), findsOneWidget);
@@ -740,6 +785,7 @@ void main() {
 
     await tester.tap(find.text('热门歌单'));
     await tester.pumpAndSettle();
+    await tapIfPresent(tester, '加载热门歌单');
 
     // 标签：去重后每个只有一条 tab
     expect(
@@ -800,6 +846,7 @@ void main() {
 
     await tester.tap(find.text('热门歌单'));
     await tester.pumpAndSettle();
+    await tapIfPresent(tester, '加载热门歌单');
 
     // 第一层：两个音源
     expect(find.byKey(const ValueKey<String>('sheet-source:kg')), findsOneWidget);
@@ -854,6 +901,7 @@ void main() {
 
     await tester.tap(find.text('热门歌单'));
     await tester.pumpAndSettle();
+    await tapIfPresent(tester, '加载热门歌单');
 
     final title = tester.widget<Text>(
       find.text('这是一个特别长的歌单标题用来验证最多两行然后显示省略号不要溢出'),

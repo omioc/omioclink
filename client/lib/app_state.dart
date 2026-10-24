@@ -48,8 +48,8 @@ class AppState extends ChangeNotifier {
     _musicQueue.addListener(_onMusicQueueChanged);
     // 启动时把上次的麦克风音量重新压到设备上（读不到就按 100%）
     unawaited(_micVolume.load());
-    // 点歌台发现没有可用插件时（比如首次登录那次还在失败重试中）能主动要一次同步
-    _music.requestSync = () => _loadMusicPlugins();
+    // 插件**不自动装**：只有用户在设置页或点歌台「插件」页手点「刷新订阅」才会装。
+    // （这里以前挂过一个「缺插件就补一次同步」的回调，会让点歌台一打开就自己转圈。）
     // 上次装好的插件列表先从磁盘登记出来（只读 metadata、不编译 JS）：重启后第一次
     // 进设置页 / 点歌台就能看到它们，而不是空着要等一次「刷新订阅」。
     unawaited(_restoreMusicPlugins());
@@ -520,9 +520,8 @@ class AppState extends ChangeNotifier {
     await refreshRooms();
     await refreshFriends();
     // 插件订阅也不在这里同步：QuickJS 首次编译要吃掉一份 577KB 的 bundle，
-    // 而大部分会话根本不听歌。**登录完成不会碰插件**；真正要听时才由
-    // MusicFreeLibrary._ensurePlugins 触发（打开点歌台 / 点歌台里搜索），
-    // 或者用户在设置页手点「刷新订阅」。
+    // 而大部分会话根本不听歌。**登录完成不会碰插件**；装插件只有一条路：
+    // 用户在设置页或点歌台「插件」页手点「刷新订阅」。
     // 首屏好友偶尔会拿空（刚登录那一下后端还在忙、或者请求抖了一下）：
     // 补两轮，别让用户盯着空列表等 15 秒后的轮询——那之前他也没有刷新入口。
     if (!_disposed && _friends.isEmpty) {

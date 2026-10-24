@@ -112,10 +112,12 @@ class _MusicKioskState extends State<MusicKiosk> {
   @override
   void initState() {
     super.initState();
-    // 音质是本地偏好；排行榜是左栏一级入口，挂载时预热一轮。
-    // 热门歌单要按标签翻页，等用户真的点进来再取（也会按需同步订阅）。
+    // 音质是本地偏好，读一下就好。
+    //
+    // **绝不在这里拉榜单 / 歌单**：那会请求音源（没有插件时以前还会顺手起一轮
+    // 插件装载），用户看到的就是「我没让它加载，它自己一直在转」。现在榜单和歌单
+    // 都等用户点空态里的「加载…」按钮才去取（见 `_ChartsPane` / `_SheetsPane`）。
     unawaited(library.loadPreferences());
-    unawaited(library.loadCharts());
     // 「我喜欢」是本机缓存：`AppState` 启动时已经读过一次，这里兜底
     // （单独挂载点歌台的测试 / 极端时序下也能拿到上次的收藏）
     unawaited(favorites.load());
@@ -308,21 +310,10 @@ class _MusicKioskState extends State<MusicKiosk> {
       _sectionBeforeSearch = section;
     }
     setState(() => _section = section);
-    switch (section) {
-      case MusicFreeSection.search:
-        break;
-      case MusicFreeSection.charts:
-        unawaited(library.loadCharts());
-      case MusicFreeSection.sheets:
-        unawaited(library.loadTagSections());
-      case MusicFreeSection.favorites:
-        // 本机数据，打开即是最新的：不需要预热 / 拉取
-        break;
-      case MusicFreeSection.plugins:
-        // 插件页是「用户主动装音源」的地方，一进来**不能**自动同步订阅：
-        // 那正是这次要改掉的行为（打开榜单/歌单就偷偷装载）。
-        break;
-    }
+    // 切到任何一屏都**不发请求**：
+    // * 榜单 / 歌单要用户点空态里的「加载…」才去取（见 `_ChartsPane` / `_SheetsPane`）；
+    // * 「我喜欢」是本机数据，打开即最新；
+    // * 「插件」是装音源的地方，更不能一进来就自动同步订阅。
   }
 
   void _submitSearch(String keyword) {
@@ -449,10 +440,13 @@ class _MusicKioskState extends State<MusicKiosk> {
       MusicFreeSection.charts => _ChartsPane(
         library: library,
         onOpen: (sheet) => unawaited(library.openTopList(sheet)),
+        // 没装音源时空态里那个按钮：直接跳到左栏「插件」
+        onOpenPlugins: () => _openSection(MusicFreeSection.plugins),
       ),
       MusicFreeSection.sheets => _SheetsPane(
         library: library,
         onOpen: (sheet) => unawaited(library.openSheet(sheet)),
+        onOpenPlugins: () => _openSection(MusicFreeSection.plugins),
       ),
       MusicFreeSection.favorites => _FavoritesPane(
         favorites: favorites,
@@ -902,17 +896,63 @@ class _SearchPane extends StatelessWidget {
 
 // --------------------------------------------------------------------------- //
 // 内容：排行榜
+/// 空态 + 一个动作按钮（排行榜 / 热门歌单共用）。
+///
+/// `MusicEmptyHint` 只画文字；两个面板都要在下面挂「加载 / 去插件」按钮，
+/// 所以把「文案居中 + 按钮在下」固定成一处，别各抄一遍布局。
+class _IdleHint extends StatelessWidget {
+  const _IdleHint({
+    required this.icon,
+    required this.text,
+    this.hint,
+    this.action,
+  });
+
+  final IconData icon;
+  final String text;
+  final String? hint;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: MusicEmptyHint(icon: icon, text: text, hint: hint)),
+        if (action != null)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.md),
+              child: action,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _ChartsPane extends StatefulWidget {
-  const _ChartsPane({required this.library, required this.onOpen});
+  const _ChartsPane({
+    required this.library,
+    required this.onOpen,
+    required this.onOpenPlugins,
+  });
 
   final MusicFreeLibrary library;
   final ValueChanged<MusicFreeSheet> onOpen;
+
+  /// 没装音源时空态里那个按钮：跳到左栏「插件」。
+  final VoidCallback onOpenPlugins;
 
   @override
   State<_ChartsPane> createState() => _ChartsPaneState();
 }
 
 /// 排行榜：顶部按**音源 / 分类**分 tab（可横向滚动），下面对应那一类的榜单竖向滚动。
+///
+/// **进来不会自己去拉**：没有内容时给一个「加载排行榜」按钮，点了才请求音源；
+/// 没有插件时连按钮都不给，直接指路去左栏「插件」装。以前是一进这一屏就发请求、
+/// 没插件还顺手跑一轮插件装载——用户看到的就是「我没让它加载，它自己一直在转」。
 class _ChartsPaneState extends State<_ChartsPane> {
   /// 当前选中的音源（`group.platform`）。null = 用第一个有榜单的音源。
   String? _platform;
@@ -926,28 +966,7 @@ class _ChartsPaneState extends State<_ChartsPane> {
       return MusicLoading(label: context.l10n.musicNavCharts);
     }
     if (groups.isEmpty) {
-      final error = library.chartsError;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: MusicEmptyHint(
-              icon: Icons.leaderboard_outlined,
-              text: error ?? _emptyText(library),
-              hint: library.hasPlugins
-                  ? context.l10n.musicChartsEmptyHint
-                  : context.l10n.pluginNoneInstalledHint,
-            ),
-          ),
-          if (error != null)
-            Center(
-              child: TextButton(
-                onPressed: () => unawaited(library.loadCharts(force: true)),
-                child: Text(context.l10n.musicRetry),
-              ),
-            ),
-        ],
-      );
+      return _emptyState(context);
     }
 
     // 按音源归组（保持插件返回的顺序）
@@ -1039,10 +1058,47 @@ class _ChartsPaneState extends State<_ChartsPane> {
     );
   }
 
-
-  String _emptyText(MusicFreeLibrary library) => library.hasPlugins
-      ? context.l10n.pluginNoCharts
-      : context.l10n.pluginNoneInstalled;
+  /// 空态三选一：没装音源 / 还没点加载 / 加载过但没结果（失败可重试）。
+  Widget _emptyState(BuildContext context) {
+    final l10n = context.l10n;
+    final error = library.chartsError;
+    if (!library.hasPlugins) {
+      return _IdleHint(
+        icon: Icons.extension_outlined,
+        text: l10n.pluginNoneInstalled,
+        hint: l10n.pluginNoneInstalledHint,
+        action: FilledButton.icon(
+          onPressed: widget.onOpenPlugins,
+          icon: const Icon(Icons.extension_outlined, size: 16),
+          label: Text(l10n.musicGoPlugins),
+        ),
+      );
+    }
+    if (!library.chartsLoaded && error == null) {
+      return _IdleHint(
+        icon: Icons.leaderboard_outlined,
+        text: l10n.musicChartsIdle,
+        hint: l10n.musicLoadOnDemandHint,
+        action: FilledButton.icon(
+          onPressed: () => unawaited(library.loadCharts(force: true)),
+          icon: const Icon(Icons.download_rounded, size: 16),
+          label: Text(l10n.musicChartsLoad),
+        ),
+      );
+    }
+    // 已经加载过：插件确实没给这个能力，或者这一轮失败了
+    return _IdleHint(
+      icon: Icons.leaderboard_outlined,
+      text: error ?? l10n.pluginNoCharts,
+      hint: error == null ? l10n.musicChartsEmptyHint : null,
+      action: error == null
+          ? null
+          : TextButton(
+              onPressed: () => unawaited(library.loadCharts(force: true)),
+              child: Text(l10n.musicRetry),
+            ),
+    );
+  }
 }
 
 /// 顶部一条横向可滚动的 pill tab 条（排行榜的音源 / 热门歌单的标签共用）。
@@ -1256,15 +1312,24 @@ class _SheetCardState extends State<_SheetCard> {
 /// 热门歌单：双层 tab —— 第一层音源、第二层该音源下的类别，两层都横向可滚；
 /// 下面是卡片网格的歌单。和排行榜共用同一套 pill tab 与卡片。
 class _SheetsPane extends StatefulWidget {
-  const _SheetsPane({required this.library, required this.onOpen});
+  const _SheetsPane({
+    required this.library,
+    required this.onOpen,
+    required this.onOpenPlugins,
+  });
 
   final MusicFreeLibrary library;
   final ValueChanged<MusicFreeSheet> onOpen;
+
+  /// 没装音源时空态里那个按钮：跳到左栏「插件」。
+  final VoidCallback onOpenPlugins;
 
   @override
   State<_SheetsPane> createState() => _SheetsPaneState();
 }
 
+/// 热门歌单也和排行榜一样：**进来不自己去拉**，用户点了「加载热门歌单」才请求音源；
+/// 没有插件就直接指路去左栏「插件」。
 class _SheetsPaneState extends State<_SheetsPane> {
   /// 第一层选中的音源（platform）。null = 跟随已选标签 / 第一个音源。
   String? _platform;
@@ -1297,29 +1362,7 @@ class _SheetsPaneState extends State<_SheetsPane> {
       return MusicLoading(label: context.l10n.musicNavSheets);
     }
     if (tags.isEmpty) {
-      final error = library.sheetsError;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: MusicEmptyHint(
-              icon: Icons.local_fire_department_outlined,
-              text: error ?? _emptyText(library),
-              hint: library.hasPlugins
-                  ? context.l10n.musicSheetsEmptyHint
-                  : context.l10n.pluginNoneInstalledHint,
-            ),
-          ),
-          if (error != null)
-            Center(
-              child: TextButton(
-                onPressed: () =>
-                    unawaited(library.loadTagSections(force: true)),
-                child: Text(context.l10n.musicRetry),
-              ),
-            ),
-        ],
-      );
+      return _emptyState(context);
     }
 
     // 标签去重：同 platform + id 只留一条（插件重复返回时会出现重复 key）。
@@ -1486,9 +1529,47 @@ class _SheetsPaneState extends State<_SheetsPane> {
     );
   }
 
-  String _emptyText(MusicFreeLibrary library) => library.hasPlugins
-      ? context.l10n.pluginNoSheets
-      : context.l10n.pluginNoneInstalled;
+  /// 空态三选一：没装音源 / 还没点加载 / 加载过但没结果（失败可重试）。
+  Widget _emptyState(BuildContext context) {
+    final l10n = context.l10n;
+    final error = library.sheetsError;
+    if (!library.hasPlugins) {
+      return _IdleHint(
+        icon: Icons.extension_outlined,
+        text: l10n.pluginNoneInstalled,
+        hint: l10n.pluginNoneInstalledHint,
+        action: FilledButton.icon(
+          onPressed: widget.onOpenPlugins,
+          icon: const Icon(Icons.extension_outlined, size: 16),
+          label: Text(l10n.musicGoPlugins),
+        ),
+      );
+    }
+    if (!library.tagsLoaded && error == null) {
+      return _IdleHint(
+        icon: Icons.local_fire_department_outlined,
+        text: l10n.musicSheetsIdle,
+        hint: l10n.musicLoadOnDemandHint,
+        action: FilledButton.icon(
+          onPressed: () => unawaited(library.loadTagSections(force: true)),
+          icon: const Icon(Icons.download_rounded, size: 16),
+          label: Text(l10n.musicSheetsLoad),
+        ),
+      );
+    }
+    // 已经加载过：插件确实没给这个能力，或者这一轮失败了
+    return _IdleHint(
+      icon: Icons.local_fire_department_outlined,
+      text: error ?? l10n.pluginNoSheets,
+      hint: error == null ? l10n.musicSheetsEmptyHint : null,
+      action: error == null
+          ? null
+          : TextButton(
+              onPressed: () => unawaited(library.loadTagSections(force: true)),
+              child: Text(l10n.musicRetry),
+            ),
+    );
+  }
 }
 
 // --------------------------------------------------------------------------- //
