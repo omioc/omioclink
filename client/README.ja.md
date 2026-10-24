@@ -1,6 +1,6 @@
 # OmiocLink クライアント
 
-<p align="center"><b>语言 / Languages:</b> <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
+<p><b>语言 / Languages:</b> <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
 
 Flutter 製のデスクトップ + モバイルクライアントです。Windows はボーダーレスウィンドウ、Android スマートフォンは 1 カラムで表示します。**タブレットとデスクトップは同じ 3 ペイン構成を使います**
 （短辺 600dp 以上）。スマートフォン（短辺 600dp 未満）は自動的に 1 カラム + ボトムナビゲーションへ切り替わります。判定は `lib/core/platform.dart` を参照してください

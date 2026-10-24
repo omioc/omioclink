@@ -1,6 +1,6 @@
 # OmiocLink Client
 
-<p align="center"><b>语言 / Languages:</b> <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
+<p><b>语言 / Languages:</b> <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
 
 A desktop + mobile client written in Flutter: a borderless window on Windows, a single column on Android phones; **tablets and desktops share the same three-pane layout**
 (short side ≥ 600dp), while phones (short side < 600dp) switch to a single column with bottom navigation automatically — see `lib/core/platform.dart` for the check.
