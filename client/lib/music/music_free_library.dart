@@ -474,14 +474,11 @@ class MusicFreeLibrary extends ChangeNotifier {
   bool get chartsLoading => _chartsLoading;
   String? get chartsError => _chartsError;
 
-  /// 是否**由用户手动**拉过一次排行榜（决定空态该显示「点按钮加载」还是「插件没提供」）。
-  bool get chartsLoaded => _chartsLoaded;
-
-  /// 拉排行榜（只在用户点了「加载排行榜」或按了重试时调用）。
+  /// 拉排行榜。调用方是点歌台：**有插件时它进屏即调**，用户不用点任何按钮。
   ///
-  /// **不自动加载、也不顺手同步订阅**：以前一进点歌台（或切到这一屏）就会发起请求，
-  /// 没有插件时还顺带跑一轮插件装载——用户看到的就是「明明没让我加载，它却一直在转」。
-  /// 现在没有插件就直接留空态（文案见 `pluginNoneInstalled`），有插件也要用户点了才取。
+  /// `!hasPlugins` 时直接返回、不发请求、也不顺手同步订阅——以前这里会触发一次插件
+  /// 装载，用户看到的就是「明明没让我加载，它却一直在转」。没插件时界面只给一句
+  /// 装音源的提示（文案见 `pluginNoneInstalled`）。
   Future<void> loadCharts({bool force = false}) async {
     if (!hasPlugins) {
       if (_chartGroups.isNotEmpty || _chartsError != null) {
@@ -534,8 +531,6 @@ class MusicFreeLibrary extends ChangeNotifier {
   MusicFreeTag? get selectedTag => _selectedTag;
   bool get tagsLoading => _tagsLoading;
 
-  /// 是否**由用户手动**拉过一次标签（决定空态该显示「点按钮加载」还是「插件没提供」）。
-  bool get tagsLoaded => _tagsLoaded;
   bool get sheetsLoading => _sheetsLoading;
   String? get sheetsError => _sheetsError;
 

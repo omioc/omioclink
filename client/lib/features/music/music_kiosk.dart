@@ -114,10 +114,11 @@ class _MusicKioskState extends State<MusicKiosk> {
     super.initState();
     // 音质是本地偏好，读一下就好。
     //
-    // **绝不在这里拉榜单 / 歌单**：那会请求音源（没有插件时以前还会顺手起一轮
-    // 插件装载），用户看到的就是「我没让它加载，它自己一直在转」。现在榜单和歌单
-    // 都等用户点空态里的「加载…」按钮才去取（见 `_ChartsPane` / `_SheetsPane`）。
+    // 有插件就**自动**拉排行榜：用户装好音源、点开点歌台就该直接看到内容，
+    // 不该再让他点一次「加载」。没插件时 `loadCharts()` 会在库内部直接返回
+    // （既不请求音源、也不顺手装插件），界面显示一句装音源的提示。
     unawaited(library.loadPreferences());
+    unawaited(library.loadCharts());
     // 「我喜欢」是本机缓存：`AppState` 启动时已经读过一次，这里兜底
     // （单独挂载点歌台的测试 / 极端时序下也能拿到上次的收藏）
     unawaited(favorites.load());
@@ -310,10 +311,19 @@ class _MusicKioskState extends State<MusicKiosk> {
       _sectionBeforeSearch = section;
     }
     setState(() => _section = section);
-    // 切到任何一屏都**不发请求**：
-    // * 榜单 / 歌单要用户点空态里的「加载…」才去取（见 `_ChartsPane` / `_SheetsPane`）；
-    // * 「我喜欢」是本机数据，打开即最新；
-    // * 「插件」是装音源的地方，更不能一进来就自动同步订阅。
+    // 切到这一屏就拉一次：有插件时才有意义（`loadCharts` / `loadTagSections` 在库里
+    // 判 `hasPlugins`，没插件直接返回，既不请求也不装插件）。已经加载过的会命中
+    // 服务层的 10 分钟内存缓存，不会真的再打一遍音源。
+    switch (section) {
+      case MusicFreeSection.charts:
+        unawaited(library.loadCharts());
+      case MusicFreeSection.sheets:
+        unawaited(library.loadTagSections());
+      case MusicFreeSection.search:
+      case MusicFreeSection.favorites:
+      case MusicFreeSection.plugins:
+        break;
+    }
   }
 
   void _submitSearch(String keyword) {
@@ -440,13 +450,10 @@ class _MusicKioskState extends State<MusicKiosk> {
       MusicFreeSection.charts => _ChartsPane(
         library: library,
         onOpen: (sheet) => unawaited(library.openTopList(sheet)),
-        // 没装音源时空态里那个按钮：直接跳到左栏「插件」
-        onOpenPlugins: () => _openSection(MusicFreeSection.plugins),
       ),
       MusicFreeSection.sheets => _SheetsPane(
         library: library,
         onOpen: (sheet) => unawaited(library.openSheet(sheet)),
-        onOpenPlugins: () => _openSection(MusicFreeSection.plugins),
       ),
       MusicFreeSection.favorites => _FavoritesPane(
         favorites: favorites,
@@ -932,17 +939,10 @@ class _IdleHint extends StatelessWidget {
 }
 
 class _ChartsPane extends StatefulWidget {
-  const _ChartsPane({
-    required this.library,
-    required this.onOpen,
-    required this.onOpenPlugins,
-  });
+  const _ChartsPane({required this.library, required this.onOpen});
 
   final MusicFreeLibrary library;
   final ValueChanged<MusicFreeSheet> onOpen;
-
-  /// 没装音源时空态里那个按钮：跳到左栏「插件」。
-  final VoidCallback onOpenPlugins;
 
   @override
   State<_ChartsPane> createState() => _ChartsPaneState();
@@ -950,9 +950,9 @@ class _ChartsPane extends StatefulWidget {
 
 /// 排行榜：顶部按**音源 / 分类**分 tab（可横向滚动），下面对应那一类的榜单竖向滚动。
 ///
-/// **进来不会自己去拉**：没有内容时给一个「加载排行榜」按钮，点了才请求音源；
-/// 没有插件时连按钮都不给，直接指路去左栏「插件」装。以前是一进这一屏就发请求、
-/// 没插件还顺手跑一轮插件装载——用户看到的就是「我没让它加载，它自己一直在转」。
+/// 加载时机由点歌台决定：**有插件就自动拉**（进点歌台、切回这一屏各拉一次，库内部还会
+/// 判一次 `hasPlugins`，没插件不会发请求）；没有插件时这里只显示一句装音源的提示——
+/// 提示的目的地是左栏「插件」，不放按钮、不自动装插件。
 class _ChartsPaneState extends State<_ChartsPane> {
   /// 当前选中的音源（`group.platform`）。null = 用第一个有榜单的音源。
   String? _platform;
@@ -961,13 +961,19 @@ class _ChartsPaneState extends State<_ChartsPane> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final groups = library.chartGroups;
     if (library.chartsLoading && groups.isEmpty) {
-      return MusicLoading(label: context.l10n.musicNavCharts);
+      return MusicLoading(label: l10n.musicNavCharts);
     }
-    // 还没点过「加载」：给加载按钮（没插件时给装音源的指路）
-    if (!library.chartsLoaded) {
-      return _emptyState(context);
+    // 没装插件：**只提示、不请求、不放按钮**——装音源去左侧「插件」。
+    // 这就是「有插件自动加载、没插件只提示」里的后半句。
+    if (!library.hasPlugins) {
+      return MusicEmptyHint(
+        icon: Icons.extension_outlined,
+        text: l10n.pluginNoneInstalled,
+        hint: l10n.pluginNoneInstalledHint,
+      );
     }
 
     // 音源 tab = 所有**声明了能提供榜单**的插件（按插件顺序），再加上真拿到数据的
@@ -985,8 +991,14 @@ class _ChartsPaneState extends State<_ChartsPane> {
           })
           .add(group);
     }
+    // 有插件、但一个能提供榜单的都没有（或这一轮全失败）：一行提示就够
     if (platforms.isEmpty) {
-      return _emptyState(context);
+      final error = library.chartsError;
+      return MusicEmptyHint(
+        icon: Icons.leaderboard_outlined,
+        text: error ?? l10n.pluginNoCharts,
+        hint: error == null ? l10n.musicChartsEmptyHint : null,
+      );
     }
     // 选中的音源被重载掉（插件变了）就回落到第一个
     final selected = _platform != null && byPlatform.containsKey(_platform)
@@ -1070,63 +1082,27 @@ class _ChartsPaneState extends State<_ChartsPane> {
     );
   }
 
-  /// 某个音源这一屏没有内容：区分「这次没回来（超时/失败）」和「本来就没提供」，
-  /// 两种情况都给重试——重试只重跑失败的那个音源，成功的走缓存。
+  /// 某个音源这一屏没有内容：区分「这次没回来（超时/失败）」和「本来就没提供」。
   Widget _platformEmpty(BuildContext context, String platform) {
     final l10n = context.l10n;
     final failure = library.chartFailures[platform];
+    if (failure == null) {
+      // 这个音源本来就没提供榜单：只说明，不给按钮
+      return MusicEmptyHint(
+        icon: Icons.leaderboard_outlined,
+        text: l10n.pluginNoCharts,
+        hint: l10n.musicChartsEmptyHint,
+      );
+    }
+    // 这次没回来：说明原因 + 重试（重试只重跑失败的那个，成功的走缓存）
     return _IdleHint(
       icon: Icons.leaderboard_outlined,
-      text: failure == null
-          ? l10n.pluginNoCharts
-          : l10n.musicSourceNoData(musicPlatformLabel(platform)),
+      text: l10n.musicSourceNoData(musicPlatformLabel(platform)),
       hint: failure,
       action: TextButton(
         onPressed: () => unawaited(library.loadCharts(force: true)),
         child: Text(l10n.musicRetry),
       ),
-    );
-  }
-
-  /// 空态三选一：没装音源 / 还没点加载 / 加载过但没结果（失败可重试）。
-  Widget _emptyState(BuildContext context) {
-    final l10n = context.l10n;
-    final error = library.chartsError;
-    if (!library.hasPlugins) {
-      return _IdleHint(
-        icon: Icons.extension_outlined,
-        text: l10n.pluginNoneInstalled,
-        hint: l10n.pluginNoneInstalledHint,
-        action: FilledButton.icon(
-          onPressed: widget.onOpenPlugins,
-          icon: const Icon(Icons.extension_outlined, size: 16),
-          label: Text(l10n.musicGoPlugins),
-        ),
-      );
-    }
-    if (!library.chartsLoaded && error == null) {
-      return _IdleHint(
-        icon: Icons.leaderboard_outlined,
-        text: l10n.musicChartsIdle,
-        hint: l10n.musicLoadOnDemandHint,
-        action: FilledButton.icon(
-          onPressed: () => unawaited(library.loadCharts(force: true)),
-          icon: const Icon(Icons.download_rounded, size: 16),
-          label: Text(l10n.musicChartsLoad),
-        ),
-      );
-    }
-    // 已经加载过：插件确实没给这个能力，或者这一轮失败了
-    return _IdleHint(
-      icon: Icons.leaderboard_outlined,
-      text: error ?? l10n.pluginNoCharts,
-      hint: error == null ? l10n.musicChartsEmptyHint : null,
-      action: error == null
-          ? null
-          : TextButton(
-              onPressed: () => unawaited(library.loadCharts(force: true)),
-              child: Text(l10n.musicRetry),
-            ),
     );
   }
 }
@@ -1342,24 +1318,17 @@ class _SheetCardState extends State<_SheetCard> {
 /// 热门歌单：双层 tab —— 第一层音源、第二层该音源下的类别，两层都横向可滚；
 /// 下面是卡片网格的歌单。和排行榜共用同一套 pill tab 与卡片。
 class _SheetsPane extends StatefulWidget {
-  const _SheetsPane({
-    required this.library,
-    required this.onOpen,
-    required this.onOpenPlugins,
-  });
+  const _SheetsPane({required this.library, required this.onOpen});
 
   final MusicFreeLibrary library;
   final ValueChanged<MusicFreeSheet> onOpen;
-
-  /// 没装音源时空态里那个按钮：跳到左栏「插件」。
-  final VoidCallback onOpenPlugins;
 
   @override
   State<_SheetsPane> createState() => _SheetsPaneState();
 }
 
-/// 热门歌单也和排行榜一样：**进来不自己去拉**，用户点了「加载热门歌单」才请求音源；
-/// 没有插件就直接指路去左栏「插件」。
+/// 热门歌单与排行榜同一套规则：**有插件就自动拉**（进点歌台 / 切回这一屏各一次），
+/// 没有插件只显示一句装音源的提示，不放按钮、不自动装插件。
 class _SheetsPaneState extends State<_SheetsPane> {
   /// 第一层选中的音源（platform）。null = 跟随已选标签 / 第一个音源。
   String? _platform;
@@ -1391,8 +1360,13 @@ class _SheetsPaneState extends State<_SheetsPane> {
     if (library.tagsLoading && tags.isEmpty) {
       return MusicLoading(label: context.l10n.musicNavSheets);
     }
-    if (tags.isEmpty) {
-      return _emptyState(context);
+    // 没装插件：**只提示、不请求、不放按钮**——装音源去左侧「插件」
+    if (!library.hasPlugins) {
+      return MusicEmptyHint(
+        icon: Icons.extension_outlined,
+        text: context.l10n.pluginNoneInstalled,
+        hint: context.l10n.pluginNoneInstalledHint,
+      );
     }
 
     // 标签去重：同 platform + id 只留一条（插件重复返回时会出现重复 key）。
@@ -1421,8 +1395,14 @@ class _SheetsPaneState extends State<_SheetsPane> {
           })
           .add(tag);
     }
+    // 有插件、但一个能提供歌单标签的都没有（或这一轮全失败）：一行提示就够
     if (platforms.isEmpty) {
-      return _emptyState(context);
+      final error = library.sheetsError;
+      return MusicEmptyHint(
+        icon: Icons.local_fire_department_outlined,
+        text: error ?? context.l10n.pluginNoSheets,
+        hint: error == null ? context.l10n.musicSheetsEmptyHint : null,
+      );
     }
     final selected = library.selectedTag;
     final platform = _platform != null && byPlatform.containsKey(_platform)
@@ -1434,10 +1414,6 @@ class _SheetsPaneState extends State<_SheetsPane> {
     // 切了音源 / 还没选过类别 → 自动选这个音源下的第一个类别
     if (sourceTags.isNotEmpty &&
         (selected == null || selected.platform != platform)) {
-      _scheduleAutoSelect(sourceTags.first);
-    }
-    // 切了音源 / 还没选过类别 → 自动选这个音源下的第一个类别
-    if (selected == null || selected.platform != platform) {
       _scheduleAutoSelect(sourceTags.first);
     }
 
@@ -1579,47 +1555,6 @@ class _SheetsPaneState extends State<_SheetsPane> {
     );
   }
 
-  /// 空态三选一：没装音源 / 还没点加载 / 加载过但没结果（失败可重试）。
-  Widget _emptyState(BuildContext context) {
-    final l10n = context.l10n;
-    final error = library.sheetsError;
-    if (!library.hasPlugins) {
-      return _IdleHint(
-        icon: Icons.extension_outlined,
-        text: l10n.pluginNoneInstalled,
-        hint: l10n.pluginNoneInstalledHint,
-        action: FilledButton.icon(
-          onPressed: widget.onOpenPlugins,
-          icon: const Icon(Icons.extension_outlined, size: 16),
-          label: Text(l10n.musicGoPlugins),
-        ),
-      );
-    }
-    if (!library.tagsLoaded && error == null) {
-      return _IdleHint(
-        icon: Icons.local_fire_department_outlined,
-        text: l10n.musicSheetsIdle,
-        hint: l10n.musicLoadOnDemandHint,
-        action: FilledButton.icon(
-          onPressed: () => unawaited(library.loadTagSections(force: true)),
-          icon: const Icon(Icons.download_rounded, size: 16),
-          label: Text(l10n.musicSheetsLoad),
-        ),
-      );
-    }
-    // 已经加载过：插件确实没给这个能力，或者这一轮失败了
-    return _IdleHint(
-      icon: Icons.local_fire_department_outlined,
-      text: error ?? l10n.pluginNoSheets,
-      hint: error == null ? l10n.musicSheetsEmptyHint : null,
-      action: error == null
-          ? null
-          : TextButton(
-              onPressed: () => unawaited(library.loadTagSections(force: true)),
-              child: Text(l10n.musicRetry),
-            ),
-    );
-  }
 }
 
 // --------------------------------------------------------------------------- //

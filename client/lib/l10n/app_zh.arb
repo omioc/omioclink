@@ -396,30 +396,6 @@
   "@musicNavPlugins": {
     "description": "点歌台左导航的「插件」入口（管理音源插件，与设置页那张卡片同一个组件）"
   },
-  "musicChartsIdle": "还没有加载排行榜",
-  "@musicChartsIdle": {
-    "description": "排行榜的空态：还没加载过（用户没点加载）"
-  },
-  "musicChartsLoad": "加载排行榜",
-  "@musicChartsLoad": {
-    "description": "排行榜空态里的按钮：点了才去请求音源"
-  },
-  "musicSheetsIdle": "还没有加载热门歌单",
-  "@musicSheetsIdle": {
-    "description": "热门歌单的空态：还没加载过（用户没点加载）"
-  },
-  "musicSheetsLoad": "加载热门歌单",
-  "@musicSheetsLoad": {
-    "description": "热门歌单空态里的按钮：点了才去请求音源"
-  },
-  "musicLoadOnDemandHint": "点下面的按钮才会去请求音源，打开这一屏时不自动加载",
-  "@musicLoadOnDemandHint": {
-    "description": "榜单/歌单空态里说明「为什么现在是空的」"
-  },
-  "musicGoPlugins": "去「插件」安装",
-  "@musicGoPlugins": {
-    "description": "没装音源时空态里的按钮：跳到左栏的插件页"
-  },
   "musicSourceNoData": "{platform} 这个音源没有返回数据",
   "@musicSourceNoData": {
     "description": "某个音源这一屏没数据时的说明（超时/失败都会走到这里）",
