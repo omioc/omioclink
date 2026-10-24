@@ -2,7 +2,7 @@
   <img src="assets/readme/omioclink-round.png" width="64" height="64" valign="middle" alt="OmiocLink"> OmiocLink
 </h1>
 
-<p><b>语言 / Languages:</b> <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
+<p align="center"><b>语言 / Languages:</b> <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
 
 <p align="center">
   작은 친목 그룹을 위한 셀프 호스팅 P2P 커뮤니케이션 앱 —— <b> 함께 게임하며 음성 채팅, 게임 화면 공유, 음악 감상과 영상 시청 </b>

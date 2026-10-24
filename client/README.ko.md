@@ -1,6 +1,6 @@
 # OmiocLink 클라이언트
 
-<p><b>语言 / Languages:</b> <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
+<p align="center"><b>语言 / Languages:</b> <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
 
 Flutter로 작성한 데스크톱 + 모바일 클라이언트입니다. Windows는 테두리 없는 창, Android 휴대폰은 단일 컬럼이며, **태블릿과 데스크톱은 같은 3분할 레이아웃을 그대로 사용**합니다
 (짧은 변 600dp 이상). 휴대폰(짧은 변 600dp 미만)은 자동으로 단일 컬럼 + 하단 내비게이션으로 전환됩니다. 판정은 `lib/core/platform.dart`를 참고하세요

@@ -1,6 +1,6 @@
 # OmiocLink 客户端
 
-<p><b>语言 / Languages:</b> <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
+<p align="center"><b>语言 / Languages:</b> <a href="README.md">中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
 
 Flutter 编写的桌面 + 手机客户端：Windows 无边框窗口，安卓手机单栏；**平板与桌面沿用同一套三栏布局**
 （短边 ≥ 600dp），手机（短边 < 600dp）自动切单栏 + 底部导航，判定见 `lib/core/platform.dart`
