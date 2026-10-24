@@ -3,23 +3,26 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../core/app_log.dart';
 import 'media_models.dart';
+import 'voice_profile.dart';
+import 'voice_tuning.dart';
 
-/// 麦克风采集约束。
+/// 麦克风采集约束（按语音档位决定回声消除 / 降噪 / 自动增益 / 高通四个开关）。
 ///
-/// 关键差异：桌面端（Windows/Linux）选**输入**设备的键是 `sourceId`——
-/// 那里的 `deviceId` 表示的是**播放**设备，拿麦克风的 id 去填它不但选不中
-/// 麦克风，还可能把输出设备切到别处；Web 与移动端则沿用 `deviceId`。
-Map<String, dynamic> microphoneConstraints({String? deviceId, bool? desktop}) {
+/// 具体拼装见 [voiceMicrophoneConstraints]；这里只负责把「桌面端还是移动端」
+/// 解析出来——桌面端选**输入**设备的键是 `sourceId`，那里的 `deviceId` 表示的是
+/// **播放**设备，拿麦克风的 id 去填它不但选不中麦克风，还可能把输出设备切到别处；
+/// Web 与移动端则沿用 `deviceId`。
+Map<String, dynamic> microphoneConstraints({
+  String? deviceId,
+  bool? desktop,
+  VoiceProfile profile = VoiceProfile.fallback,
+}) {
   final isDesktop = desktop ?? (!kIsWeb && WebRTC.platformIsDesktop);
-  final audio = <String, dynamic>{
-    'echoCancellation': true,
-    'noiseSuppression': true,
-    'autoGainControl': true,
-  };
-  if (deviceId != null && deviceId.isNotEmpty) {
-    audio[isDesktop ? 'sourceId' : 'deviceId'] = deviceId;
-  }
-  return <String, dynamic>{'audio': audio, 'video': false};
+  return voiceMicrophoneConstraints(
+    profile: profile,
+    deviceId: deviceId,
+    desktop: isDesktop,
+  );
 }
 
 /// 「这次采集该用哪个麦克风」的解析结果。

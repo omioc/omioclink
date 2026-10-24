@@ -112,7 +112,9 @@ void main() {
       expect(audio.containsKey('deviceId'), isFalse);
       expect(audio['echoCancellation'], isTrue);
       expect(audio['noiseSuppression'], isTrue);
-      expect(audio['autoGainControl'], isTrue);
+      // 默认档（标准）关掉自动增益：它是「安静时底噪被抬高、开口又忽大忽小」的来源，
+      // 本应用的麦克风音量本身已经调在系统录音设备上，不需要再叠一层自动增益
+      expect(audio['autoGainControl'], isFalse);
     });
 
     test('空串等同于不指定', () {

@@ -1624,6 +1624,50 @@
   "@shareBalancedDetail": {
     "description": "均衡档的补充说明"
   },
+  "settingsVoiceProfile": "语音处理",
+  "@settingsVoiceProfile": {
+    "description": "设置页里「语音处理档位」卡片的标题"
+  },
+  "settingsVoiceProfileHint": "降噪与自动增益会改变别人听到的声音：哼歌、长音容易被当成噪声压掉。按场景选一档即可。",
+  "@settingsVoiceProfileHint": {
+    "description": "语音处理档位卡片下面的一句话说明"
+  },
+  "voiceProfileStandardLabel": "标准",
+  "@voiceProfileStandardLabel": {
+    "description": "语音档位：标准（默认）"
+  },
+  "voiceProfileStandardScene": "日常通话",
+  "@voiceProfileStandardScene": {
+    "description": "标准档的适用场景（卡片副标题）"
+  },
+  "voiceProfileStandardDetail": "保留降噪与高通、关闭自动增益（声音忽大忽小主要来自它），哼唱基本能留住；单声道 64kbps",
+  "@voiceProfileStandardDetail": {
+    "description": "标准档的补充说明"
+  },
+  "voiceProfileAggressiveLabel": "强降噪",
+  "@voiceProfileAggressiveLabel": {
+    "description": "语音档位：强降噪"
+  },
+  "voiceProfileAggressiveScene": "嘈杂环境",
+  "@voiceProfileAggressiveScene": {
+    "description": "强降噪档的适用场景"
+  },
+  "voiceProfileAggressiveDetail": "键盘声、风扇声大或麦克风偏小时用；会打开自动增益，哼唱与长音会被压得更狠",
+  "@voiceProfileAggressiveDetail": {
+    "description": "强降噪档的补充说明"
+  },
+  "voiceProfilePreserveLabel": "保真",
+  "@voiceProfilePreserveLabel": {
+    "description": "语音档位：保真（唱歌/哼鸣）"
+  },
+  "voiceProfilePreserveScene": "唱歌与哼鸣",
+  "@voiceProfilePreserveScene": {
+    "description": "保真档的适用场景"
+  },
+  "voiceProfilePreserveDetail": "只留回声消除，关闭降噪与自动增益；单声道 96kbps，环境声也会照原样送出去",
+  "@voiceProfilePreserveDetail": {
+    "description": "保真档的补充说明"
+  },
   "stunNoResponse": "无响应",
   "@stunNoResponse": {
     "description": "STUN 探测失败且没有细节"

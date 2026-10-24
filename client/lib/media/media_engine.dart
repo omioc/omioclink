@@ -16,6 +16,8 @@ import 'screen_policy_governor.dart';
 import 'share_policy.dart';
 import 'system_output_device.dart';
 import 'uplink_budget.dart';
+import 'voice_profile.dart';
+import 'voice_tuning.dart';
 
 /// 媒体层的对外回调（由 `RoomSession` 实现，把本地 SDP / 候选交给信令送出）。
 class MediaEngineCallbacks {
@@ -216,6 +218,39 @@ class MediaEngine {
   bool _speakerEnabled = true;
   bool _disposed = false;
 
+  /// 当前语音档位（决定采集侧四个处理开关、Opus 码率与是否保留哼唱）。
+  ///
+  /// 默认取 [VoiceProfile.fallback]；换成已保存的那一档由 `AppState` 在启动时下发。
+  VoiceProfile _voiceProfile = VoiceProfile.fallback;
+
+  /// 当前语音档位（界面显示「现在是哪一档」用）。
+  VoiceProfile get voiceProfile => _voiceProfile;
+
+  /// 切换语音档位。
+  ///
+  /// 采集约束只在 `getUserMedia` 那一刻生效，所以正在采集时必须重采一次才真的换挡；
+  /// 没在采集就只记下来，下次采集自然按新档位走。重采会短暂哑一下（约一两百毫秒），
+  /// 因此只在档位真的变了的时候做。
+  Future<void> setVoiceProfile(VoiceProfile profile) async {
+    if (profile == _voiceProfile) {
+      return;
+    }
+    _voiceProfile = profile;
+    AppLog.info('语音档位 → ${profile.storageId}（${describeVoiceCodecTuning(profile)}）');
+    final deviceId = _audioInputId;
+    if (_localAudio == null) {
+      return;
+    }
+    try {
+      await stopLocalAudio();
+      await startLocalAudio(deviceId: deviceId);
+    } on Object catch (error) {
+      // 换挡失败不该把设置页带崩：档位已经记下，下次采集（含重新进房）会按新档走。
+      // 最常见的原因是「这一步设备正好被拔掉」，那时采集本来也用不了。
+      AppLog.warn('切换语音档位后重采麦克风失败', error: error);
+    }
+  }
+
   /// 房间外试麦用的自环电平探针（采集期间存在，停止试麦即释放）。
   LocalMicProbe? _micProbe;
 
@@ -315,9 +350,12 @@ class MediaEngine {
 
     MediaStream stream;
     try {
-      AppLog.info('开始采集麦克风（${target.isEmpty ? '系统默认设备' : target}）');
+      AppLog.info(
+        '开始采集麦克风（${target.isEmpty ? '系统默认设备' : target}）'
+        '档位=${_voiceProfile.storageId} ${micProcessingFor(_voiceProfile)}',
+      );
       stream = await navigator.mediaDevices.getUserMedia(
-        microphoneConstraints(deviceId: target),
+        microphoneConstraints(deviceId: target, profile: _voiceProfile),
       );
     } on Object catch (error) {
       AppLog.error('麦克风采集失败', error: error);
@@ -1004,6 +1042,16 @@ class MediaEngine {
           )
           .toList(growable: false),
       'sdpSemantics': 'unified-plan',
+      // 语音包打 DSCP 标记（EF，加速转发）。原生只认这三个键
+      // （`flutter_webrtc` 的 `ParseRTCConfiguration`），投屏占满上行时，
+      // 路由器/交换机若认标记就会把语音排到视频前面——这是不改包就能拿到的
+      // 唯一「网络层优先级」，对「投屏时语音发飘、延迟变大」有效。
+      'enableDscp': true,
+      // 一条连接只用一个传输（unified-plan 下本来也是这么走）：候选只检查一份，
+      // DTLS 只握一次，进房更快；音频与视频共用一个拥塞控制，pacer 里靠
+      // `networkPriority: high` 保证语音优先。
+      'bundlePolicy': 'max-bundle',
+      'rtcpMuxPolicy': 'require',
     };
 
     // 音频设备模块是随建连/采集起来的，而它只在起播前读取系统的默认通信设备：
@@ -1115,10 +1163,37 @@ class MediaEngine {
       )
       .length;
 
+  /// 把本地描述里的 Opus 参数按当前档位改一遍。
+  ///
+  /// 为什么必须在本端 `setLocalDescription` 之前改：编码器是照着协商出来的
+  /// `a=fmtp` 建的，改晚了这次协商就按默认的 32k 单声道跑到底了。
+  /// SDP 原样返回（没 Opus / 没有可改的行）时不重建对象。
+  RTCSessionDescription _tuneLocalDescription(
+    RTCSessionDescription description,
+    String peerId,
+  ) {
+    final sdp = description.sdp;
+    if (sdp == null || sdp.isEmpty) {
+      return description;
+    }
+    final tuned = applyVoiceCodecTuning(sdp, _voiceProfile);
+    if (tuned == sdp) {
+      return description;
+    }
+    AppLog.info(
+      '本地描述已按档位调优 peer=$peerId 档位=${_voiceProfile.storageId} '
+      '（${describeVoiceCodecTuning(_voiceProfile)}）',
+    );
+    return RTCSessionDescription(tuned, description.type);
+  }
+
   /// 向某成员发起协商（发出 offer）。
   ///
   /// 由 `RoomSession` 显式调用：按「新成员向房间内所有既有成员发起 offer」的确定性规则，
   /// 保证同一对连接同时只有一方在 offer，从结构上避免 glare。
+  ///
+  /// 本地描述先按语音档位调优再生效（见 [_tuneLocalDescription]），发给对端的也是
+  /// 调优后的那份——两边必须看到同一个 SDP，否则协商结果对不上。
   Future<void> negotiate(String peerId, {bool iceRestart = false}) async {
     final slot = _peers[peerId];
     if (slot == null || slot.closed) {
@@ -1133,12 +1208,14 @@ class MediaEngine {
             : <String, dynamic>{},
       );
       AppLog.info('offer 已生成 peer=$peerId（${offer.sdp?.length ?? 0} 字节）');
-      await slot.pc.setLocalDescription(offer);
+      // 调优后的那份既要生效也要发给对端：两边看到的 SDP 必须一致
+      final tuned = _tuneLocalDescription(offer, peerId);
+      await slot.pc.setLocalDescription(tuned);
       AppLog.info('本地描述已生效（offer）peer=$peerId');
       slot.needsRenegotiation = false;
       slot.offerInFlight = true;
-      if (offer.sdp != null) {
-        await callbacks?.onLocalDescription(peerId, 'offer', offer.sdp!);
+      if (tuned.sdp != null) {
+        await callbacks?.onLocalDescription(peerId, 'offer', tuned.sdp!);
       }
     } on Object catch (error) {
       AppLog.warn('创建 offer 失败 peer=$peerId', error: error);
@@ -1167,10 +1244,12 @@ class MediaEngine {
       AppLog.info('远端描述已生效（offer）peer=$peerId');
       await _drainCandidates(slot);
       final answer = await slot.pc.createAnswer();
-      await slot.pc.setLocalDescription(answer);
-      AppLog.info('本地描述已生效（answer）peer=$peerId（${answer.sdp?.length ?? 0} 字节）');
-      if (answer.sdp != null) {
-        await callbacks?.onLocalDescription(peerId, 'answer', answer.sdp!);
+      // answer 里的 fmtp 描述的是「我们发」的方向，同样要按档位改
+      final tuned = _tuneLocalDescription(answer, peerId);
+      await slot.pc.setLocalDescription(tuned);
+      AppLog.info('本地描述已生效（answer）peer=$peerId（${tuned.sdp?.length ?? 0} 字节）');
+      if (tuned.sdp != null) {
+        await callbacks?.onLocalDescription(peerId, 'answer', tuned.sdp!);
       }
     } on Object catch (error) {
       AppLog.warn('处理 offer 失败 peer=$peerId', error: error);
@@ -1438,7 +1517,10 @@ class MediaEngine {
         final bytes = values['bytesReceived'];
         final samples = values['totalSamplesReceived'];
         final level = values['audioLevel'];
-        inbound = 'bytes=$bytes samples=$samples level=$level';
+        // 顺手把「延迟花在哪」也带出来：抖动缓冲的时长、丢包、补出来的音频占比
+        inbound =
+            'bytes=$bytes samples=$samples level=$level '
+            '${describeInboundAudioLatency(values)}';
         break;
       }
     } on Object catch (error) {
@@ -1652,6 +1734,30 @@ class MediaEngine {
     await _applyScreenAudioToAllPeers();
   }
 
+  /// 给这条连接的音频发送通道声明码率上限与网络优先级（见 `voiceSendParameters`）。
+  ///
+  /// 失败只记 debug：音频的实际码率主要靠 SDP 里的 `maxaveragebitrate` 生效，
+  /// 这里补的是「优先级」。部分 libwebrtc 版本对音频 sender 的 `setParameters`
+  /// 会直接返回 false——那是预期内的，不该因此往日志里刷警告。
+  Future<void> _applyAudioSendParameters(_PeerSlot slot) async {
+    final sender = slot.audioSender;
+    if (sender == null || slot.closed) {
+      return;
+    }
+    try {
+      final accepted = await sender.setParameters(
+        voiceSendParameters(_voiceProfile),
+      );
+      if (!accepted) {
+        AppLog.debug(
+          '音频发送参数未被原生接受 peer=${slot.peerId}（按 SDP 里的码率走）',
+        );
+      }
+    } on Object catch (error) {
+      AppLog.debug('设置音频发送参数失败 peer=${slot.peerId}：$error');
+    }
+  }
+
   Future<void> _replaceAudioTrack(
     _PeerSlot slot,
     MediaStreamTrack? track,
@@ -1666,6 +1772,9 @@ class MediaEngine {
     }
     slot.audioSender = sender;
     await _safeReplace(slot, sender, track);
+    if (track != null) {
+      await _applyAudioSendParameters(slot);
+    }
   }
 
   Future<void> _replaceScreenTrack(
@@ -1762,6 +1871,7 @@ class MediaEngine {
       final sender = await slot.pc.addTrack(track, target);
       if (kind == 'audio') {
         slot.audioSender = sender;
+        await _applyAudioSendParameters(slot);
       } else {
         slot.screenSender = sender;
         await _applyScreenSendParameters(slot);

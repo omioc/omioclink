@@ -11,9 +11,11 @@ import 'data/models.dart';
 import 'data/server_endpoint.dart';
 import 'data/session_store.dart';
 import 'data/volume_store.dart';
+import 'data/voice_store.dart';
 import 'media/media_engine.dart';
 import 'media/mic_volume_controller.dart';
 import 'media/media_port.dart';
+import 'media/voice_profile.dart';
 import 'music/clock_sync.dart';
 import 'music/music_favorites.dart';
 import 'music/music_free_library.dart';
@@ -53,6 +55,8 @@ class AppState extends ChangeNotifier {
     unawaited(_restoreMusicPlugins());
     // 「我喜欢」是本机缓存：启动时读一次，点进点歌台之前心形状态就已经是对的
     unawaited(_favorites.load());
+    // 上次选的语音档位：进房采集之前就得生效，否则第一次采集按默认档跑
+    unawaited(_loadVoiceProfile());
   }
 
   final SessionStore _store;
@@ -106,6 +110,12 @@ class AppState extends ChangeNotifier {
   /// 音乐音量存在 `MusicStore` 里（跟播放器一起读写），三者都是纯本地偏好。
   final VolumeStore _volumeStore = VolumeStore();
 
+  /// 语音处理档位的本机存储（与音量偏好同一类东西：只在自己这台机器上）。
+  final VoiceStore _voiceStore = VoiceStore();
+
+  /// 当前语音档位；启动时从 [_voiceStore] 读回，读到之前先按默认档走。
+  VoiceProfile _voiceProfile = VoiceProfile.fallback;
+
   /// 麦克风输出音量（Windows Core Audio，纯本机行为）。
   late final MicVolumeController _micVolume =
       _injectedMicVolume ??
@@ -113,6 +123,27 @@ class AppState extends ChangeNotifier {
         load: _volumeStore.loadMicVolume,
         save: _volumeStore.saveMicVolume,
       );
+
+  /// 启动时读回语音档位。
+  ///
+  /// 还没采集时媒体层只记下档位，下次 `getUserMedia` 直接按它走；如果用户在这之前
+  /// 就已经在试麦（设置页可以试麦），这里会把那次采集重采一遍——所以读取放在
+  /// 构造里、且只读一次，避免进房时突然换挡。
+  Future<void> _loadVoiceProfile() async {
+    VoiceProfile stored;
+    try {
+      stored = await _voiceStore.loadProfile();
+    } on Object catch (error) {
+      AppLog.warn('读取语音档位失败，按默认档走', error: error);
+      return;
+    }
+    if (stored == _voiceProfile) {
+      return;
+    }
+    _voiceProfile = stored;
+    await _media.setVoiceProfile(stored);
+    notifyListeners();
+  }
 
   void _onMusicQueueChanged() {
     // 服务端模式的起播归快照负责（`applyRoomState` 按锚点起播），这里只管本地模式。
@@ -207,6 +238,27 @@ class AppState extends ChangeNotifier {
 
   /// 调音乐音量：只改本机播放器，不碰任何人的语音。
   Future<void> setMusicVolume(double percent) => _musicPlayer.setVolume(percent);
+
+  /// 语音处理档位（只影响本机采集与自己的上行编码，别人无感）。
+  VoiceProfile get voiceProfile => _voiceProfile;
+
+  /// 切换语音档位：立刻下发到媒体层（正在采集会重采一次），并记住选择。
+  ///
+  /// 写入磁盘失败只记日志：这次切换本身已经生效，不该因为存不下来就回滚。
+  Future<void> setVoiceProfile(VoiceProfile profile) async {
+    if (profile == _voiceProfile) {
+      return;
+    }
+    _voiceProfile = profile;
+    notifyListeners();
+    await _media.setVoiceProfile(profile);
+    try {
+      await _voiceStore.saveProfile(profile);
+    } on Object catch (error) {
+      AppLog.warn('保存语音档位失败（不影响本次切换）', error: error);
+    }
+  }
+
   RoomMusicQueue get musicQueue => _musicQueue;
 
   /// 上次连过的服务器地址（连接页回填）。

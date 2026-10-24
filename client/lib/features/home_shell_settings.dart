@@ -136,6 +136,8 @@ class _SettingsPane extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         const _VolumeCard(),
         const SizedBox(height: AppSpacing.md),
+        const _VoiceProfileCard(),
+        const SizedBox(height: AppSpacing.md),
         MusicPluginSettingsCard(
           library: library,
           syncing: state.musicSyncing,
@@ -1148,6 +1150,149 @@ class _VolumeCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 语音处理档位：采集侧的降噪 / 自动增益 / 高通，加上行 Opus 码率一起换。
+///
+/// 为什么做成用户可选：libwebrtc 的降噪只给了「开 / 关」，没有强度档
+/// （见 `voice_profile.dart` 里的说明）。默认档已经按「保哼唱、不忽大忽小」调过，
+/// 但每个人的房间和麦克风差别很大——安静的独居房与开着的风扇/键盘，不该共用一套参数。
+/// 这里只影响自己上行，别人听不听得到、怎么听，都不受这张卡片影响。
+class _VoiceProfileCard extends StatelessWidget {
+  const _VoiceProfileCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final l10n = context.l10n;
+    final current = state.voiceProfile;
+    return PanelCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionLabel(text: l10n.settingsVoiceProfile),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              for (final profile in VoiceProfile.values) ...[
+                if (profile != VoiceProfile.values.first)
+                  const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: _VoiceProfileTile(
+                    profile: profile,
+                    selected: profile == current,
+                    onTap: () => state.setVoiceProfile(profile),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            l10n.settingsVoiceProfileHint,
+            style: TextStyle(
+              color: context.palette.textMuted,
+              fontSize: 11,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            current.detail,
+            style: TextStyle(
+              color: context.palette.textSecondary,
+              fontSize: 11,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 档位卡片：选中的用强调色描边 + 淡底，未选中用面板底色，鼠标移上去描边微亮
+/// （与共享策略卡片、源选择卡片同一套视觉语言）。
+class _VoiceProfileTile extends StatefulWidget {
+  const _VoiceProfileTile({
+    required this.profile,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final VoiceProfile profile;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_VoiceProfileTile> createState() => _VoiceProfileTileState();
+}
+
+class _VoiceProfileTileState extends State<_VoiceProfileTile> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = widget.selected;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: GestureDetector(
+        // 测试按档位点选时用这个 key，别按坐标或文案
+        key: Key('voice-profile-${widget.profile.storageId}'),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 6),
+          decoration: BoxDecoration(
+            color: selected
+                ? context.palette.accentSoft
+                : context.palette.panelSubtle,
+            borderRadius: AppRadii.medium,
+            border: Border.all(
+              color: selected
+                  ? context.palette.accent
+                  : _hovering
+                  ? context.palette.accent.withValues(alpha: 0.45)
+                  : context.palette.divider,
+              width: selected ? 1.4 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                widget.profile.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected
+                      ? context.palette.textPrimary
+                      : context.palette.textSecondary,
+                  fontSize: 13,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                widget.profile.scene,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected
+                      ? context.palette.textSecondary
+                      : context.palette.textMuted,
+                  fontSize: 11,
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
