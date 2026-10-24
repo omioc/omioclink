@@ -392,6 +392,10 @@
   "musicNavCharts": "排行榜",
   "musicNavSheets": "热门歌单",
   "musicNavFavorites": "我喜欢",
+  "musicNavPlugins": "插件",
+  "@musicNavPlugins": {
+    "description": "点歌台左导航的「插件」入口（管理音源插件，与设置页那张卡片同一个组件）"
+  },
   "musicMenuExpand": "展开菜单",
   "musicMenuCollapse": "收起菜单",
   "musicSearchTypeMusic": "音乐",
@@ -622,8 +626,8 @@
   "musicSyncAllUpdated": "插件已全部更新",
   "musicSyncPartialFailed": "部分插件更新失败",
   "pluginWord": "插件",
-  "pluginNoneInstalled": "还没有安装音乐插件",
-  "pluginNoneInstalledHint": "到「设置 · 音乐插件」里刷新订阅后再来点歌",
+  "pluginNoneInstalled": "没有安装音源插件",
+  "pluginNoneInstalledHint": "请点击左侧菜单的「插件」安装必要的音源插件",
   "pluginNoSearch": "插件没有提供搜索能力",
   "pluginNoSearchHint": "当前启用的插件里没有实现 search 方法的，去设置页检查插件",
   "pluginNoCharts": "插件没有提供排行榜",

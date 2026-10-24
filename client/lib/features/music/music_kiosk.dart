@@ -19,12 +19,17 @@ import '../../widgets/common.dart';
 import 'music_widgets.dart';
 import 'now_playing.dart';
 import 'playback_mode.dart';
+import '../music_plugin_card.dart';
 
-/// 点歌台（MusicFree 式）：顶部搜索框 + 左导航（排行榜 / 热门歌单 / 我喜欢）。
+/// 点歌台（MusicFree 式）：顶部搜索框 + 左导航（排行榜 / 热门歌单 / 我喜欢 / 插件）。
+///
+/// 后两屏与音源无关：「我喜欢」是本机收藏，「插件」管的是插件本身（与设置页
+/// 「音乐插件」是同一个组件）。没有插件时榜单与歌单不再偷偷同步订阅，而是直接
+/// 提示去左侧「插件」里装。
 ///
 /// 搜索不占导航项——上面就是搜索框，清空搜索会回到原来看的那一屏。
 ///
-/// * 搜索结果、榜单、歌单详情全部来自 [MusicFreeLibrary]（插件由设置页「音乐插件」管理）；
+/// * 搜索结果、榜单、歌单详情全部来自 [MusicFreeLibrary]；
 /// * 「我喜欢」是唯一的本地列表：[MusicFavorites]，只缓存这台设备上点过的喜欢，
 ///   不经过服务器，也不受「换服务器 / 换插件」影响；
 /// * 队列仍走房间的 [RoomMusicQueue]，右侧面板与底部播放条看到的是同一份。
@@ -35,6 +40,9 @@ class MusicKiosk extends StatefulWidget {
     required this.session,
     required this.player,
     required this.favorites,
+    this.syncing = false,
+    this.subscriptionUrls = const <String>[],
+    this.onRefreshSubscription,
   });
 
   final MusicFreeLibrary library;
@@ -45,6 +53,15 @@ class MusicKiosk extends StatefulWidget {
 
   /// 本机收藏（应用级单例，由 `CallView` 注入）；只在客户端缓存，服务端无关。
   final MusicFavorites favorites;
+
+  /// `AppState.musicSyncing`：订阅同步/更新进行中（插件页的按钮据此变灰并换文案）。
+  final bool syncing;
+
+  /// 服务器下发的订阅地址（插件页展示 + 空态提示用）。
+  final List<String> subscriptionUrls;
+
+  /// 刷新订阅（接到 `AppState.refreshMusicPlugins(force: true)`）。
+  final Future<void> Function()? onRefreshSubscription;
 
   @override
   State<MusicKiosk> createState() => _MusicKioskState();
@@ -301,6 +318,10 @@ class _MusicKioskState extends State<MusicKiosk> {
       case MusicFreeSection.favorites:
         // 本机数据，打开即是最新的：不需要预热 / 拉取
         break;
+      case MusicFreeSection.plugins:
+        // 插件页是「用户主动装音源」的地方，一进来**不能**自动同步订阅：
+        // 那正是这次要改掉的行为（打开榜单/歌单就偷偷装载）。
+        break;
     }
   }
 
@@ -438,6 +459,17 @@ class _MusicKioskState extends State<MusicKiosk> {
         onEnqueue: _enqueue,
         trackActions: _trackActions,
         onEnqueueAll: _enqueueAll,
+      ),
+      // 插件页与设置里那张卡片是同一个组件：订阅同步、启用/排序/卸载/配置、音质
+      // 全都在这一个入口里，行为与设置页完全一致（差别只是外面套了滚动容器）。
+      MusicFreeSection.plugins => SingleChildScrollView(
+        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+        child: MusicPluginCard(
+          library: library,
+          syncing: widget.syncing,
+          subscriptionUrls: widget.subscriptionUrls,
+          onRefreshSubscription: widget.onRefreshSubscription,
+        ),
       ),
     };
   }
@@ -585,6 +617,25 @@ class _NavRail extends StatelessWidget {
             selected: section == MusicFreeSection.favorites,
             accent: context.palette.accent,
             onTap: () => onChanged(MusicFreeSection.favorites),
+          ),
+          // 再一条分割线：「插件」管的是音源本身，和上面三屏（内容 / 本机收藏）
+          // 不是一类东西。放在「我喜欢」下面，是因为用户先要有音源才谈得上听歌，
+          // 而装音源这件事应该在缺音源时一眼就能找到（榜单/歌单的空态就指着它）。
+          Padding(
+            key: const ValueKey<String>('nav-divider-plugins'),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 7,
+              vertical: AppSpacing.xs,
+            ),
+            child: Container(height: 1, color: context.palette.divider),
+          ),
+          NavRow(
+            icon: Icons.extension_outlined,
+            label: collapsed ? '' : context.l10n.musicNavPlugins,
+            dense: true,
+            selected: section == MusicFreeSection.plugins,
+            accent: context.palette.accent,
+            onTap: () => onChanged(MusicFreeSection.plugins),
           ),
           const Spacer(),
           _NavCollapseButton(

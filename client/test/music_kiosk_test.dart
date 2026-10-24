@@ -19,6 +19,7 @@ import 'package:omioclink_client/musicfree/musicfree_host.dart';
 import 'package:omioclink_client/musicfree/musicfree_plugins.dart';
 import 'package:omioclink_client/musicfree/musicfree_service.dart';
 import 'package:omioclink_client/musicfree/plugin_paths.dart';
+import 'package:omioclink_client/musicfree/plugin_models.dart';
 import 'package:omioclink_client/room/room_session.dart';
 import 'package:omioclink_client/signaling/protocol.dart';
 import 'package:omioclink_client/signaling/signaling_client.dart';
@@ -202,6 +203,38 @@ class _FakeService extends MusicFreeService {
   }
 }
 
+/// 假的插件管理器：只报「装着一条插件」。
+///
+/// 没有插件时榜单 / 歌单不再去拉（`loadCharts` / `loadTagSections` 会直接留空态），
+/// 所以这些用例要处在「插件已装好」这个真实常态下才能看到内容。
+class _FakePlugins extends MusicFreePlugins {
+  _FakePlugins({required super.host, super.paths, required this.items});
+
+  final List<MusicFreePlugin> items;
+
+  @override
+  List<MusicFreePlugin> get plugins => List<MusicFreePlugin>.unmodifiable(items);
+}
+
+MusicFreePlugin _kioskPlugin() => MusicFreePlugin(
+  hash: 'h1',
+  platform: 'kg',
+  path: 'musicfree-plugins/h1.js',
+  version: '0.1.0',
+  author: '作者',
+  srcUrl: 'https://plugins.example.com/h1.js',
+  supportedMethods: const <String>['getTopListDetail', 'sheetInfo'],
+  userVariables: const <PluginUserVariable>[],
+  enabled: true,
+);
+
+/// 「装着一条插件」的假插件管理器。
+_FakePlugins _fakePlugins(PluginPaths paths) => _FakePlugins(
+  host: MusicFreeHost(bundleSource: '', paths: paths),
+  paths: paths,
+  items: <MusicFreePlugin>[_kioskPlugin()],
+);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -216,9 +249,22 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     tempDir = Directory.systemTemp.createTempSync('mf-kiosk-test');
     final paths = PluginPaths(root: tempDir.path);
-    final plugins = MusicFreePlugins(
+    final plugins = _FakePlugins(
       host: MusicFreeHost(bundleSource: '', paths: paths),
       paths: paths,
+      items: <MusicFreePlugin>[
+        MusicFreePlugin(
+          hash: 'h1',
+          platform: 'kg',
+          path: 'musicfree-plugins/h1.js',
+          version: '0.1.0',
+          author: '作者',
+          srcUrl: 'https://plugins.example.com/h1.js',
+          supportedMethods: const <String>['getTopListDetail', 'sheetInfo'],
+          userVariables: const <PluginUserVariable>[],
+          enabled: true,
+        ),
+      ],
     );
     service = _FakeService(plugins);
     library = MusicFreeLibrary(plugins: plugins, service: service);
@@ -359,9 +405,8 @@ void main() {
     expect(favorites.contains(_track('s1', '上次喜欢的歌')), isTrue);
   });
 
-  testWidgets('没有插件时给出「还没有安装音乐插件」空态', (tester) async {
-    // 这个用例要的是「一个插件都没装、什么都拿不到」的世界：
-    // 换一个空数据的服务层，别让默认那一屏（排行榜）拿到假数据。
+  testWidgets('没有插件时不再自动同步订阅，直接提示去左侧「插件」装音源', (tester) async {
+    // 「一个插件都没装」的世界：真实的空插件表 + 空数据的服务层。
     library.dispose();
     final paths = PluginPaths(root: tempDir.path);
     final plugins = MusicFreePlugins(
@@ -372,11 +417,39 @@ void main() {
       plugins: plugins,
       service: _FakeService(plugins, empty: true),
     );
+    // 数一数「自动同步订阅」有没有被调用：这正是这次改掉的行为
+    var syncCalls = 0;
+    library.requestSync = () async {
+      syncCalls += 1;
+    };
     await pumpKiosk(tester);
 
-    expect(find.text('还没有安装音乐插件'), findsOneWidget);
+    // 文案直接指路：去左侧「插件」装音源（而不是让人翻设置页）
+    expect(find.text('没有安装音源插件'), findsOneWidget);
+    expect(find.text('请点击左侧菜单的「插件」安装必要的音源插件'), findsOneWidget);
+    // 打开排行榜**不再**顺手拉订阅：以前每次点开都先跑一轮插件装载
+    expect(syncCalls, 0);
     expect(find.text('队列还是空的'), findsOneWidget);
     expect(find.text('房间播放队列 (0)'), findsOneWidget);
+  });
+
+  testWidgets('左导航「插件」在「我喜欢」下面，点开就是插件管理卡片', (tester) async {
+    await pumpKiosk(tester);
+
+    // 入口位置：排行榜 / 热门歌单 → 分割线 → 我喜欢 → 分割线 → 插件
+    expect(find.text('插件'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('nav-divider-plugins')), findsOneWidget);
+    final favoritesAt = tester.getTopLeft(find.text('我喜欢')).dy;
+    final pluginsAt = tester.getTopLeft(find.text('插件')).dy;
+    expect(pluginsAt, greaterThan(favoritesAt), reason: '插件排在「我喜欢」下面');
+
+    await tester.tap(find.text('插件'));
+    await tester.pumpAndSettle();
+
+    // 与设置页同一张卡片：标题、刷新订阅、插件条目都在
+    expect(find.text('音乐插件'), findsOneWidget);
+    expect(find.text('刷新订阅'), findsOneWidget);
+    expect(find.text('kg'), findsWidgets);
   });
   testWidgets('搜索关键词后列表出现歌名，点歌进房间队列', (tester) async {
     await pumpKiosk(tester);
@@ -496,10 +569,7 @@ void main() {
     // 两个音源各给一份榜单
     library.dispose();
     final paths = PluginPaths(root: tempDir.path);
-    final plugins = MusicFreePlugins(
-      host: MusicFreeHost(bundleSource: '', paths: paths),
-      paths: paths,
-    );
+    final plugins = _fakePlugins(paths);
     library = MusicFreeLibrary(
       plugins: plugins,
       service: _FakeService(
@@ -537,10 +607,7 @@ void main() {
   testWidgets('榜单用卡片网格展示：同一行并排多张卡，换行后往下排', (tester) async {
     library.dispose();
     final paths = PluginPaths(root: tempDir.path);
-    final plugins = MusicFreePlugins(
-      host: MusicFreeHost(bundleSource: '', paths: paths),
-      paths: paths,
-    );
+    final plugins = _fakePlugins(paths);
     library = MusicFreeLibrary(
       plugins: plugins,
       service: _FakeService(
@@ -579,10 +646,7 @@ void main() {
     library.dispose();
     final paths = PluginPaths(root: tempDir.path);
 
-    final plugins = MusicFreePlugins(
-      host: MusicFreeHost(bundleSource: '', paths: paths),
-      paths: paths,
-    );
+    final plugins = _fakePlugins(paths);
     library = MusicFreeLibrary(
       plugins: plugins,
       service: _FakeService(
@@ -649,10 +713,7 @@ void main() {
   testWidgets('热门歌单：标签去重成横向 tab，歌单是卡片网格（重复项不再崩界面）', (tester) async {
     library.dispose();
     final paths = PluginPaths(root: tempDir.path);
-    final plugins = MusicFreePlugins(
-      host: MusicFreeHost(bundleSource: '', paths: paths),
-      paths: paths,
-    );
+    final plugins = _fakePlugins(paths);
     library = MusicFreeLibrary(
       plugins: plugins,
       service: _FakeService(
@@ -705,10 +766,7 @@ void main() {
   testWidgets('热门歌单是双层 tab：第一层音源、第二层该音源的类别', (tester) async {
     library.dispose();
     final paths = PluginPaths(root: tempDir.path);
-    final plugins = MusicFreePlugins(
-      host: MusicFreeHost(bundleSource: '', paths: paths),
-      paths: paths,
-    );
+    final plugins = _fakePlugins(paths);
     MusicFreeTag tagOf(String platform, String id, String title) =>
         MusicFreeTag(
           platform: platform,
@@ -777,10 +835,7 @@ void main() {
   testWidgets('卡片是大封面 + 两行标题 + 更小的作者，没有外边框', (tester) async {
     library.dispose();
     final paths = PluginPaths(root: tempDir.path);
-    final plugins = MusicFreePlugins(
-      host: MusicFreeHost(bundleSource: '', paths: paths),
-      paths: paths,
-    );
+    final plugins = _fakePlugins(paths);
     library = MusicFreeLibrary(
       plugins: plugins,
       service: _FakeService(

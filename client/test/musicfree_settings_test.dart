@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omioclink_client/core/app_theme.dart';
-import 'package:omioclink_client/features/home_shell.dart';
+import 'package:omioclink_client/features/music_plugin_card.dart';
 import 'package:omioclink_client/music/music_free_library.dart';
 import 'package:omioclink_client/musicfree/musicfree_host.dart';
 import 'package:omioclink_client/musicfree/musicfree_plugins.dart';
@@ -130,7 +130,7 @@ void main() {
         home: Scaffold(
           backgroundColor: AppThemePacks.night.palette.stage,
           body: SingleChildScrollView(
-            child: MusicPluginSettingsCard(
+            child: MusicPluginCard(
               library: library,
               subscriptionUrls: subscriptionUrls,
               onRefreshSubscription: withRefresh

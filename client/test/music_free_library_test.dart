@@ -8,6 +8,7 @@ import 'package:omioclink_client/musicfree/musicfree_host.dart';
 import 'package:omioclink_client/musicfree/musicfree_plugins.dart';
 import 'package:omioclink_client/musicfree/musicfree_service.dart';
 import 'package:omioclink_client/musicfree/plugin_paths.dart';
+import 'package:omioclink_client/musicfree/plugin_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 只提供排行榜的假服务层：不碰 JS 运行时，用来数「重拉了几次」。
@@ -125,6 +126,31 @@ class _WarmUpService extends MusicFreeService {
   }
 }
 
+/// 假的插件管理器：只报「装着一条插件」。
+///
+/// 榜单 / 歌单在没有插件时**不会**再去拉（详见 `loadCharts` 的说明），所以这些
+/// 用例必须处在「插件已装好」这个真实常态下，才能走到服务层。
+class _FakePlugins extends MusicFreePlugins {
+  _FakePlugins({required super.host, super.paths, required this.items});
+
+  final List<MusicFreePlugin> items;
+
+  @override
+  List<MusicFreePlugin> get plugins => List<MusicFreePlugin>.unmodifiable(items);
+}
+
+MusicFreePlugin _installedPlugin() => MusicFreePlugin(
+  hash: 'h1',
+  platform: 'kg',
+  path: 'musicfree-plugins/h1.js',
+  version: '0.1.0',
+  author: '作者',
+  srcUrl: 'https://plugins.example.com/h1.js',
+  supportedMethods: const <String>['getTopList', 'getTopLists', 'getRecommendSheets'],
+  userVariables: const <PluginUserVariable>[],
+  enabled: true,
+);
+
 MusicTrack _track(String name) => MusicTrack(
   platform: 'kg',
   id: name,
@@ -143,9 +169,10 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     tempDir = Directory.systemTemp.createTempSync('mf-library-test');
     final paths = PluginPaths(root: tempDir.path);
-    final plugins = MusicFreePlugins(
+    final plugins = _FakePlugins(
       host: MusicFreeHost(bundleSource: '', paths: paths),
       paths: paths,
+      items: <MusicFreePlugin>[_installedPlugin()],
     );
     service = _FakeService(plugins);
     library = MusicFreeLibrary(plugins: plugins, service: service);
@@ -225,11 +252,41 @@ void main() {
     expect(racingLibrary.searching, isFalse);
   });
 
-  test('warmUp 不碰插件：进房只读音质偏好，排行榜要等点开点歌台', () async {
+  test('没有插件时不去拉榜单/歌单，也不再顺手同步订阅', () async {
+    library.dispose();
     final paths = PluginPaths(root: tempDir.path);
     final plugins = MusicFreePlugins(
       host: MusicFreeHost(bundleSource: '', paths: paths),
       paths: paths,
+    );
+    final counter = _WarmUpService(plugins);
+    library = MusicFreeLibrary(plugins: plugins, service: counter);
+    var syncCalls = 0;
+    library.requestSync = () async {
+      syncCalls += 1;
+    };
+
+    await library.loadCharts();
+    await library.loadTagSections();
+
+    expect(counter.chartCalls, 0, reason: '没装音源就不该去拉榜单');
+    expect(counter.tagCalls, 0, reason: '没装音源也不该去拉歌单标签');
+    expect(syncCalls, 0, reason: '打开榜单/歌单不该偷偷装插件');
+    expect(library.chartGroups, isEmpty);
+    expect(
+      library.chartsError,
+      isNull,
+      reason: '这是「还没装音源」，不是加载失败，界面不该挂一个重试按钮',
+    );
+  });
+
+  test('warmUp 不碰插件：进房只读音质偏好，排行榜要等点开点歌台', () async {
+    final paths = PluginPaths(root: tempDir.path);
+    // 榜单/歌单在没有插件时不会去拉，所以这里要「装着一条插件」（真实常态）
+    final plugins = _FakePlugins(
+      host: MusicFreeHost(bundleSource: '', paths: paths),
+      paths: paths,
+      items: <MusicFreePlugin>[_installedPlugin()],
     );
     final warm = _WarmUpService(plugins);
     final warmLibrary = MusicFreeLibrary(plugins: plugins, service: warm);

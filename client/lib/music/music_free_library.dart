@@ -16,9 +16,10 @@ import '../musicfree/plugin_models.dart';
 /// 注意：`search` 不是左导航入口——搜索由点歌台顶部的搜索框触发，
 /// 用户清空搜索后会回到进来之前那一屏（榜单或歌单）。
 ///
-/// `favorites` 是唯一的例外：它不来自插件，读的是本机收藏（`MusicFavorites`），
-/// 所以插件全挂了它照样能用。
-enum MusicFreeSection { search, charts, sheets, favorites }
+/// `favorites` 与 `plugins` 是例外：前者不来自插件（本机收藏 `MusicFavorites`），
+/// 后者管的是插件本身（`MusicPluginCard`，与设置页那张卡片是同一个组件），
+/// 所以插件全挂了这两屏照样能用——而榜单 / 歌单在没有插件时直接提示去装。
+enum MusicFreeSection { search, charts, sheets, favorites, plugins }
 
 /// 内容区正在看的详情（榜单 / 歌单共用一套）。
 class MusicFreeDetail {
@@ -449,8 +450,20 @@ class MusicFreeLibrary extends ChangeNotifier {
   bool get chartsLoading => _chartsLoading;
   String? get chartsError => _chartsError;
 
+  /// 拉排行榜。
+  ///
+  /// **没有插件时不去拉、也不再顺手同步订阅**：以前这里会触发一次插件装载，
+  /// 于是每次点开排行榜都先跑一轮装载进度、装完还是空——那既费 CPU 又让人看不懂。
+  /// 现在直接留空态，由界面提示「点左侧『插件』装音源」（文案见 `pluginNoneInstalled`）。
   Future<void> loadCharts({bool force = false}) async {
-    _ensurePlugins();
+    if (!hasPlugins) {
+      if (_chartGroups.isNotEmpty || _chartsError != null) {
+        _chartGroups = const <MusicFreeTopListGroup>[];
+        _chartsError = null;
+        notifyListeners();
+      }
+      return;
+    }
     if (_chartsLoading) {
       return;
     }
@@ -496,7 +509,19 @@ class MusicFreeLibrary extends ChangeNotifier {
   bool get sheetsLoading => _sheetsLoading;
   String? get sheetsError => _sheetsError;
 
+  /// 拉热门歌单的第一层（标签）。与 [loadCharts] 一样：**没有插件就直接留空态**，
+  /// 不在这里顺手同步订阅——那个动作现在只在用户点「插件」页里的「刷新订阅」时发生。
   Future<void> loadTagSections({bool force = false}) async {
+    if (!hasPlugins) {
+      if (!_tags.isEmpty || _selectedTag != null || _sheetsError != null) {
+        _tags = const MusicFreeTags();
+        _sheets = const <MusicFreeSheet>[];
+        _selectedTag = null;
+        _sheetsError = null;
+        notifyListeners();
+      }
+      return;
+    }
     if (_tagsLoading) {
       return;
     }

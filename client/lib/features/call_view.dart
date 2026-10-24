@@ -105,6 +105,11 @@ class _CallViewState extends State<CallView> {
               session: session,
               player: state.musicPlayer,
               favorites: state.musicFavorites,
+              // 左侧「插件」页要的三样：与设置页那张插件卡片完全同一套
+              syncing: state.musicSyncing,
+              subscriptionUrls: state.musicSubscriptionUrls,
+              onRefreshSubscription: () =>
+                  state.refreshMusicPlugins(force: true),
             ),
           )
         else ...[
