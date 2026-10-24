@@ -31,8 +31,8 @@ curl -fsSL https://raw.githubusercontent.com/omioc/omioclink/main/deploy/install
 
 이미지 패키지 다운로드:
 
-[x86 아키텍처](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.7-amd64.tar) | 
-[arm 아키텍처](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.7-arm64.tar)
+[x86 아키텍처](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.8-amd64.tar) | 
+[arm 아키텍처](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.8-arm64.tar)
 
 ```bash
 # 1. 이미지 패키지를 서버에 업로드하고 docker load -i <image-name>.tar 로 이미지를 가져옵니다

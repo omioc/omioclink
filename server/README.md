@@ -31,8 +31,8 @@ curl -fsSL https://raw.githubusercontent.com/omioc/omioclink/main/deploy/install
 
 下载镜像包：
 
-[x86 架构](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.7-amd64.tar) | 
-[arm 架构](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.7-arm64.tar)
+[x86 架构](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.8-amd64.tar) | 
+[arm 架构](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.8-arm64.tar)
 
 ```bash
 # 1. 上传镜像包至服务器，使用 docker load -i <image-name>.tar 导入镜像

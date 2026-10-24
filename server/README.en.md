@@ -31,8 +31,8 @@ curl -fsSL https://raw.githubusercontent.com/omioc/omioclink/main/deploy/install
 
 Download the image package:
 
-[x86 architecture](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.7-amd64.tar) | 
-[arm architecture](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.7-arm64.tar)
+[x86 architecture](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.8-amd64.tar) | 
+[arm architecture](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.8-arm64.tar)
 
 ```bash
 # 1. Upload the image package to the server and import it with docker load -i <image-name>.tar

@@ -31,8 +31,8 @@ curl -fsSL https://raw.githubusercontent.com/omioc/omioclink/main/deploy/install
 
 イメージパッケージをダウンロード：
 
-[x86 アーキテクチャ](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.7-amd64.tar) | 
-[arm アーキテクチャ](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.7-arm64.tar)
+[x86 アーキテクチャ](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.8-amd64.tar) | 
+[arm アーキテクチャ](https://github.com/omioc/omioclink/releases/latest/download/omioclink-server-1.0.8-arm64.tar)
 
 ```bash
 # 1. イメージパッケージをサーバーにアップロードし、docker load -i <image-name>.tar でインポートします

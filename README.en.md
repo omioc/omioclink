@@ -14,9 +14,9 @@
 
 
 <p align="center">
-  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-win-x64-1.0.7.zip">Download the Windows portable build</a>
+  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-win-x64-1.0.8.zip">Download the Windows portable build</a>
   &nbsp;|&nbsp;
-  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-android-1.0.7-arm64-v8a.apk">Download the Android APK</a>
+  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-android-1.0.8-arm64-v8a.apk">Download the Android APK</a>
   &nbsp;|&nbsp;
   <a href="https://hub.docker.com/r/omioc/omioclink">Server image (Docker Hub)</a>
   <br>

@@ -14,9 +14,9 @@
 
 
 <p align="center">
-  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-win-x64-1.0.7.zip">Windows ポータブル版をダウンロード</a>
+  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-win-x64-1.0.8.zip">Windows ポータブル版をダウンロード</a>
   &nbsp;|&nbsp;
-  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-android-1.0.7-arm64-v8a.apk">Android APK をダウンロード</a>
+  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-android-1.0.8-arm64-v8a.apk">Android APK をダウンロード</a>
   &nbsp;|&nbsp;
   <a href="https://hub.docker.com/r/omioc/omioclink">サーバーイメージ（Docker Hub）</a>
   <br>

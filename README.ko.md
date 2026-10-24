@@ -14,9 +14,9 @@
 
 
 <p align="center">
-  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-win-x64-1.0.7.zip">Windows 무설치판 다운로드</a>
+  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-win-x64-1.0.8.zip">Windows 무설치판 다운로드</a>
   &nbsp;|&nbsp;
-  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-android-1.0.7-arm64-v8a.apk">Android APK 다운로드</a>
+  <a href="https://github.com/omioc/omioclink/releases/latest/download/omioclink-client-android-1.0.8-arm64-v8a.apk">Android APK 다운로드</a>
   &nbsp;|&nbsp;
   <a href="https://hub.docker.com/r/omioc/omioclink">서버 이미지(Docker Hub)</a>
   <br>
