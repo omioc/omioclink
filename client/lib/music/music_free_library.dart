@@ -114,10 +114,12 @@ class MusicFreeLibrary extends ChangeNotifier {
   /// 上一次拉歌单标签失败/超时的音源（platform → 原因）。
   Map<String, String> get tagFailures => _service.lastTagFailures;
 
-  /// 把「之前装过的插件」从磁盘登记出来（只读元数据、不编译 JS），然后通知界面。
+  /// 把「之前装过的插件」从磁盘登记出来（只读元数据、不编译 JS），然后交给后台预编译。
   ///
   /// 启动时调一次：设置页 / 点歌台一打开就能看到已有的插件列表，而不是空着等用户
-  /// 点一次「刷新订阅」。真正的编译仍然按需发生（第一次调用某个音源时）。
+  /// 点一次「刷新订阅」。**紧接着**就把这些插件放后台编进 worker（[warmPlugins]）：
+  /// 元数据只让插件「列出来」，函数本体还不在 worker 里——等到用户点开点歌台才现场
+  /// 编译的话，他看到的还是「已经装了插件却在转」。
   Future<void> restorePlugins() async {
     try {
       await _plugins.restoreInstalled();
@@ -125,6 +127,17 @@ class MusicFreeLibrary extends ChangeNotifier {
       AppLog.warn('恢复本地插件列表失败', error: error);
     }
     notifyListeners();
+    warmPlugins();
+  }
+
+  /// 后台把已装插件编进 worker：静默、不挡界面、不产生任何「加载中」。
+  ///
+  /// 没有插件时什么也不做（不装载、不下载——装音源仍然只由用户点「刷新订阅」触发）。
+  void warmPlugins() {
+    if (!hasPlugins) {
+      return;
+    }
+    _plugins.warmPluginsInBackground();
   }
 
   bool get canSearch => _service.hasSearchPlugin;

@@ -990,6 +990,9 @@ class MusicFreeHost {
 
   List<MusicFreePlugin> get plugins => _plugins.values.toList(growable: false);
 
+  /// 这个插件是否已经编进某个 worker（界面显示「准备中 / 就绪」用）。
+  bool isCompiled(String hash) => _owner[hash] != null;
+
   bool get isReady => _links.any((link) => link.isReady);
 
   /// 只登记元数据、不编译：启动时用它把插件列表立刻铺出来。
@@ -1034,25 +1037,101 @@ class MusicFreeHost {
     await _saveMetadata();
   }
 
-  /// 后台把「登记了但还没编译」的插件逐个编译好。
+  /// 用户发起的调用（搜索 / 榜单 / 详情）在飞的数量：后台预编译据此让路。
+  int _userInFlight = 0;
+
+  /// 后台把「登记了但还没编译」的插件编进 worker。
   ///
-  /// 一次只编译一个：并发只会让 worker 排队，还会拖慢用户真正在点的操作。
-  Future<void> prefetch() async {
-    for (final hash in _plugins.keys.toList(growable: false)) {
-      if (_disposed) {
+  /// 为什么要预热：[restoreMetadata] 只登记元数据，函数的本体还不在任何 worker 里，
+  /// 第一次调用某个音源时才现场付「读盘 + 反序列化字节码 + eval + describe」这笔钱
+  /// （实测每个 0.3~1.2 秒）。用户看到的就是「进了点歌台还要转一会儿」。启动就把这笔
+  /// 钱付掉，界面一打开就是已就绪的状态。
+  ///
+  /// 三条约束（都是踩过的）：
+  /// * **不占 UI 线程**：编译全程在 worker isolate 里，主 isolate 只收发消息；
+  /// * **留一个 worker 给用户**：并发路数 = 池大小 - 1（手机上池只有 2 个，那就还是
+  ///   一个一个编），否则用户点搜索 / 进排行榜的调用会排在编译后面；
+  /// * **给用户让路**：有用户调用在飞时先不抢下一个（见 [_yieldToUserCalls]）。
+  ///
+  /// 重复调用共用同一轮（单飞），不会把同一份插件编两遍；一轮跑完会再检查一遍，
+  /// 期间订阅同步装进来的新插件也能被带上。
+  ///
+  /// [order] 是界面层给的优先级（先编启用的、能看排行榜 / 歌单的）。
+  Future<void> prefetch({List<String> order = const <String>[]}) {
+    final running = _prefetching;
+    if (running != null) {
+      return running;
+    }
+    final task = _prefetchRounds(order);
+    _prefetching = task.whenComplete(() => _prefetching = null);
+    return _prefetching!;
+  }
+
+  /// 正在进行的那一轮预编译（单飞用）。
+  Future<void>? _prefetching;
+
+  Future<void> _prefetchRounds(List<String> order) async {
+    // 一直编不好的插件不能把这一轮拖成死循环：失败一次就这一轮不再试它。
+    final failed = <String>{};
+    while (!_disposed) {
+      // 每轮重新取一次待编列表：这一轮跑着的时候可能又装进新的插件。
+      final wanted = <String>[
+        for (final hash in order)
+          if (_plugins.containsKey(hash)) hash,
+        for (final hash in _plugins.keys)
+          if (!order.contains(hash)) hash,
+      ];
+      final pending = <String>[
+        for (final hash in wanted)
+          if (_owner[hash] == null && !failed.contains(hash)) hash,
+      ];
+      if (pending.isEmpty) {
         return;
       }
-      if (_owner[hash] != null) {
-        continue;
+      // 之前是「一次只编一个」的串行循环：6 个插件约 4 秒、全压在最前面那几秒里，
+      // 用户这时候点开点歌台就正好排在编译后面（日志里「榜单等了 22 秒」那次）。
+      // 池只有 1 个 worker 时也至少要有一路，否则这一轮什么也不做、循环空转。
+      final spare = _poolSize > 1 ? _poolSize - 1 : 1;
+      final lanes = pending.length < spare ? pending.length : spare;
+      final queue = List<String>.of(pending);
+      final watch = Stopwatch()..start();
+
+      Future<void> pump() async {
+        while (queue.isNotEmpty) {
+          final hash = queue.removeAt(0);
+          await _yieldToUserCalls();
+          if (_disposed) {
+            return;
+          }
+          try {
+            await _ensureCompiled(hash);
+            // 每编好一个就刷新一次：界面要能跟着从「准备中」变「就绪」。
+            onPluginsChanged?.call();
+          } on Object catch (error) {
+            failed.add(hash);
+            AppLog.debug('后台编译插件失败（$hash）：$error');
+          }
+        }
       }
-      try {
-        await _ensureCompiled(hash);
-        // 每编译好一个就刷新一次：手机上池只有 2 个 worker，编译是几十秒的长活，
-        // 等整批跑完再刷新，界面看起来就是「卡住不动」。
-        onPluginsChanged?.call();
-      } on Object catch (error) {
-        AppLog.debug('后台编译插件失败（$hash）：$error');
-      }
+
+      await Future.wait<void>(<Future<void>>[
+        for (var lane = 0; lane < lanes; lane += 1) pump(),
+      ]);
+      AppLog.timing('插件.后台预编译 ${pending.length}个（$lanes 路）', watch.elapsed);
+    }
+  }
+
+  /// 用户在编译期间点了搜索 / 打开排行榜：先让这些调用排到 worker 前面。
+  ///
+  /// 最多让 2 秒——用户一直在操作时，不能让后台预热永远编不完。所以这里只是
+  /// 「不插队」，不是「无限让路」。
+  Future<void> _yieldToUserCalls() async {
+    if (_userInFlight == 0) {
+      return;
+    }
+    final deadline = DateTime.now().add(const Duration(seconds: 2));
+    while (!_disposed && _userInFlight > 0 && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
     }
   }
 
@@ -1093,21 +1172,27 @@ class MusicFreeHost {
     Duration timeout = const Duration(seconds: 20),
     bool flushWrites = true,
   }) async {
-    // 元数据复用之后，插件可能只是「登记过」还没编译：这里补上
-    await _ensureCompiled(hash);
-    final link = _owner[hash];
-    if (link == null) {
-      throw MusicFreeException(appL10n.pluginNotReady);
+    // 后台预编译看这个计数决定要不要先给用户让路
+    _userInFlight += 1;
+    try {
+      // 元数据复用之后，插件可能只是「登记过」还没编译：这里补上
+      await _ensureCompiled(hash);
+      final link = _owner[hash];
+      if (link == null) {
+        throw MusicFreeException(appL10n.pluginNotReady);
+      }
+      final reply = await _call(link, <String, dynamic>{
+        'op': 'invoke',
+        'hash': hash,
+        'method': method,
+        'args': args,
+        'timeoutMs': timeout.inMilliseconds,
+        'flushWrites': flushWrites,
+      }, timeout: timeout + const Duration(seconds: 5));
+      return reply['value'];
+    } finally {
+      _userInFlight -= 1;
     }
-    final reply = await _call(link, <String, dynamic>{
-      'op': 'invoke',
-      'hash': hash,
-      'method': method,
-      'args': args,
-      'timeoutMs': timeout.inMilliseconds,
-      'flushWrites': flushWrites,
-    }, timeout: timeout + const Duration(seconds: 5));
-    return reply['value'];
   }
 
   void unload(String hash) {

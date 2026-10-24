@@ -32,6 +32,21 @@ module.exports = {
 ''';
 }
 
+/// 轮询等待某个条件成立：编译发生在 worker isolate 里，没有可以直接 await 的信号。
+Future<void> waitUntil(
+  bool Function() condition, {
+  required String reason,
+  Duration timeout = const Duration(seconds: 60),
+}) async {
+  final watch = Stopwatch()..start();
+  while (!condition()) {
+    if (watch.elapsed > timeout) {
+      fail('等待超时（${watch.elapsed.inSeconds}s）：$reason');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+}
+
 void main() {
   late HttpServer server;
   late String base;
@@ -570,5 +585,36 @@ void main() {
       isFalse,
       reason: '只是为了显示列表，不该启动 worker / 编译 JS',
     );
+  });
+
+  test('启动就在后台把已装插件编进 worker：restoreInstalled 不等编译，编完直接可用', () async {
+    await plugins.syncSubscription(urls: <String>['$base/sub.json']);
+    final hashes = plugins.plugins.map((plugin) => plugin.hash).toList();
+    expect(hashes, isNotEmpty);
+
+    // 模拟重启：同一份数据目录，全新的 host / store
+    final restartedHost = MusicFreeHost(
+      paths: PluginPaths(root: tempRoot.path),
+      bundleSource: bundle,
+    );
+    addTearDown(restartedHost.dispose);
+    final restarted = MusicFreePlugins(
+      host: restartedHost,
+      paths: PluginPaths(root: tempRoot.path),
+    );
+    await restarted.restoreInstalled();
+    expect(
+      hashes.where(restartedHost.isCompiled),
+      isEmpty,
+      reason: '登记元数据不该顺手编译：列表要立刻可见',
+    );
+
+    // 启动后台预编译：调用方不等它，界面上也没有任何「加载中」
+    restarted.warmPluginsInBackground();
+    await waitUntil(
+      () => hashes.every(restartedHost.isCompiled),
+      reason: '后台应该把已装插件全部编进 worker',
+    );
+    expect(restartedHost.isReady, isTrue);
   });
 }

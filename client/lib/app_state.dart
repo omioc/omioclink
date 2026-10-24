@@ -50,8 +50,9 @@ class AppState extends ChangeNotifier {
     unawaited(_micVolume.load());
     // 插件**不自动装**：只有用户在设置页或点歌台「插件」页手点「刷新订阅」才会装。
     // （这里以前挂过一个「缺插件就补一次同步」的回调，会让点歌台一打开就自己转圈。）
-    // 上次装好的插件列表先从磁盘登记出来（只读 metadata、不编译 JS）：重启后第一次
-    // 进设置页 / 点歌台就能看到它们，而不是空着要等一次「刷新订阅」。
+    // 上次装好的插件列表先从磁盘登记出来（只读 metadata、不编译 JS），登记完立刻在
+    // 后台把它们编进 worker：列表「立刻」可见，编译「静默」进行，用户点开点歌台 / 搜索
+    // 时不用再等（编译全在 worker isolate 里，不占 UI 线程）。
     unawaited(_restoreMusicPlugins());
     // 「我喜欢」是本机缓存：启动时读一次，点进点歌台之前心形状态就已经是对的
     unawaited(_favorites.load());
@@ -562,9 +563,12 @@ class AppState extends ChangeNotifier {
 
   /// 启动时把「磁盘上已装插件」登记进宿主，再把列表通知给界面。
   ///
-  /// 只读 `musicfree-metadata.json`（不编译 JS、不起 worker）：这是「重启后第一次
+  /// 第一步只读 `musicfree-metadata.json`（不编译 JS、不起 worker）：这是「重启后第一次
   /// 进设置页 / 点歌台能看见之前装过的插件」的那一步。以前只有 `_loadMusicPlugins`
   /// 会调 `loadInstalled()`，于是没点过「刷新订阅」时列表一直是空的。
+  ///
+  /// 登记完 `restorePlugins()` 会接着把插件放后台预编译（见 `warmPlugins()`）：
+  /// 不在这里 `await`，也不进任何「加载中」状态——它只是把用户的等待提前付掉。
   Future<void> _restoreMusicPlugins() async {
     await _music.restorePlugins();
     if (!_disposed) {

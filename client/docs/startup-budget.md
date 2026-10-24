@@ -151,15 +151,18 @@ worker 里的打点经端口回主 isolate 再落盘（见 `MusicFreeEngine.timi
   `musicfree-metadata.json`（key = 源码 hash）。启动时
   `restoreMetadata()` 只**登记**不编译 —— 插件列表立刻可见；
   `invoke()` 里发现「登记了但没编译」才读盘编译（`插件.按需编译 <平台>`）。
-  `loadInstalled` 顺带走一遍 `prefetch()`，在后台把剩下的逐个补上。
+  启动后 `MusicFreeLibrary.restorePlugins()` 会紧接着调 `warmPlugins()` →
+  `MusicFreeHost.prefetch()`，在后台把这批插件**编进 worker**（并发路数 = 池大小 − 1，
+  始终留一个给用户现点现用的调用；有用户调用在飞时先让路）。6 个插件由原来的串行
+  ≈4 秒压到 ≈2 秒，且不进任何「加载中」状态。
 * 新增打点：`插件.worker#N 就绪（含 bundle 编译）`、`插件.按需编译 <平台>`。
 
 代价与注意：
 * 每个 worker 都要自己编译一遍 577KB bundle，内存与启动成本 ×N（默认 2~3）。
   **§3.8 的字节码缓存已经把这笔账消掉了**：首份编译并落盘，其余读缓存。
 * 重启后的**第一次**搜索/榜单如果撞上还没编译完的音源，那个音源会因为超时被跳过；
-  后台 `prefetch()` 跑完（约几十秒）就恢复正常。插件顺序/启用状态来自偏好文件，
-  不受元数据缓存影响。
+  后台预编译跑完就恢复正常（`插件.后台预编译 N个（M 路）` 打点能看到耗时）。插件顺序 /
+  启用状态来自偏好文件，不受元数据缓存影响。启动预编译会先编「启用的、能看榜 / 歌单」的。
 * 卸载插件时会同时清掉它的元数据（`forgetMetadata`），不会「复活」。
 
 ### 3.8 字节码缓存 + 引擎按发布版编译（这一轮的核心，彻底解决「装载极慢」）
@@ -257,8 +260,11 @@ isolate 起来了，真正的编译被算进了第一个插件的装载里）。
 
 现在 `AppState` 构造时就走 `MusicFreeLibrary.restorePlugins()` →
 `MusicFreePlugins.restoreInstalled()`：只读 `musicfree-metadata.json`、**不编译
-JS、不起 worker、不 prefetch**，读完把列表通知给界面。真正的编译仍然按需发生
-（第一次调用某个音源时）；`loadInstalled()` 保留原职责（同步订阅时补齐 / 编译）。
+JS、不起 worker**，读完把列表通知给界面。紧接着 `restorePlugins()` 调
+`warmPlugins()` → `MusicFreePlugins.warmPluginsInBackground()` →
+`MusicFreeHost.prefetch()`：把已装插件放后台编进 worker（并行、给用户调用让路、
+全程在 worker isolate 里，不占 UI 线程，也不进任何「加载中」）。`loadInstalled()`
+保留原职责（同步订阅时补齐 / 编译）。
 ### 3.11 房间列表轮询（15 秒 + 前后台启停）
 
 原来 `AppState` 每 5 秒拉一次 `/rooms`，好友每 15 秒一次。房间里变的只是「谁进了

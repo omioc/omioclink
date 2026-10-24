@@ -241,23 +241,60 @@ class MusicFreePlugins {
   }
 
   /// 只把「磁盘上已装插件」的元数据登记进来（读 musicfree-metadata.json），
-  /// **不编译 JS、不起 worker、不 prefetch**。
+  /// **不编译 JS、不起 worker**——这条路径只负责「把列表铺出来」。
   ///
-  /// 为什么单独要这么一条：`loadInstalled()` 会顺带编译「没有元数据」的插件，还在
-  /// 后台 prefetch 一遍——那是同步订阅时才该付的钱。而设置页 / 点歌台只是要把
-  /// 「之前装过的插件」列出来。以前没有任何地方在启动时登记它们，于是重启后第一次
-  /// 进设置页看到的是「还没有安装插件」，必须点一次「刷新订阅」才冒出来。
+  /// 为什么单独要这么一条：`loadInstalled()` 会顺带编译「没有元数据」的插件。而设置页 /
+  /// 点歌台只是要把「之前装过的插件」列出来。以前没有任何地方在启动时登记它们，于是
+  /// 重启后第一次进设置页看到的是「还没有安装插件」，必须点一次「刷新订阅」才冒出来。
+  ///
+  /// 真正把插件编进 worker 的是 [warmPluginsInBackground]：分两步是刻意的，列表要
+  /// **立刻**可见，编译在它之后、后台、不挡界面。
   Future<int> restoreInstalled() async {
     await _loadPrefs();
     final restored = await host.restoreMetadata();
     if (restored > 0) {
-      AppLog.info('插件列表从缓存恢复 $restored 个（先显示，后台逐个编译）');
-      // 后台**逐个**编译（`prefetch()` 是一次一个：并发装载会互相拖死）。
-      // 这样用户过几秒点开点歌台时，排行榜 / 热门歌单直接就是「已就绪」的状态，
-      // 不用现场付编译时间（首次安装后每个 0.3~1.2s，字节码命中后几十毫秒）。
-      unawaited(host.prefetch());
+      AppLog.info('插件列表从缓存恢复 $restored 个（已登记，待后台预编译）');
     }
     return restored;
+  }
+
+  /// 启动时在后台把已装插件编进 worker，不出现在任何「加载中」里。
+  ///
+  /// 为什么需要它：元数据只让插件**列出**来，函数的本体还不在 worker 里；第一次搜歌 /
+  /// 进排行榜才现场付「读盘 + 反序列化字节码 + eval + describe」（实测每个 0.3~1.2 秒），
+  /// 用户看到的就是「已经装了插件，进点歌台还要转一会儿」。启动就把这笔钱付掉。
+  ///
+  /// 不卡 UI 靠三件事（细节见 `MusicFreeHost.prefetch`）：编译全在 worker isolate 里、
+  /// 并发路数比 worker 池少一路（始终留一个给现点现用的调用）、有用户调用在飞时让路。
+  void warmPluginsInBackground() {
+    unawaited(host.prefetch(order: prefetchOrder()));
+  }
+
+  /// 后台预编译的顺序：启用的、能看排行榜 / 歌单的排前面（点歌台一打开就要它们），
+  /// 未启用的排最后——别让用不上的插件抢在急用的前面编。
+  List<String> prefetchOrder() {
+    final order = <String>[];
+    final seen = <String>{};
+    void take(MusicFreePlugin plugin) {
+      if (seen.add(plugin.hash)) {
+        order.add(plugin.hash);
+      }
+    }
+
+    final enabled = enabledPlugins;
+    for (final plugin in enabled) {
+      if (plugin.supports(MusicFreeCapabilities.getTopLists) ||
+          plugin.supports(MusicFreeCapabilities.getRecommendSheetTags)) {
+        take(plugin);
+      }
+    }
+    for (final plugin in enabled) {
+      take(plugin);
+    }
+    for (final plugin in plugins) {
+      take(plugin);
+    }
+    return order;
   }
 
   // --------------------------------------------------------------- 本地装载
@@ -348,8 +385,8 @@ class MusicFreePlugins {
       ]);
     }
 
-    // 3) 剩下的在后台慢慢编，不跟用户抢
-    unawaited(host.prefetch());
+    // 3) 剩下的交给后台预编译（并行、给用户调用让路）
+    unawaited(host.prefetch(order: prefetchOrder()));
   }
 
   // ------------------------------------------------------------- 订阅同步
