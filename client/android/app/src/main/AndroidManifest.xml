@@ -14,6 +14,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
     <!-- 后台通话/音乐的常驻通知（13 起需运行时申请） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- 通话保活：前台服务（Android 14 起话筒类型要单独申请）、WiFi 高性能锁 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
 
     <!-- 没有摄像头/麦克风的设备也允许安装，进房时再按能力降级 -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
@@ -49,6 +53,11 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- 通话保活：息屏后让进程、CPU 与网络继续工作，麦克风与播放才不断 -->
+        <service
+            android:name=".CallForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

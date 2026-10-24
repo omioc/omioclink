@@ -42,16 +42,25 @@ Future<void> showScreenFullscreen(
 }
 
 Future<void> _setNativeFullscreen(bool value) async {
-  // 桌面才有「窗口全屏」这回事；手机本身就是全屏，调用只会抛
-  // MissingPluginException 再被 catch 成一条无意义的 warn 日志
-  if (!isDesktopPlatform) {
+  // 桌面：切成窗口全屏（无边框窗口下这是「更大」的唯一办法）
+  if (isDesktopPlatform) {
+    try {
+      await windowManager.setFullScreen(value);
+    } on Object catch (error) {
+      // 非致命：窗口没切成全屏，应用内依然是全屏观看
+      AppLog.warn('切换系统全屏失败（$value）', error: error);
+    }
     return;
   }
+  // 手机：只把应用内铺满是不够的——系统状态栏和导航条还占着顶部/底部一条，
+  // 看着「不是真全屏」。这里进沉浸式（上滑才临时唤出系统栏），退出时恢复
+  // `main.dart` 启动时设的 edge-to-edge。
   try {
-    await windowManager.setFullScreen(value);
+    await SystemChrome.setEnabledSystemUIMode(
+      value ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+    );
   } on Object catch (error) {
-    // 非致命：窗口没切成全屏，应用内依然是全屏观看
-    AppLog.warn('切换系统全屏失败（$value）', error: error);
+    AppLog.debug('切换系统栏可见性失败（$value）：$error');
   }
 }
 

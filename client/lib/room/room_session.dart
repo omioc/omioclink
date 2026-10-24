@@ -10,6 +10,7 @@ import '../core/app_log.dart';
 import '../core/l10n_ext.dart';
 import '../data/models.dart';
 import '../data/volume_store.dart';
+import '../media/call_keepalive.dart';
 import '../media/media_engine.dart';
 import '../media/media_models.dart';
 import '../media/media_port.dart';
@@ -1033,6 +1034,16 @@ class RoomSession extends ChangeNotifier implements MusicCommandSink {
   // ------------------------------------------------------------------ 内部
   void _setPhase(RoomPhase phase) {
     _phase = phase;
+    // 手机息屏后要保证麦克风与播放不断：进房（active）申请前台服务保活，
+    // 离开 / 断线立刻释放——不在后台留一条常驻通知。
+    if (phase == RoomPhase.active) {
+      unawaited(CallKeepalive.enable());
+    } else if (phase == RoomPhase.leaving ||
+        phase == RoomPhase.idle ||
+        phase == RoomPhase.closed ||
+        phase == RoomPhase.failed) {
+      unawaited(CallKeepalive.disable());
+    }
     notifyListeners();
   }
 

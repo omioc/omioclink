@@ -1111,17 +1111,24 @@ class _CompactShell extends StatelessWidget {
     return Column(
       children: [
         Expanded(child: body),
-        _CompactNavBar(
-          section: section,
-          inCall: inCall,
-          showCall: showCall,
-          onSection: onSectionChanged,
-          onEnterCall: onEnterCall,
-        ),
+        // 弹出软键盘时收起底部 tab：否则键盘会把整条导航顶到键盘上方，
+        // 既挡内容又让「底部导航」悬在半空。收起后输入区拿到全部剩余高度。
+        if (!_keyboardVisible(context))
+          _CompactNavBar(
+            section: section,
+            inCall: inCall,
+            showCall: showCall,
+            onSection: onSectionChanged,
+            onEnterCall: onEnterCall,
+          ),
       ],
     );
   }
 }
+
+/// 软键盘是不是正占着屏幕底部（移动端 value 才有值，桌面恒为 0）。
+bool _keyboardVisible(BuildContext context) =>
+    MediaQuery.viewInsetsOf(context).bottom > 0;
 
 /// 底部导航：图标 + 一排小字，选中项用主题色 + 淡底。
 class _CompactNavBar extends StatelessWidget {
